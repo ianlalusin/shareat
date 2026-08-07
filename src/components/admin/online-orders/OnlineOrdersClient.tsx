@@ -2,22 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
+import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
 import { useToast } from "@/hooks/use-toast";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon } from "lucide-react";
 import { computeOnlineAvailability, type OnlineAvailabilityInput } from "@/lib/storefront/online-hours";
 import { OnlineAvailabilityControl } from "@/components/admin/online-orders/OnlineAvailabilityControl";
+import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
+import { normalizePhone } from "@/lib/phone";
 
 type Modifier = { groupName?: string; valueName?: string; priceDelta?: number };
 type OrderLine = {
@@ -43,7 +48,16 @@ type OnlineOrder = {
   grandTotal?: number;
   currency?: string;
   notes?: string | null;
-  payment?: { method?: string; paid?: boolean; ref?: string };
+  payment?: {
+    method?: string;
+    paid?: boolean;
+    ref?: string;
+    methodLabel?: string;
+    settledAtMs?: number;
+    confirmedByUid?: string;
+    confirmedByName?: string;
+    confirmedVia?: string;
+  };
   receiptNumber?: string;
   statusHistory?: any[];
 };
@@ -72,6 +86,51 @@ const TAB_STATES: Record<TabKey, string[]> = {
   completed: ["completed"],
   cancelled: ["cancelled", "rejected", "expired"],
 };
+
+// Display label for an order whose payment.paid is true. Manual wallet
+// confirmations always carry a methodLabel; a PayMongo-settled order may not,
+// so it gets a named fallback instead of a blank string.
+function paidLabel(payment?: OnlineOrder["payment"]): string {
+  if (payment?.methodLabel) return payment.methodLabel;
+  if (payment?.method === "paymongo") return "Online (PayMongo)";
+  return "Paid";
+}
+
+function ordinalSuffix(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+// Pure string-builder for the "trust signal" line shown above the action
+// buttons. Kept side-effect-free (no hooks, no Firestore) so it is unit
+// testable without dragging in the rest of this "use client" module.
+export function buildTrustSignal(input: {
+  normalizedPhone: string | null;
+  priorOrders: { status: string }[];
+  visitCount: number | null;
+}): string {
+  const { normalizedPhone, priorOrders, visitCount } = input;
+  if (!normalizedPhone) return "No phone on file";
+
+  const ordinal = priorOrders.length + 1;
+  const orderLabel = ordinal === 1 ? "First online order" : `${ordinalSuffix(ordinal)} online order`;
+
+  if (priorOrders.length === 0) {
+    if (visitCount === null) return `${orderLabel} · not a known customer`;
+    const visits = `${visitCount} dine-in visit${visitCount === 1 ? "" : "s"}`;
+    return `${orderLabel} · ${visits}`;
+  }
+
+  const completed = priorOrders.filter((o) => o.status === "completed").length;
+  const cancelled = priorOrders.filter((o) => o.status === "cancelled").length;
+  return `${orderLabel} · ${completed} completed, ${cancelled} cancelled`;
+}
 
 // Available forward actions given the current status + fulfillment type.
 function actionsFor(order: OnlineOrder): Array<{ to: string; label: string; needsReason?: boolean; variant?: "default" | "destructive" | "outline" }> {
@@ -108,6 +167,10 @@ function actionsFor(order: OnlineOrder): Array<{ to: string; label: string; need
       ];
     case "pending_payment":
       return [{ to: "cancelled", label: "Cancel", needsReason: true, variant: "outline" }];
+    case "expired":
+      // Cancel is deliberately not offered here — an expired order already
+      // sits in the Cancelled tab.
+      return [{ to: "pending", label: "Reopen order" }];
     default:
       return [];
   }
@@ -134,6 +197,74 @@ export default function OnlineOrdersClient() {
   const [busy, setBusy] = useState(false);
   const [reasonFor, setReasonFor] = useState<string | null>(null);
   const [reasonText, setReasonText] = useState("");
+
+  // Payment-confirmation panel (Task 2 — "Payment received…").
+  const [payConfirmOpen, setPayConfirmOpen] = useState(false);
+  const [payMethodId, setPayMethodId] = useState("");
+  const [payNote, setPayNote] = useState("");
+  // "Un-mark as paid" panel — only ever offered before a receipt exists.
+  const [unpayOpen, setUnpayOpen] = useState(false);
+  const [unpayReason, setUnpayReason] = useState("");
+
+  const { config: storeConfig } = useStoreConfigDoc(storeId);
+  const activeModes = useMemo(
+    () =>
+      (storeConfig?.modesOfPayment ?? [])
+        .filter((m) => m.isActive && !m.isArchived)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [storeConfig]
+  );
+
+  // Does an order-bound chat thread exist for the selected order? The website
+  // creates the thread (deterministic id order_{orderId}), never the cashier —
+  // ChatThreadPane.sendReply calls updateDoc on the thread doc, which throws
+  // if it doesn't exist yet.
+  const [threadExists, setThreadExists] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!selected || !storeId) { setThreadExists(null); return; }
+    const unsub = onSnapshot(
+      doc(db, `stores/${storeId}/chatThreads/order_${selected.id}`),
+      (snap) => setThreadExists(snap.exists()),
+      () => setThreadExists(false)
+    );
+    return () => unsub();
+  }, [storeId, selected?.id]);
+
+  // Trust signal ("First online order · not a known customer", etc).
+  // normalizedPhone / priorOrders are cheap, synchronous derivations from
+  // state already in memory — no read involved. The customer's dine-in
+  // visitCount is the only actual Firestore read, fired once per distinct
+  // phone (not on every `orders` snapshot tick) and never allowed to break
+  // the card: a failed or empty lookup just leaves visitCount at null, which
+  // buildTrustSignal renders as "not a known customer" / no-suffix rather
+  // than throwing.
+  const normalizedPhone = selected ? normalizePhone(selected.contact?.phone || "") : null;
+  const priorOrders = useMemo(() => {
+    if (!selected || !normalizedPhone) return [];
+    return orders
+      .filter((o) => o.id !== selected.id && normalizePhone(o.contact?.phone || "") === normalizedPhone)
+      .map((o) => ({ status: o.status }));
+  }, [orders, selected, normalizedPhone]);
+
+  const [visitCount, setVisitCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!normalizedPhone) { setVisitCount(null); return; }
+    let cancelled = false;
+    setVisitCount(null);
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "customers", normalizedPhone));
+        const vc = snap.exists() ? Number((snap.data() as any)?.visitCount ?? 0) : null;
+        if (!cancelled) setVisitCount(vc);
+      } catch (e) {
+        console.error("[OnlineOrdersClient] customer lookup failed:", e);
+        // Leave visitCount at null — the online-order counts still render.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [normalizedPhone]);
+
+  const trustSignal = selected ? buildTrustSignal({ normalizedPhone, priorOrders, visitCount }) : null;
 
   // Online-ordering availability (the open/closed switch). Read live from the
   // store doc (every role may read it; stays correct across store-switches and
@@ -284,6 +415,61 @@ export default function OnlineOrdersClient() {
     }
   };
 
+  // Mirrors transition() above: same fetch / Bearer-token / toast / error
+  // pattern. Payment state is never written to Firestore directly from this
+  // client — it always goes through this server op, which is the source of
+  // truth for status revival on pending_payment/expired orders too. The live
+  // order snapshot (see the effect above) re-renders `selected` afterward;
+  // this function does not hand-patch local state.
+  const confirmPayment = async (order: OnlineOrder, methodLabel: string, note: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const u = user || getAuth().currentUser;
+      if (!u) throw new Error("Not signed in.");
+      const idToken = await u.getIdToken();
+      const res = await fetch("/api/admin/online-orders", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "confirm-payment", storeId, orderId: order.id, methodLabel, note }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+      toast({ title: "Payment confirmed", description: `Marked paid via ${methodLabel}.` });
+      setPayConfirmOpen(false);
+      setPayMethodId("");
+      setPayNote("");
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not confirm payment", description: e?.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unconfirmPayment = async (order: OnlineOrder, reason: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const u = user || getAuth().currentUser;
+      if (!u) throw new Error("Not signed in.");
+      const idToken = await u.getIdToken();
+      const res = await fetch("/api/admin/online-orders", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "unconfirm-payment", storeId, orderId: order.id, reason }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+      toast({ title: "Payment un-marked" });
+      setUnpayOpen(false);
+      setUnpayReason("");
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not un-mark payment", description: e?.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
       <div className="container mx-auto py-6 space-y-6">
@@ -338,7 +524,7 @@ export default function OnlineOrdersClient() {
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {(o.lines?.length || 0)} item{(o.lines?.length || 0) === 1 ? "" : "s"}
-                          {" · "}{o.payment?.method === "paymongo" ? (o.payment?.paid ? "Paid online" : "Online (unpaid)") : "Pay on " + (o.fulfillment?.type === "delivery" ? "delivery" : "pickup")}
+                          {" · "}{o.payment?.paid ? `Paid · ${paidLabel(o.payment)}` : o.payment?.method === "paymongo" ? "Online (unpaid)" : "Pay on " + (o.fulfillment?.type === "delivery" ? "delivery" : "pickup")}
                           {o.createdAtClientMs ? ` · ${new Date(o.createdAtClientMs).toLocaleString("en-PH")}` : ""}
                         </div>
                       </div>
@@ -354,7 +540,21 @@ export default function OnlineOrdersClient() {
         )}
       </div>
 
-      <Dialog open={!!selected} onOpenChange={(open) => { if (!open) { setSelected(null); setReasonFor(null); setReasonText(""); } }}>
+      <Dialog
+        open={!!selected}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelected(null);
+            setReasonFor(null);
+            setReasonText("");
+            setPayConfirmOpen(false);
+            setPayMethodId("");
+            setPayNote("");
+            setUnpayOpen(false);
+            setUnpayReason("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
           {selected && (
             <>
@@ -413,11 +613,144 @@ export default function OnlineOrdersClient() {
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{peso(selected.subtotal || 0)}</span></div>
                   {(selected.deliveryFee || 0) > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Delivery fee</span><span>{peso(selected.deliveryFee || 0)}</span></div>}
                   <div className="flex justify-between font-semibold text-base"><span>Total</span><span>{peso(selected.grandTotal || 0)}</span></div>
-                  <div className="text-xs text-muted-foreground">
-                    {selected.payment?.method === "paymongo" ? (selected.payment?.paid ? "Paid online (PayMongo)" : "Online — not yet paid") : `Pay on ${selected.fulfillment?.type === "delivery" ? "delivery" : "pickup"}`}
-                    {selected.receiptNumber ? ` · Receipt ${selected.receiptNumber}` : ""}
-                  </div>
                 </div>
+
+                <div className="rounded-md border p-3 space-y-2">
+                  {selected.payment?.paid === true ? (
+                    <>
+                      <div className="font-medium">Paid · {paidLabel(selected.payment)}</div>
+                      <div className="text-xs text-muted-foreground space-y-0.5">
+                        {selected.payment?.confirmedByName && <div>Confirmed by {selected.payment.confirmedByName}</div>}
+                        {selected.payment?.settledAtMs && <div>{new Date(selected.payment.settledAtMs).toLocaleString("en-PH")}</div>}
+                        {selected.receiptNumber && <div>Receipt {selected.receiptNumber}</div>}
+                      </div>
+                      {!selected.receiptNumber && (
+                        unpayOpen ? (
+                          <div className="space-y-2 border-t pt-2">
+                            <Textarea
+                              value={unpayReason}
+                              onChange={(e) => setUnpayReason(e.target.value)}
+                              rows={2}
+                              placeholder="Why are you un-marking this payment? (required)"
+                            />
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setUnpayOpen(false); setUnpayReason(""); }}>Back</Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={busy || !unpayReason.trim()}
+                                onClick={() => unconfirmPayment(selected, unpayReason.trim())}
+                              >
+                                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground underline underline-offset-2"
+                            onClick={() => setUnpayOpen(true)}
+                          >
+                            Un-mark as paid
+                          </button>
+                        )
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-medium">Not yet paid</div>
+                      <div className="text-xs text-muted-foreground">
+                        {selected.fulfillment?.type === "delivery" ? "Rider collects on delivery" : "Pay at counter"}
+                      </div>
+                      {payConfirmOpen ? (
+                        <div className="space-y-2 border-t pt-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Where did the money land?</Label>
+                            <Select value={payMethodId} onValueChange={setPayMethodId} disabled={busy || activeModes.length === 0}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={activeModes.length === 0 ? "No modes configured" : "Select mode of payment"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeModes.map((m) => (
+                                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {activeModes.length === 0 && (
+                              <div className="text-xs text-destructive">No modes of payment configured for this store.</div>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Note <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                            <Textarea
+                              value={payNote}
+                              onChange={(e) => setPayNote(e.target.value.slice(0, 200))}
+                              rows={2}
+                              placeholder="Anything to remember"
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Only tick this if you have seen the money in the wallet app itself. A screenshot is not proof.
+                          </p>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => { setPayConfirmOpen(false); setPayMethodId(""); setPayNote(""); }}
+                            >
+                              Back
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={busy || !payMethodId || activeModes.length === 0}
+                              onClick={() => {
+                                const method = activeModes.find((m) => m.id === payMethodId);
+                                if (!method) return;
+                                confirmPayment(selected, method.name, payNote.trim());
+                              }}
+                            >
+                              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => setPayConfirmOpen(true)}>
+                          Payment received…
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="text-sm font-medium">Conversation</div>
+                  {threadExists ? (
+                    <div className="flex h-[40vh] max-h-[40vh] flex-col overflow-hidden rounded-md border">
+                      <ChatThreadPane storeId={storeId} threadId={`order_${selected.id}`} isClosed={false} />
+                    </div>
+                  ) : (
+                    <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                      The customer hasn&apos;t started a chat for this order yet.
+                    </div>
+                  )}
+                </div>
+
+                {trustSignal && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
+                    <span>{trustSignal}</span>
+                    {selected.status === "pending" && selected.payment?.paid !== true && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => transition(selected, "accepted")}
+                      >
+                        Accept &amp; start prep anyway
+                      </Button>
+                    )}
+                  </div>
+                )}
 
                 {reasonFor ? (
                   <div className="space-y-2 rounded-md border p-3">

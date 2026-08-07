@@ -8,6 +8,8 @@ export type ChatThread = {
   lastMessageAtClientMs?: number | null;
   createdAtClientMs: number;
   unreadForStaff?: number;
+  orderId?: string | null;
+  source?: string | null;
 };
 
 export type ChatMessage = {

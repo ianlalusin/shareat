@@ -28,6 +28,15 @@ import type { ChatThread } from "./chat-types";
 // A customer message left unread/unreplied longer than this shows a red dot.
 const STALE_UNREAD_MS = 5 * 60 * 1000;
 
+// Order threads (id `order_{orderId}`, source: "order") are surfaced inside
+// the order card instead of here, so they must never show up in the
+// site-wide chat FAB — otherwise two staff could answer the same customer.
+//
+// Pure so it's trivially testable without rendering the component.
+export function excludeOrderThreads(threads: ChatThread[]): ChatThread[] {
+  return threads.filter((t) => t.source !== "order");
+}
+
 function fmtClock(ms?: number | null): string {
   if (!ms) return "";
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -55,6 +64,11 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   useEffect(() => { primeKitchenAudio(); }, []);
 
   // Live open threads for this store (equality query → no composite index).
+  //
+  // Deliberately NOT filtering source!="order" in this query: a Firestore
+  // inequality filter excludes documents that lack the field entirely, which
+  // would hide every walk-in thread created before order-chat existed. Order
+  // threads are excluded client-side instead — see excludeOrderThreads().
   useEffect(() => {
     if (!storeId) { setThreads([]); return; }
     const q = query(collection(db, `stores/${storeId}/chatThreads`), where("status", "==", "open"));
@@ -94,7 +108,15 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
     return () => { cancelled = true; };
   }, [open, listTab, storeId]);
 
-  const totalUnread = useMemo(() => threads.reduce((n, t) => n + (t.unreadForStaff || 0), 0), [threads]);
+  // Filtered views used everywhere this list feeds the UI (render, badge,
+  // count) so order threads never surface here in any form.
+  const filteredThreads = useMemo(() => excludeOrderThreads(threads), [threads]);
+  const filteredClosedThreads = useMemo(() => excludeOrderThreads(closedThreads), [closedThreads]);
+
+  const totalUnread = useMemo(
+    () => filteredThreads.reduce((n, t) => n + (t.unreadForStaff || 0), 0),
+    [filteredThreads],
+  );
 
   // Chime when the staff-unread total rises (a new customer message arrived),
   // unless the cashier is already in a conversation (avoid chiming while typing).
@@ -107,11 +129,11 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   }, [totalUnread, open, activeThreadId]);
 
   const activeThread =
-    threads.find((t) => t.id === activeThreadId) ??
-    closedThreads.find((t) => t.id === activeThreadId) ??
+    filteredThreads.find((t) => t.id === activeThreadId) ??
+    filteredClosedThreads.find((t) => t.id === activeThreadId) ??
     null;
   const isActiveClosed = activeThread?.status === "closed";
-  const displayedThreads = listTab === "open" ? threads : closedThreads;
+  const displayedThreads = listTab === "open" ? filteredThreads : filteredClosedThreads;
 
   async function openThread(t: ChatThread) {
     setActiveThreadId(t.id);
@@ -183,7 +205,7 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
                 </SheetDescription>
                 <div className="inline-flex rounded-md border p-0.5 mt-2 w-fit">
                   <Button variant={listTab === "open" ? "secondary" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setListTab("open")}>
-                    Open{threads.length > 0 ? ` (${threads.length})` : ""}
+                    Open{filteredThreads.length > 0 ? ` (${filteredThreads.length})` : ""}
                   </Button>
                   <Button variant={listTab === "closed" ? "secondary" : "ghost"} size="sm" className="h-7 px-3 text-xs" onClick={() => setListTab("closed")}>
                     Closed

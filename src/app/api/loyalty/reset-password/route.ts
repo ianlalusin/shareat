@@ -3,20 +3,12 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { normalizePhone } from "@/lib/phone";
 
 export const runtime = "nodejs";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
-}
-
-function normalizePhone(raw: string): string | null {
-  if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("63")) return `+${digits}`;
-  if (digits.length === 11 && digits.startsWith("09")) return `+63${digits.slice(1)}`;
-  if (digits.length === 10 && digits.startsWith("9")) return `+63${digits}`;
-  return null;
 }
 
 function generateTempPassword(): string {
