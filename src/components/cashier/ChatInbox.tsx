@@ -2,12 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -20,37 +18,15 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
-import { MessageSquare, Send, Loader2, ArrowLeft, Check, CheckCheck, Phone } from "lucide-react";
+import { MessageSquare, Loader2, ArrowLeft, Check, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fireKitchenAlert, primeKitchenAudio } from "@/lib/notifications/kitchenAlert";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { ChatThreadPane } from "./ChatThreadPane";
+import type { ChatThread } from "./chat-types";
 
 // A customer message left unread/unreplied longer than this shows a red dot.
 const STALE_UNREAD_MS = 5 * 60 * 1000;
-
-const CLOSING_SPIEL =
-  "Thank you for reaching out to us! We'll be closing this chat for now. You can reach us anytime through our phone, our Facebook page, or right here — we're always happy to help.";
-
-type ChatThread = {
-  id: string;
-  customerName?: string | null;
-  phone?: string | null;
-  status: "open" | "closed";
-  lastMessageText?: string | null;
-  lastMessageBy?: "customer" | "staff" | null;
-  lastMessageAtClientMs?: number | null;
-  createdAtClientMs: number;
-  unreadForStaff?: number;
-};
-
-type ChatMessage = {
-  id: string;
-  sender: "customer" | "staff";
-  text: string;
-  staffName?: string | null;
-  createdAtClientMs: number;
-};
 
 function fmtClock(ms?: number | null): string {
   if (!ms) return "";
@@ -67,9 +43,6 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   const [closedThreads, setClosedThreads] = useState<ChatThread[]>([]);
   const [closedLoading, setClosedLoading] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [reply, setReply] = useState("");
-  const [sending, setSending] = useState(false);
   // Drives the red "stale unread" dot so it appears after 5 min even with no
   // new activity. Cheap re-render, no extra reads.
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -133,19 +106,6 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
     prevUnread.current = totalUnread;
   }, [totalUnread, open, activeThreadId]);
 
-  // Conversation listener for the selected thread.
-  useEffect(() => {
-    if (!storeId || !activeThreadId) { setMessages([]); return; }
-    const q = query(
-      collection(db, `stores/${storeId}/chatThreads/${activeThreadId}/messages`),
-      orderBy("createdAtClientMs", "asc"),
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }) as ChatMessage));
-    });
-    return () => unsub();
-  }, [storeId, activeThreadId]);
-
   const activeThread =
     threads.find((t) => t.id === activeThreadId) ??
     closedThreads.find((t) => t.id === activeThreadId) ??
@@ -157,35 +117,6 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
     setActiveThreadId(t.id);
     if (storeId && (t.unreadForStaff || 0) > 0) {
       try { await updateDoc(doc(db, `stores/${storeId}/chatThreads/${t.id}`), { unreadForStaff: 0 }); } catch {}
-    }
-  }
-
-  async function sendReply() {
-    const text = reply.trim();
-    if (!storeId || !activeThreadId || !text || sending) return;
-    setSending(true);
-    try {
-      const staffName = currentProfile?.name || appUser?.displayName || appUser?.name || "Staff";
-      const now = Date.now();
-      await addDoc(collection(db, `stores/${storeId}/chatThreads/${activeThreadId}/messages`), {
-        sender: "staff",
-        text,
-        staffName,
-        createdAt: serverTimestamp(),
-        createdAtClientMs: now,
-      });
-      await updateDoc(doc(db, `stores/${storeId}/chatThreads/${activeThreadId}`), {
-        lastMessageText: text,
-        lastMessageBy: "staff",
-        lastMessageAtClientMs: now,
-        unreadForStaff: 0,
-        updatedAt: serverTimestamp(),
-      });
-      setReply("");
-    } catch (e) {
-      console.error("[ChatInbox] sendReply failed:", e);
-    } finally {
-      setSending(false);
     }
   }
 
@@ -212,41 +143,6 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
       confirmText: "End chat",
     });
     if (ok) await closeThreadInternal();
-  }
-
-  // Sends a polite closing message to the visitor, then closes the chat.
-  async function sendClosingAndEnd() {
-    if (!storeId || !activeThreadId || sending) return;
-    const ok = await confirm({
-      title: "Send closing message & end?",
-      description: "Sends a polite closing note to the visitor, then closes this chat.",
-      confirmText: "Send & end",
-    });
-    if (!ok) return;
-    setSending(true);
-    try {
-      const staffName = currentProfile?.name || appUser?.displayName || appUser?.name || "Staff";
-      const now = Date.now();
-      await addDoc(collection(db, `stores/${storeId}/chatThreads/${activeThreadId}/messages`), {
-        sender: "staff",
-        text: CLOSING_SPIEL,
-        staffName,
-        createdAt: serverTimestamp(),
-        createdAtClientMs: now,
-      });
-      await updateDoc(doc(db, `stores/${storeId}/chatThreads/${activeThreadId}`), {
-        lastMessageText: CLOSING_SPIEL,
-        lastMessageBy: "staff",
-        lastMessageAtClientMs: now,
-        unreadForStaff: 0,
-        updatedAt: serverTimestamp(),
-      });
-      await closeThreadInternal();
-    } catch (e) {
-      console.error("[ChatInbox] sendClosingAndEnd failed:", e);
-    } finally {
-      setSending(false);
-    }
   }
 
   return (
@@ -367,55 +263,13 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
                   )}
                 </div>
               </SheetHeader>
-              <ScrollArea className="flex-1 px-3 py-3">
-                <div className="space-y-2">
-                  {messages.map((m) => {
-                    const staff = m.sender === "staff";
-                    return (
-                      <div key={m.id} className={staff ? "flex justify-end" : "flex justify-start"}>
-                        <div className={cn(
-                          "max-w-[80%] rounded-2xl px-3 py-2 text-sm",
-                          staff ? "rounded-br-sm bg-primary text-primary-foreground" : "rounded-bl-sm bg-muted",
-                        )}>
-                          {staff && m.staffName && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{m.staffName}</div>}
-                          <div className="whitespace-pre-wrap break-words">{m.text}</div>
-                          <div className="text-[10px] opacity-60 mt-0.5 text-right">{fmtClock(m.createdAtClientMs)}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-              {isActiveClosed ? (
-                <div className="border-t p-3 text-center text-xs text-muted-foreground">
-                  This chat is closed. A new message from the visitor reopens it under the Open tab.
-                </div>
-              ) : (
-                <div className="border-t p-2 space-y-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full h-8 text-xs"
-                    onClick={() => void sendClosingAndEnd()}
-                    disabled={sending}
-                  >
-                    <CheckCheck className="h-3.5 w-3.5 mr-1" /> Send closing message &amp; end chat
-                  </Button>
-                  <div className="flex items-end gap-2">
-                    <Textarea
-                      value={reply}
-                      onChange={(e) => setReply(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendReply(); } }}
-                      rows={1}
-                      maxLength={500}
-                      placeholder="Type a reply…"
-                      className="resize-none min-h-[40px] text-sm"
-                    />
-                    <Button size="icon" className="shrink-0" onClick={() => void sendReply()} disabled={sending || reply.trim().length === 0}>
-                      {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
+              {storeId && activeThreadId && (
+                <ChatThreadPane
+                  storeId={storeId}
+                  threadId={activeThreadId}
+                  isClosed={isActiveClosed}
+                  onClosed={() => setActiveThreadId(null)}
+                />
               )}
             </>
           )}

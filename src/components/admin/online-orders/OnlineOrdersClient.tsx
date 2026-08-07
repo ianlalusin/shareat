@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -225,7 +225,7 @@ export default function OnlineOrdersClient() {
   useEffect(() => {
     if (!storeId) return;
     setIsLoading(true);
-    const q = query(collection(db, `stores/${storeId}/onlineOrders`), orderBy("createdAtClientMs", "desc"));
+    const q = query(collection(db, `stores/${storeId}/onlineOrders`), orderBy("createdAtClientMs", "desc"), limit(200));
     const unsub = onSnapshot(
       q,
       (snap) => {
