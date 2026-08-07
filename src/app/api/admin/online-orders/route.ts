@@ -16,9 +16,21 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-// Forward-only lifecycle + cancel/reject. Payment-driven transitions
-// (pending_payment -> pending, -> expired) are owned by the PayMongo webhook in
-// the website project, NOT here.
+// Guards raised inside a transaction that carry their own HTTP status, so an
+// operator mistake reads as a 400 instead of falling through to the message
+// regex in the catch block (which only knows the transition path's wording).
+class OpError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// Forward-only kitchen lifecycle + cancel/reject. Payment does NOT move through
+// this table: pending_payment and expired are unblocked by the "confirm-payment"
+// op in this same file, which sets them to "pending" once the cashier confirms
+// the wallet transfer landed.
 const NEXT_STATES: Record<string, string[]> = {
   pending_payment: ["cancelled"],
   pending: ["accepted", "cancelled", "rejected"],
@@ -27,9 +39,17 @@ const NEXT_STATES: Record<string, string[]> = {
   ready: ["ready_for_pickup", "out_for_delivery", "completed", "cancelled"],
   ready_for_pickup: ["completed", "cancelled"],
   out_for_delivery: ["completed", "cancelled"],
+  // Reopen only. "cancelled" is deliberately absent: an expired order already
+  // sits in the Cancelled tab and no caller offers that move.
+  expired: ["pending"],
 };
 
 function paymentLabel(order: any): string {
+  // A manually confirmed wallet transfer names the wallet the money actually
+  // landed in. That string becomes the analyticsV2.mop key — i.e. a row in the
+  // daily sales report — so it outranks the generic fallbacks below.
+  const manual = order?.payment?.methodLabel;
+  if (typeof manual === "string" && manual.trim()) return manual.trim();
   if (order?.payment?.method === "paymongo") return "Online (PayMongo)";
   return order?.fulfillment?.type === "delivery" ? "Cash on Delivery" : "Pay at Counter";
 }
@@ -58,8 +78,14 @@ export async function POST(req: Request) {
     const toStatus = body?.toStatus ? String(body.toStatus) : "";
     const reason = body?.reason ? String(body.reason).slice(0, 300) : "";
 
-    if (op !== "transition") return bad(`Unknown op: ${op}`, 400);
-    if (!storeId || !orderId || !toStatus) return bad("storeId, orderId, toStatus required.", 400);
+    if (op !== "transition" && op !== "confirm-payment" && op !== "unconfirm-payment") {
+      return bad(`Unknown op: ${op}`, 400);
+    }
+    if (op === "transition") {
+      if (!storeId || !orderId || !toStatus) return bad("storeId, orderId, toStatus required.", 400);
+    } else if (!storeId || !orderId) {
+      return bad("storeId, orderId required.", 400);
+    }
     if (!staff.isPlatformAdmin && !staff.assignedStoreIds.includes(storeId)) {
       return bad("No access to this store.", 403);
     }
@@ -72,6 +98,131 @@ export async function POST(req: Request) {
     const orderRef = db.doc(`stores/${storeId}/onlineOrders/${orderId}`);
     const settingsRef = db.doc(`stores/${storeId}/receiptSettings/main`);
     const counterRef = db.doc(`stores/${storeId}/counters/receipts`);
+
+    // --- op: confirm-payment -------------------------------------------------
+    // The cashier has seen the money in the wallet app and is recording which
+    // wallet it landed in. No receipt is minted here; that still happens on
+    // completion, which is also when the money reaches analytics.
+    if (op === "confirm-payment") {
+      const methodLabel = String(body?.methodLabel ?? "").trim().slice(0, 60);
+      if (!methodLabel) return bad("A methodLabel is required to confirm payment.", 400);
+      const note = body?.note ? String(body.note).slice(0, 300) : "";
+
+      let resultStatus = "";
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(orderRef);
+        if (!snap.exists) throw new OpError("Order not found.");
+        const order = snap.data() as any;
+        const current = String(order?.status || "");
+
+        if (order?.payment?.paid === true) throw new OpError("This order is already marked paid.");
+        if (order?.receiptId) throw new OpError("This order already has a receipt.");
+        if (current === "completed" || current === "cancelled" || current === "rejected") {
+          throw new OpError(`Cannot confirm payment on a ${current} order.`);
+        }
+
+        // Deliberate bypass of NEXT_STATES: money arriving is exactly what
+        // unblocks these two states, and NEXT_STATES models the forward-only
+        // kitchen lifecycle, not payment. Every other status keeps its place in
+        // the queue — paying early does not push an order forward.
+        const revives = current === "pending_payment" || current === "expired";
+        resultStatus = revives ? "pending" : current;
+
+        const nowMs = Date.now();
+        const historyEntry: any = {
+          // serverTimestamp() is illegal inside array elements (statusHistory),
+          // so use a concrete Timestamp.
+          at: Timestamp.now(),
+          atClientMs: nowMs,
+          from: current,
+          to: current,
+          byUid: actorUid,
+          byName: actorName,
+          type: "payment_confirmed",
+        };
+        if (note) historyEntry.note = note;
+
+        // On a revive, payment confirmation also moves the status. That is a
+        // second, distinct fact from "money arrived" (the entry above), so it
+        // gets its own entry rather than being folded into the one above:
+        // type "transition" means "the status moved" everywhere else in this
+        // file, and repurposing "payment_confirmed" to also mean that would
+        // make it lie on every other order, where payment never moves status.
+        // Same atClientMs as the entry above so their ordering is unambiguous.
+        const historyEntries = [historyEntry];
+        if (revives) {
+          historyEntries.push({
+            at: Timestamp.now(),
+            atClientMs: nowMs,
+            from: current,
+            to: "pending",
+            byUid: actorUid,
+            byName: actorName,
+            type: "transition",
+            reason: "Payment confirmed",
+          });
+        }
+
+        const update: any = {
+          updatedAt: FieldValue.serverTimestamp(),
+          statusHistory: FieldValue.arrayUnion(...historyEntries),
+          "payment.paid": true,
+          "payment.methodLabel": methodLabel,
+          "payment.settledAtMs": nowMs,
+          "payment.confirmedByUid": actorUid,
+          "payment.confirmedByName": actorName,
+          "payment.confirmedVia": "manual_wallet",
+        };
+        if (revives) update.status = "pending";
+
+        tx.update(orderRef, update);
+      });
+
+      return NextResponse.json({ ok: true, status: resultStatus, paid: true });
+    }
+
+    // --- op: unconfirm-payment -----------------------------------------------
+    // Undo of the above, for a cashier who ticked the wrong order. Status is
+    // never touched: a wrongly-confirmed payment does not un-cook the food.
+    if (op === "unconfirm-payment") {
+      if (!reason) return bad("A reason is required to un-mark payment.", 400);
+
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(orderRef);
+        if (!snap.exists) throw new OpError("Order not found.");
+        const order = snap.data() as any;
+        const current = String(order?.status || "");
+
+        // The receipt is what puts this money into analytics; un-ticking after
+        // that point would desync the daily sales report.
+        if (order?.receiptId) {
+          throw new OpError("Cannot un-mark payment after the receipt is issued.");
+        }
+        if (order?.payment?.paid !== true) throw new OpError("This order is not marked paid.");
+
+        tx.update(orderRef, {
+          updatedAt: FieldValue.serverTimestamp(),
+          statusHistory: FieldValue.arrayUnion({
+            at: Timestamp.now(),
+            atClientMs: Date.now(),
+            from: current,
+            to: current,
+            byUid: actorUid,
+            byName: actorName,
+            type: "payment_unconfirmed",
+            reason,
+          }),
+          "payment.paid": false,
+          "payment.methodLabel": FieldValue.delete(),
+          "payment.settledAtMs": FieldValue.delete(),
+          "payment.confirmedByUid": FieldValue.delete(),
+          "payment.confirmedByName": FieldValue.delete(),
+          "payment.confirmedVia": FieldValue.delete(),
+        });
+      });
+
+      return NextResponse.json({ ok: true, paid: false });
+    }
 
     let didComplete = false;
     // Captured inside the transaction, consumed only after it commits. Left null
@@ -248,8 +399,14 @@ export async function POST(req: Request) {
 
         orderUpdate.receiptId = orderId;
         orderUpdate.receiptNumber = receiptNumber;
-        orderUpdate["payment.paid"] = true;
-        orderUpdate["payment.settledAtMs"] = nowMs;
+        // Only stamp payment here when nothing settled it earlier. settledAtMs
+        // must mean "when the money arrived", not "when the food was handed
+        // over" — an order confirmed paid by wallet transfer hours ago keeps
+        // that earlier timestamp, and its methodLabel keeps its mop row.
+        if (order?.payment?.paid !== true) {
+          orderUpdate["payment.paid"] = true;
+          orderUpdate["payment.settledAtMs"] = nowMs;
+        }
         didComplete = true;
       }
 
@@ -319,6 +476,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, status: toStatus, completed: didComplete, analyticsApplied });
   } catch (e: any) {
     const message = e?.message ?? "Unknown error";
+    // Payment guards carry their own status. The regex below stays the fallback
+    // for the transition path, whose Errors are plain and matched by wording.
+    if (e instanceof OpError) {
+      return NextResponse.json({ ok: false, error: message }, { status: e.status });
+    }
     const status = /required|cannot move|only valid|not found/i.test(message) ? 400
       : /no access|not allowed|not a staff/i.test(message) ? 403
       : 500;
