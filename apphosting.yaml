@@ -42,3 +42,50 @@ env:
     secret: PAYMONGO_WEBHOOK_SECRET_POS
     availability:
       - RUNTIME
+  # --- Online-order customer notifications --------------------------------
+  # Sent by /api/admin/online-orders when staff advance an order to accepted,
+  # ready_for_pickup, out_for_delivery, cancelled or rejected.
+  #
+  # IMPORTANT — RESEND_API_KEY and SEMAPHORE_API_KEY currently exist ONLY in the
+  # `shareat-website` project's Secret Manager, where the storefront's
+  # order-placed mail is sent from. They do NOT exist in `shareat-hub-v2` yet.
+  # They must be created there separately and granted to this backend:
+  #   firebase apphosting:secrets:set RESEND_API_KEY --project shareat-hub-v2
+  #   firebase apphosting:secrets:set SEMAPHORE_API_KEY --project shareat-hub-v2
+  #   firebase apphosting:secrets:grantaccess RESEND_API_KEY --project shareat-hub-v2 --backend <pos-backend>
+  #   firebase apphosting:secrets:grantaccess SEMAPHORE_API_KEY --project shareat-hub-v2 --backend <pos-backend>
+  # Until then the code degrades to "log and skip": a store with no Resend key
+  # still accepts orders normally, it just cannot tell the customer about it.
+  - variable: RESEND_API_KEY
+    secret: RESEND_API_KEY
+    availability:
+      - RUNTIME
+  - variable: SEMAPHORE_API_KEY
+    secret: SEMAPHORE_API_KEY
+    availability:
+      - RUNTIME
+  # Branded Semaphore sender id. Falls back to Semaphore's own "SEMAPHORE" when
+  # blank, which is what an unregistered sender name resolves to anyway.
+  - variable: SEMAPHORE_SENDER_NAME
+    value: SharEat
+    availability:
+      - RUNTIME
+  # Must be a Resend-verified sender on shareat.net.
+  - variable: NOTIFY_EMAIL_FROM
+    value: SharEat <orders@shareat.net>
+    availability:
+      - RUNTIME
+  # Master arm for SMS. ONLY a literal "true" (trimmed, case-insensitive) sends;
+  # anything else logs what it would have sent and spends nothing. Email is not
+  # affected by this flag. Left off until the Semaphore key above is in place.
+  - variable: NOTIFY_SMS_ENABLED
+    value: "false"
+    availability:
+      - RUNTIME
+  # The cost dial. Each SMS segment is ~PHP 0.56, so a two-message pickup order
+  # is ~PHP 1.12. Cancellations and rejections are deliberately excluded — they
+  # go by email only unless a branch explicitly opts in here.
+  - variable: NOTIFY_SMS_STATUSES
+    value: accepted,ready_for_pickup,out_for_delivery
+    availability:
+      - RUNTIME

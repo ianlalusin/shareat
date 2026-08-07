@@ -3,6 +3,11 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireActiveStaff } from "@/lib/server/active-staff-check";
 import { applyAnalyticsDeltaServer } from "@/lib/server/analytics/applyAnalyticsDeltaServer";
+import {
+  isNotifiableStatus,
+  notifyOrderStatusChange,
+  type StatusNotifyContext,
+} from "@/lib/server/notify-customer";
 import type { Receipt, ReceiptAnalyticsV2, SessionBillLine } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -69,6 +74,10 @@ export async function POST(req: Request) {
     const counterRef = db.doc(`stores/${storeId}/counters/receipts`);
 
     let didComplete = false;
+    // Captured inside the transaction, consumed only after it commits. Left null
+    // for statuses the customer is never told about, so those transitions do no
+    // extra work at all.
+    let notifyCtx: StatusNotifyContext | null = null;
 
     await db.runTransaction(async (tx) => {
       // --- reads first ---
@@ -244,6 +253,21 @@ export async function POST(req: Request) {
         didComplete = true;
       }
 
+      if (isNotifiableStatus(toStatus)) {
+        notifyCtx = {
+          orderId,
+          status: toStatus,
+          customerName: order?.contact?.name ?? null,
+          email: order?.contact?.email ?? null,
+          phone: order?.contact?.phone ?? null,
+          // Read straight off the order. This route never computes a total.
+          grandTotal: Number(order?.grandTotal ?? 0),
+          fulfillmentType: order?.fulfillment?.type ?? null,
+          address: order?.fulfillment?.address ?? null,
+          reason: reason || null,
+        };
+      }
+
       tx.update(orderRef, orderUpdate);
     });
 
@@ -268,6 +292,27 @@ export async function POST(req: Request) {
         analyticsApplied = true;
       } catch (e) {
         console.error("[online-orders] analytics apply failed:", e);
+      }
+    }
+
+    // Customer notification. Deliberately last, and deliberately incapable of
+    // affecting anything above it: the status write has committed, the receipt
+    // (if any) is minted, and the analytics delta is applied. A failed send is
+    // logged and recorded on the order — never surfaced as a failed transition,
+    // and never allowed to change the response below.
+    if (notifyCtx) {
+      const ctx = notifyCtx as StatusNotifyContext;
+      try {
+        let storeName = "";
+        try {
+          const storeSnap = await db.doc(`stores/${storeId}`).get();
+          storeName = String(storeSnap.data()?.name ?? "").trim();
+        } catch {
+          // A missing store name only costs the branch label in the message.
+        }
+        await notifyOrderStatusChange(orderRef, { ...ctx, storeName });
+      } catch (e) {
+        console.error("[online-orders] customer notification failed:", e);
       }
     }
 
