@@ -18,6 +18,12 @@ import { loadOptionOverrides, valueKey } from "./option-overrides";
  *
  * Grouping mirrors the POS: items are grouped by `subCategory`, and a family
  * (`kind:'group'`) lists its sellable `variant` children.
+ *
+ * Descriptions: an item carries the root product's copy. A variant carries its
+ * own only when the family actually uses per-variant copy — the Samgyupsal
+ * Sharing Sets, whose five tiers genuinely differ (Set One has no chicken and no
+ * Coke; Set Three has both). Families where every tier shares one blurb are
+ * unaffected and serialise exactly as before.
  */
 
 export type StorefrontModifierValue = { id: string; name: string; priceDelta: number };
@@ -36,6 +42,12 @@ export type StorefrontVariant = {
   displayName: string;
   price: number;
   imageUrl: string | null;
+  /**
+   * Only present when the family actually uses per-variant copy — see
+   * `DESCRIPTION_MAX` below. When absent, consumers fall back to the parent
+   * item's `description`.
+   */
+  description?: string;
 };
 export type StorefrontItem = {
   productId: string;
@@ -62,6 +74,30 @@ function displayNameFor(name: string, variantLabel?: string | null): string {
   const base = String(name || "").trim();
   const v = String(variantLabel || "").trim();
   return v ? `${base} (${v})` : base;
+}
+
+/**
+ * Hard cap on any single description carried in the snapshot.
+ *
+ * Bounded, not unbounded: every client downloads this document whole, so one
+ * over-long product must not be able to bloat it for everyone. 1000 leaves
+ * generous room over the longest real content list (~412 chars, the Samgyupsal
+ * Sharing Set tiers) without inviting an essay.
+ */
+const DESCRIPTION_MAX = 1000;
+
+/**
+ * Trims a description to `DESCRIPTION_MAX`, cutting at the last word boundary.
+ *
+ * The previous 280-char `.slice()` cut mid-word — a Sharing Set tier ended
+ * "...100g tteokbokk", which reads as a bug to the customer.
+ */
+function clampDescription(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (text.length <= DESCRIPTION_MAX) return text;
+  const cut = text.slice(0, DESCRIPTION_MAX);
+  const space = cut.lastIndexOf(" ");
+  return (space > 0 ? cut.slice(0, space) : cut).trimEnd();
 }
 
 export async function rebuildStorefrontCatalog(
@@ -153,25 +189,43 @@ export async function rebuildStorefrontCatalog(
 
     const subCategory = String(p.subCategory || "Uncategorized");
     const optionGroups = resolveOptionGroups(p.optionGroupIds);
-    const description = String(p.description || "").trim().slice(0, 280);
+    const description = clampDescription(p.description);
 
     if (p.kind === "group") {
       const children = (variantsByGroup.get(String(p.id)) || []).filter(
         (v) => v.isActive !== false && v.isArchived !== true
       );
-      const variants: StorefrontVariant[] = [];
+      // Resolve prices first: a variant with no positive price is not sellable
+      // and must not influence anything below it.
+      const priced: { v: any; price: number }[] = [];
       for (const v of children) {
         const price = resolvePrice(v.id);
         if (price == null) continue;
-        variants.push({
+        priced.push({ v, price });
+      }
+      if (priced.length === 0) continue; // nothing sellable here
+
+      // Per-variant copy is carried ONLY when the family actually uses it.
+      // Where every variant shares the parent's blurb — the common case — the
+      // snapshot serialises exactly as it did before this field existed: no
+      // duplicated text, no bloat, no change for existing products.
+      const familyUsesVariantCopy = priced.some(({ v }) => clampDescription(v.description).length > 0);
+
+      const variants: StorefrontVariant[] = priced.map(({ v, price }) => {
+        const variant: StorefrontVariant = {
           productId: v.id,
           variantLabel: String(v.variantLabel || v.variant || ""),
           displayName: displayNameFor(p.name, v.variantLabel || v.variant),
           price,
           imageUrl: v.imageUrl ?? invImage(v.id) ?? p.imageUrl ?? null,
-        });
-      }
-      if (variants.length === 0) continue; // nothing sellable here
+        };
+        if (familyUsesVariantCopy) {
+          // Fall back to the root so switching tiers never blanks the panel.
+          const own = clampDescription(v.description) || description;
+          if (own) variant.description = own;
+        }
+        return variant;
+      });
       variants.sort((a, b) => a.price - b.price);
       const item: StorefrontItem = {
         productId: p.id,
