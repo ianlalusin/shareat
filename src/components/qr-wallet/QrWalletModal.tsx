@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Loader2, Pencil, Plus, QrCode } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +26,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSavedQrCodes } from "@/hooks/useSavedQrCodes";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
+import { pickOnlineQr } from "@/lib/qr/online-qr";
 import { cn } from "@/lib/utils";
 import type { SavedQrCode } from "@/lib/types";
 
@@ -58,6 +60,10 @@ export function QrWalletModal({
   const { qrCodes, loading, error } = useSavedQrCodes(storeId);
 
   const active = qrCodes.filter((qr) => qr.isActive !== false);
+
+  // pickOnlineQr, NOT a raw filter — so a double-flag (which rules cannot
+  // prevent) renders exactly one "Online" badge, never two.
+  const onlineQr = useMemo(() => pickOnlineQr(qrCodes), [qrCodes]);
 
   // This modal can open from inside the mobile nav Sheet — nested Radix portals
   // are exactly the case that strands an overlay and leaves the app unclickable.
@@ -129,6 +135,15 @@ export function QrWalletModal({
                       {qr.name}
                     </span>
                   </button>
+
+                  {onlineQr?.id === qr.id && (
+                    <Badge
+                      variant="secondary"
+                      className="absolute left-1 top-1 h-4 px-1 text-[10px] font-medium leading-none"
+                    >
+                      Online
+                    </Badge>
+                  )}
 
                   <RoleGuard allow={["admin", "manager"]} hideOnDeny>
                     <Button

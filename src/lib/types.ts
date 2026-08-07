@@ -827,6 +827,19 @@ export type SavedQrCode = {
   createdByName?: string | null;
   updatedAt: any;
   updatedByUid?: string;
+
+  /**
+   * When true, THIS is the QR shown to online-ordering customers on the
+   * website order page. At most one per store. Setting it on one QR clears
+   * it on every other QR in the same store. Deactivating or deleting the
+   * flagged QR clears the flag — a QR customers cannot be shown must not be
+   * the one they are shown.
+   *
+   * Flagging is a decision about which account receives money from the
+   * public, so it is manager/admin only (firestore.rules already scopes
+   * savedQrCodes as a config collection).
+   */
+  useForOnlineOrders?: boolean;
 };
 
 /**

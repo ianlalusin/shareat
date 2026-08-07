@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, ScanLine, ShieldAlert, Trash2 } from "lucide-react";
-import { collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 
 import { Button } from "@/components/ui/button";
@@ -18,13 +26,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { useAuthContext } from "@/context/auth-context";
 import { auth, db, storage } from "@/lib/firebase/client";
 import { guessProvider, maskAccountTail, parseEmvQr, type EmvQrInfo } from "@/lib/qr/emvco";
 import { initialsBadge } from "@/lib/qr/initials";
+import { planFlagChange } from "@/lib/qr/online-qr";
 import { cn } from "@/lib/utils";
 import type { SavedQrCode } from "@/lib/types";
+import { useSavedQrCodes } from "@/hooks/useSavedQrCodes";
 
 import { QrScanner } from "./QrScanner";
 
@@ -79,6 +91,13 @@ function base64ToBlob(base64: string, contentType: string): Blob {
 export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialogProps) {
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
+  const { appUser } = useAuthContext();
+  // Flagging picks who gets the public's money — manager/admin only, house idiom.
+  const canFlag =
+    appUser?.role === "admin" || appUser?.role === "manager" || !!appUser?.isPlatformAdmin;
+  // Needed to compute planFlagChange: which OTHER doc(s) in this store are
+  // currently flagged, so saving this one as the flagged QR clears them too.
+  const { qrCodes } = useSavedQrCodes(storeId);
 
   /** Id for this dialog session, fixed on open — also the icon's Storage folder. */
   const draftIdRef = useRef<string>("");
@@ -96,7 +115,13 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
   const [iconBusy, setIconBusy] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState<string | null>(null);
 
+  const [useForOnlineOrders, setUseForOnlineOrders] = useState(false);
+
   const isEditing = editing !== null;
+
+  // A brand-new QR is always created isActive: true (see the create path
+  // below), so only an existing, already-inactive doc can disable the switch.
+  const effectiveIsActive = editing ? editing.isActive !== false : true;
 
   useEffect(() => {
     if (!open) return;
@@ -116,6 +141,7 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
     setIcons([]);
     setSelectedIcon(null);
     setSaving(false);
+    setUseForOnlineOrders(editing?.useForOnlineOrders === true);
   }, [open, editing]);
 
   const warnings = info?.warnings ?? [];
@@ -213,8 +239,20 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
           }
         : {};
 
+      // This save's resulting isActive. Only the create path can set it here
+      // today — this dialog has no control to deactivate an existing QR — but
+      // it is written defensively: an inactive QR must never end up flagged,
+      // whatever isActive turns out to be (see nextFlag below).
+      const nextIsActive = editing ? editing.isActive !== false : true;
+      const nextFlag = useForOnlineOrders && nextIsActive;
+
+      // Single writeBatch for the whole save, including any OTHER doc's flag
+      // clear: a failure between "clear the old flag" and "set the new one"
+      // as two separate awaited calls would leave two QRs flagged at once.
+      const batch = writeBatch(db);
+
       if (editing) {
-        await updateDoc(doc(db, "stores", storeId, "savedQrCodes", editing.id), {
+        batch.update(doc(db, "stores", storeId, "savedQrCodes", editing.id), {
           name: trimmed,
           provider,
           payload,
@@ -224,6 +262,7 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
           iconSource,
           iconInitials: badge.initials,
           iconColor: badge.color,
+          useForOnlineOrders: nextFlag,
           updatedAt: serverTimestamp(),
           updatedByUid: auth.currentUser?.uid ?? "",
         });
@@ -243,14 +282,30 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
           iconSource,
           iconInitials: badge.initials,
           iconColor: badge.color,
+          useForOnlineOrders: nextFlag,
           createdAt: serverTimestamp(),
           createdAtMs: Date.now(),
           createdByUid: auth.currentUser?.uid ?? "",
           createdByName: auth.currentUser?.displayName ?? null,
           updatedAt: serverTimestamp(),
         };
-        await setDoc(target, record);
+        batch.set(target, record);
       }
+
+      // Clear the flag on every OTHER doc in the store that is currently
+      // flagged, in the SAME batch as the write above — planFlagChange already
+      // omits qrId's own entry when its state matches what we just wrote, but
+      // filter defensively so we never call batch.update() twice on one ref.
+      const otherChanges = planFlagChange(qrCodes, nextFlag ? qrId : null).filter(
+        (change) => change.id !== qrId,
+      );
+      for (const change of otherChanges) {
+        batch.update(doc(db, "stores", storeId, "savedQrCodes", change.id), {
+          useForOnlineOrders: change.useForOnlineOrders,
+        });
+      }
+
+      await batch.commit();
 
       toast({ title: isEditing ? "QR updated" : "QR saved", description: trimmed });
       onOpenChange(false);
@@ -273,9 +328,11 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
     onOpenChange,
     payload,
     provider,
+    qrCodes,
     selectedIcon,
     storeId,
     toast,
+    useForOnlineOrders,
   ]);
 
   const handleDelete = useCallback(async () => {
@@ -289,6 +346,9 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
     if (!ok) return;
 
     try {
+      // No separate flag cleanup needed: useForOnlineOrders lives on this doc,
+      // so deleting it deletes the flag along with everything else. Do not add
+      // a redundant clear-the-flag write here.
       await deleteDoc(doc(db, "stores", storeId, "savedQrCodes", editing.id));
       toast({ title: "QR deleted", description: editing.name });
       onOpenChange(false);
@@ -449,6 +509,32 @@ export function AddQrDialog({ open, onOpenChange, storeId, editing }: AddQrDialo
                   ))}
                 </div>
               </div>
+
+              {canFlag && (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="qr-online-flag" className="flex-1 break-words">
+                      Show this QR to online customers
+                    </Label>
+                    <Switch
+                      id="qr-online-flag"
+                      checked={useForOnlineOrders}
+                      onCheckedChange={setUseForOnlineOrders}
+                      disabled={!effectiveIsActive}
+                    />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {
+                      "Customers ordering on shareat.net will see this QR on their order page. Only one QR per branch can be the customer-facing one — turning this on turns it off for the others."
+                    }
+                  </p>
+                  {!effectiveIsActive && (
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-500">
+                      Reactivate this QR first.
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
