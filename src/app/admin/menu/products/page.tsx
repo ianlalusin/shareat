@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { collection, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, Timestamp, setDoc, getDocs, deleteDoc, query, where, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
+import { useStoreContext } from "@/context/store-context";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { RoleGuard } from "@/components/guards/RoleGuard";
@@ -37,6 +38,7 @@ import { Input } from "@/components/ui/input";
 export default function ProductManagementPage() {
   const router = useRouter();
   const { appUser } = useAuthContext();
+  const { activeStore } = useStoreContext();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -505,11 +507,13 @@ export default function ProductManagementPage() {
     };
 
     // Publish the public website storefront catalog snapshot (shareat.net/shop).
-    // The snapshot is rebuilt after toggling "Show on online store", saving an
-    // on-storefront product/variant, or editing the pilot store's inventory.
-    // Debounce + overlap handling live in the shared helper (one source of truth,
-    // also used by /manager/inventory). Targets the pilot store
-    // (NEXT_PUBLIC_STOREFRONT_STORE_ID).
+    // The snapshot is rebuilt after toggling "Show on online store" or saving
+    // an on-storefront product/variant (auto path, below — always targets the
+    // pilot store, NEXT_PUBLIC_STOREFRONT_STORE_ID, since a product edit here
+    // is global and not scoped to any one store). The manual "Rebuild
+    // Storefront" button targets whichever store is active instead — see
+    // handleRebuildStorefront. Debounce + overlap handling live in the shared
+    // helper (one source of truth, also used by /manager/inventory).
     const [isRebuildingStorefront, setIsRebuildingStorefront] = useState(false);
 
     const notifyAutoPublish = (r: StorefrontPublishResult) => {
@@ -518,17 +522,21 @@ export default function ProductManagementPage() {
     };
     const autoPublishStorefront = () => scheduleStorefrontAutoPublish(getStorefrontStoreId(), notifyAutoPublish);
 
-    // Manual "Rebuild Storefront" button — immediate, with loud config error.
+    // Manual "Rebuild Storefront" button — immediate, targets whichever store
+    // is currently selected in the header. The public site's branch picker can
+    // show any store meeting its own eligibility rules (acceptsOnlineOrders,
+    // isActive, geo) — it isn't limited to NEXT_PUBLIC_STOREFRONT_STORE_ID,
+    // which only matters for the automatic (debounced) publish path elsewhere
+    // on this page and on /manager/inventory.
     const handleRebuildStorefront = async () => {
         if (isRebuildingStorefront) return;
-        const storeId = getStorefrontStoreId();
-        if (!storeId) {
-            toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
+        if (!activeStore) {
+            toast({ variant: "destructive", title: "No store selected", description: "Pick a store from the header dropdown first." });
             return;
         }
         setIsRebuildingStorefront(true);
-        await publishStorefrontNow(storeId, (r) => {
-            if (r.ok) toast({ title: "Storefront catalog rebuilt", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} now live on the website.` });
+        await publishStorefrontNow(activeStore.id, (r) => {
+            if (r.ok) toast({ title: "Storefront catalog rebuilt", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} now live for ${activeStore.name}.` });
             else toast({ variant: "destructive", title: "Rebuild failed", description: r.error });
         });
         setIsRebuildingStorefront(false);
@@ -645,7 +653,7 @@ export default function ProductManagementPage() {
             <Button variant="outline" onClick={handleSyncInventoryMetadata} disabled={isSyncingInventory} title="Push the latest family / variant info from the products catalog into every store's inventory">
                 {isSyncingInventory ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Sync Inventory
             </Button>
-            <Button variant="outline" onClick={handleRebuildStorefront} disabled={isRebuildingStorefront} title="Rebuild the public website (shareat.net/shop) catalog from each store's online-enabled inventory">
+            <Button variant="outline" onClick={handleRebuildStorefront} disabled={isRebuildingStorefront} title={activeStore ? `Rebuild the public website (shareat.net/shop) catalog for ${activeStore.name} from its online-enabled inventory` : "Select a store first"}>
                 {isRebuildingStorefront ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Rebuild Storefront
             </Button>
             <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
