@@ -23,12 +23,27 @@ import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
 import { getDisplayName } from "@/lib/products/variants";
 import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
+import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
+
+/**
+ * Flip this on once every `catalogItems` entry is either linked and migrated
+ * (see scripts/backfill-customer-catalog.ts) or intentionally dropped.
+ *
+ * `rebuildCustomerCatalog` fully REPLACES `catalogCache/main` from
+ * `inventory.customerEnabled`. Until migration is complete, most stores'
+ * cache is still populated by the old catalogItems-based system; firing the
+ * new builder now would wipe every item that hasn't been migrated yet, not
+ * just leave them alone. Toggling `customerEnabled` in the UI before then is
+ * safe on its own (it only writes the inventory doc) — it just doesn't
+ * publish anywhere until this is turned on.
+ */
+const CUSTOMER_CATALOG_CUTOVER_LIVE = false;
 
 export default function InventoryManagementPage() {
   const router = useRouter();
@@ -253,12 +268,27 @@ export default function InventoryManagementPage() {
     return !Number.isFinite(op) || op <= 0;
   };
 
+  // Same withholding rule as the online price, applied to the customer app price.
+  const withheldByCustomerPrice = (item: InventoryItem): boolean => {
+    const raw = item.customerPrice;
+    if (raw === null || raw === undefined) return false;
+    const cp = Number(raw);
+    return !Number.isFinite(cp) || cp <= 0;
+  };
+
   // Republish the public storefront if this store is the storefront pilot store.
   // Inventory price / availability is the snapshot's pricing source, so changing
   // it here must refresh shareat.net/shop (debounced; no-op on other stores).
   const notifyPublish = (r: StorefrontPublishResult) => {
     if (r.ok) toast({ title: "Storefront updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the website.` });
     else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
+  };
+
+  // Republish this store's customer-app catalog cache. Every store publishes
+  // its own — there is no single pilot store here, unlike the public storefront.
+  const notifyCustomerPublish = (r: CustomerCatalogPublishResult) => {
+    if (r.ok) toast({ title: "Customer app updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the customer app.` });
+    else toast({ variant: "destructive", title: "Customer app auto-publish failed", description: r.error });
   };
 
   /**
@@ -268,7 +298,7 @@ export default function InventoryManagementPage() {
    * screen instead of silently reverting it. `null` only ever arrives for
    * onlinePrice, the one field where blank is a valid instruction.
    */
-  const handleQuickPrice = async (item: InventoryItem, field: 'cost' | 'sellingPrice' | 'onlinePrice', next: number | null) => {
+  const handleQuickPrice = async (item: InventoryItem, field: 'cost' | 'sellingPrice' | 'onlinePrice' | 'customerPrice', next: number | null) => {
     if (!activeStore || !appUser) return;
 
     // The edit dialog refuses to leave an add-on without a positive price; the
@@ -285,15 +315,17 @@ export default function InventoryManagementPage() {
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
     try {
       await updateDoc(itemDocRef, { [field]: next, updatedAt: serverTimestamp() });
-      // Cost is internal and never reaches the storefront; both prices do.
-      if (field !== 'cost') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
+      // Cost is internal and never reaches either channel. sellingPrice feeds
+      // both channels' fallback price, so it republishes both.
+      if (field === 'sellingPrice' || field === 'onlinePrice') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
+      if (CUSTOMER_CATALOG_CUTOVER_LIVE && (field === 'sellingPrice' || field === 'customerPrice')) scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Update Failed", description: error.message });
       throw error;
     }
   };
 
-  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; isAddon: boolean; }) => {
+  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; customerPrice: number | null; isAddon: boolean; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
@@ -303,7 +335,10 @@ export default function InventoryManagementPage() {
             updatedAt: serverTimestamp(),
         });
         toast({ title: "Item Updated", description: `${getDisplayName(item)} details have been saved.`});
+        // The form can touch sellingPrice/onlinePrice/customerPrice together, so
+        // republish both channels rather than tracking which fields changed.
         scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
+        if (CUSTOMER_CATALOG_CUTOVER_LIVE) scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     } finally {
@@ -314,16 +349,17 @@ export default function InventoryManagementPage() {
   
   // `isAddon` is no longer toggled from the table — it moved into the edit
   // dialog, next to the selling price and kitchen location it depends on.
-  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'onlineEnabled') => {
+  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'onlineEnabled' | 'customerEnabled') => {
     if (!activeStore || !appUser) return;
-    // `onlineEnabled` defaults to TRUE when absent (see InventoryItem), so its
-    // current state cannot be read with a plain `!!` — on an untouched item
-    // that would flip undefined to true and the first tap would do nothing.
-    const current = field === 'onlineEnabled' ? item.onlineEnabled !== false : !!item[field];
+    // `onlineEnabled`/`customerEnabled` are opt-in and default to FALSE when
+    // absent (see InventoryItem) — this must match the publisher's gate
+    // (`x?.onlineEnabled !== true`) or the toggle can show "on" for an item
+    // that was never actually published.
+    const current = (field === 'onlineEnabled' || field === 'customerEnabled') ? item[field] === true : !!item[field];
     const newStatus = !current;
 
     const action = newStatus ? "Enable" : "Disable";
-    const fieldName = field === 'isActive' ? 'availability' : 'online availability';
+    const fieldName = field === 'isActive' ? 'availability' : field === 'onlineEnabled' ? 'online availability' : 'customer app availability';
 
     const confirmed = await confirm({
         title: `${action} ${getDisplayName(item)}'s ${fieldName}?`,
@@ -331,12 +367,13 @@ export default function InventoryManagementPage() {
     });
 
     if (!confirmed) return;
-    
+
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
     try {
         await updateDoc(itemDocRef, { [field]: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Item Status Updated" });
         if (field === 'isActive' || field === 'onlineEnabled') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
+        if (CUSTOMER_CATALOG_CUTOVER_LIVE && field === 'customerEnabled') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     }
@@ -455,7 +492,7 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={7} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={9} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
@@ -466,13 +503,16 @@ export default function InventoryManagementPage() {
                         <TableHead className="w-[104px]">Store Price</TableHead>
                         <TableHead className="w-[70px]">Online</TableHead>
                         <TableHead className="w-[104px]">Online Price</TableHead>
+                        <TableHead className="w-[70px]">Customer</TableHead>
+                        <TableHead className="w-[104px]">Customer Price</TableHead>
                         <TableHead className="w-[132px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((item) => {
                       const label = getDisplayName(item);
-                      const online = item.onlineEnabled !== false;
+                      const online = item.onlineEnabled === true;
+                      const customer = item.customerEnabled === true;
                       return (
                       <TableRow key={item.id} className={cn(!item.isActive && !showArchived && "opacity-60")}>
                         <TableCell>
@@ -545,6 +585,40 @@ export default function InventoryManagementPage() {
                           )}
                         </TableCell>
                         <TableCell className="py-1">
+                          <Switch
+                            checked={customer}
+                            onCheckedChange={() => handleToggle(item, 'customerEnabled')}
+                            disabled={showArchived}
+                            aria-label={`Offer ${label} on the customer app`}
+                          />
+                        </TableCell>
+                        {/* Only meaningful while the item is offered on the customer app. */}
+                        <TableCell className="py-1">
+                          {customer ? (
+                            <>
+                              <QuickPriceCell
+                                value={item.customerPrice}
+                                allowEmpty
+                                placeholder={String(item.sellingPrice ?? 0)}
+                                disabled={showArchived}
+                                ariaLabel={`Customer app price for ${label} — blank matches the store price`}
+                                onCommit={(next) => handleQuickPrice(item, 'customerPrice', next)}
+                              />
+                              {withheldByCustomerPrice(item) && (
+                                <span
+                                  className="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-600"
+                                  title="Priced at 0 on the customer app, so it stays hidden there. Clear the box to charge the store price instead."
+                                >
+                                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                                  Not shown
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1">
                           <div className="flex items-center justify-end gap-0.5">
                             {showArchived ? (
                               <Button
@@ -597,7 +671,7 @@ export default function InventoryManagementPage() {
               {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
                 <TableBody>
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                       No results found for "{debouncedSearchTerm}".
                     </TableCell>
                   </TableRow>
@@ -627,6 +701,7 @@ export default function InventoryManagementPage() {
             item={selectedItem}
             kitchenLocations={kitchenLocations}
             onSave={handleEditItem}
+            onToggle={handleToggle}
             isSubmitting={isSubmitting}
         />
       )}

@@ -265,6 +265,19 @@ export type InventoryItem = {
    *                          public menu even while onlineEnabled is true.
    */
   onlinePrice?: number | null;
+  /**
+   * Per-branch availability on the CUSTOMER app, mirroring `onlineEnabled`
+   * exactly: opt-in, only an explicit `true` publishes the item at this
+   * store. Never affects dine-in or the public storefront.
+   */
+  customerEnabled?: boolean;
+  /**
+   * Per-branch CUSTOMER app price, in pesos. Same three states as
+   * `onlinePrice`: unset (missing/null) → charge the same as sellingPrice;
+   * positive number → charge that instead; 0 or negative → WITHHOLD the item
+   * from the customer app rather than falling back.
+   */
+  customerPrice?: number | null;
   kitchenLocationId?: string | null;
   kitchenLocationName?: string | null;
   createdAt: Timestamp;
