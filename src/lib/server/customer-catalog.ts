@@ -18,11 +18,9 @@ export type CustomerCatalogItem = {
  * gate exactly: `inventory.customerEnabled === true` is the ONLY gate. A
  * missing value means NOT offered.
  *
- * Pricing is `customerPrice ?? sellingPrice`, with the same withholding rule
- * as `onlinePrice`: a `customerPrice` that is set but not positive (0 or
- * negative) withholds the item rather than falling back — an item switched
- * on for the customer app but not yet priced there should not appear at the
- * table price by accident.
+ * Pricing is always `sellingPrice` — unlike Online, there is no separate
+ * customer-app price to set, so the two can never drift apart. An item with
+ * no positive `sellingPrice` is omitted rather than shown at ₱0.
  *
  * Unlike the old `catalogItems`-based cache, this is a pure projection with
  * no state of its own: every rebuild fully replaces `items`. There is no more
@@ -45,24 +43,6 @@ export async function rebuildCustomerCatalog(
 
   const invSnap = await db.collection(`stores/${storeId}/inventory`).get();
 
-  /**
-   * The price the customer app charges, or null when the item is not
-   * sellable there and must be omitted. Same two distinct states as
-   * `resolvePrice` in storefront-catalog.ts:
-   *   customerPrice UNSET (missing/null) → charge the dine-in `sellingPrice`.
-   *   customerPrice SET but not positive (0, negative) → WITHHELD.
-   */
-  function resolvePrice(inv: any): number | null {
-    const raw = inv.customerPrice;
-    if (raw !== null && raw !== undefined && raw !== "") {
-      const cp = Number(raw);
-      return Number.isFinite(cp) && cp > 0 ? cp : null;
-    }
-    const sp = Number(inv.sellingPrice ?? 0);
-    if (!Number.isFinite(sp) || sp <= 0) return null;
-    return sp;
-  }
-
   const items: CustomerCatalogItem[] = [];
   for (const d of invSnap.docs) {
     const inv = d.data() as any;
@@ -70,8 +50,8 @@ export async function rebuildCustomerCatalog(
     if (inv?.isArchived === true) continue;
     if (inv?.customerEnabled !== true) continue;
 
-    const price = resolvePrice(inv);
-    if (price == null) continue;
+    const price = Number(inv.sellingPrice ?? 0);
+    if (!Number.isFinite(price) || price <= 0) continue;
 
     const productId = String(inv.productId || "");
     const product = productById.get(productId);

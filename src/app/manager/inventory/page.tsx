@@ -254,14 +254,6 @@ export default function InventoryManagementPage() {
     return !Number.isFinite(op) || op <= 0;
   };
 
-  // Same withholding rule as the online price, applied to the customer app price.
-  const withheldByCustomerPrice = (item: InventoryItem): boolean => {
-    const raw = item.customerPrice;
-    if (raw === null || raw === undefined) return false;
-    const cp = Number(raw);
-    return !Number.isFinite(cp) || cp <= 0;
-  };
-
   // Republish the public storefront if this store is the storefront pilot store.
   // Inventory price / availability is the snapshot's pricing source, so changing
   // it here must refresh shareat.net/shop (debounced; no-op on other stores).
@@ -284,7 +276,7 @@ export default function InventoryManagementPage() {
    * screen instead of silently reverting it. `null` only ever arrives for
    * onlinePrice, the one field where blank is a valid instruction.
    */
-  const handleQuickPrice = async (item: InventoryItem, field: 'cost' | 'sellingPrice' | 'onlinePrice' | 'customerPrice', next: number | null) => {
+  const handleQuickPrice = async (item: InventoryItem, field: 'cost' | 'sellingPrice' | 'onlinePrice', next: number | null) => {
     if (!activeStore || !appUser) return;
 
     // The edit dialog refuses to leave an add-on without a positive price; the
@@ -302,16 +294,17 @@ export default function InventoryManagementPage() {
     try {
       await updateDoc(itemDocRef, { [field]: next, updatedAt: serverTimestamp() });
       // Cost is internal and never reaches either channel. sellingPrice feeds
-      // both channels' fallback price, so it republishes both.
+      // the online fallback price AND is always the customer app's price, so
+      // it republishes both; onlinePrice only ever affects the storefront.
       if (field === 'sellingPrice' || field === 'onlinePrice') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
-      if (field === 'sellingPrice' || field === 'customerPrice') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
+      if (field === 'sellingPrice') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Update Failed", description: error.message });
       throw error;
     }
   };
 
-  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; customerPrice: number | null; isAddon: boolean; }) => {
+  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; isAddon: boolean; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
@@ -321,8 +314,8 @@ export default function InventoryManagementPage() {
             updatedAt: serverTimestamp(),
         });
         toast({ title: "Item Updated", description: `${getDisplayName(item)} details have been saved.`});
-        // The form can touch sellingPrice/onlinePrice/customerPrice together, so
-        // republish both channels rather than tracking which fields changed.
+        // The form can touch sellingPrice/onlinePrice together, and sellingPrice
+        // is always the customer app's price too, so republish both channels.
         scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
         scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
@@ -478,7 +471,7 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={9} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={8} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
@@ -490,7 +483,6 @@ export default function InventoryManagementPage() {
                         <TableHead className="w-[70px]">Online</TableHead>
                         <TableHead className="w-[104px]">Online Price</TableHead>
                         <TableHead className="w-[70px]">Customer</TableHead>
-                        <TableHead className="w-[104px]">Customer Price</TableHead>
                         <TableHead className="w-[132px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -578,32 +570,6 @@ export default function InventoryManagementPage() {
                             aria-label={`Offer ${label} on the customer app`}
                           />
                         </TableCell>
-                        {/* Only meaningful while the item is offered on the customer app. */}
-                        <TableCell className="py-1">
-                          {customer ? (
-                            <>
-                              <QuickPriceCell
-                                value={item.customerPrice}
-                                allowEmpty
-                                placeholder={String(item.sellingPrice ?? 0)}
-                                disabled={showArchived}
-                                ariaLabel={`Customer app price for ${label} — blank matches the store price`}
-                                onCommit={(next) => handleQuickPrice(item, 'customerPrice', next)}
-                              />
-                              {withheldByCustomerPrice(item) && (
-                                <span
-                                  className="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-600"
-                                  title="Priced at 0 on the customer app, so it stays hidden there. Clear the box to charge the store price instead."
-                                >
-                                  <AlertTriangle className="h-3 w-3 shrink-0" />
-                                  Not shown
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
                         <TableCell className="py-1">
                           <div className="flex items-center justify-end gap-0.5">
                             {showArchived ? (
@@ -657,7 +623,7 @@ export default function InventoryManagementPage() {
               {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
                 <TableBody>
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       No results found for "{debouncedSearchTerm}".
                     </TableCell>
                   </TableRow>

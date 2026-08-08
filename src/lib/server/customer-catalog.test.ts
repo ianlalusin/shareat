@@ -71,27 +71,21 @@ describe("rebuildCustomerCatalog", () => {
     expect(items).toHaveLength(0);
   });
 
-  it("falls back to sellingPrice when customerPrice is unset", async () => {
+  it("always charges the store's sellingPrice — there is no separate customer price", async () => {
     const p = product("p1");
-    const { items } = await build({ products: [p], inventory: [inv("p1", 300, { customerPrice: null })] });
+    const { items } = await build({ products: [p], inventory: [inv("p1", 300)] });
     expect(items[0].price).toBe(300);
   });
 
-  it("charges customerPrice when it is a positive number", async () => {
+  it("withholds the item when sellingPrice is 0 rather than showing it for free", async () => {
     const p = product("p1");
-    const { items } = await build({ products: [p], inventory: [inv("p1", 300, { customerPrice: 350 })] });
-    expect(items[0].price).toBe(350);
-  });
-
-  it("withholds the item when customerPrice is 0 rather than falling back", async () => {
-    const p = product("p1");
-    const { items } = await build({ products: [p], inventory: [inv("p1", 300, { customerPrice: 0 })] });
+    const { items } = await build({ products: [p], inventory: [inv("p1", 0)] });
     expect(items).toHaveLength(0);
   });
 
-  it("withholds the item when customerPrice is negative", async () => {
+  it("withholds the item when sellingPrice is negative", async () => {
     const p = product("p1");
-    const { items } = await build({ products: [p], inventory: [inv("p1", 300, { customerPrice: -5 })] });
+    const { items } = await build({ products: [p], inventory: [inv("p1", -5)] });
     expect(items).toHaveLength(0);
   });
 

@@ -19,11 +19,10 @@ import { Info } from "lucide-react";
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
   sellingPrice: z.coerce.number().min(0, "Selling price must be a positive number."),
-  // Optional per-branch online/customer price. NOT `z.coerce.number()` —
-  // coercion turns null into 0, which is exactly the "no override" state we
-  // must preserve.
+  // Optional per-branch online price. NOT `z.coerce.number()` — coercion
+  // turns null into 0, which is exactly the "no override" state we must
+  // preserve.
   onlinePrice: z.number().min(0, "Online price cannot be negative.").nullable().optional(),
-  customerPrice: z.number().min(0, "Customer price cannot be negative.").nullable().optional(),
   isAddon: z.boolean(),
   kitchenLocationId: z.string().nullable().optional(),
 });
@@ -119,33 +118,23 @@ function CurrencyFormField({ name, label, form, uom }: { name: "cost" | "selling
 }
 
 /**
- * Optional per-branch channel price (Online or Customer app).
+ * Optional per-branch online price.
  *
  * Deliberately NOT built on `CurrencyFormField`: that one coerces a blank
  * input to 0 on blur, which here would destroy the "no override" state.
- * Blank must stay blank and save as `null`, so the channel falls back to the
- * dine-in selling price.
+ * Blank must stay blank and save as `null`, so the storefront falls back to
+ * the dine-in selling price.
  */
-function ChannelPriceFormField({
-  form,
-  item,
-  name,
-  label,
-}: {
-  form: any;
-  item: InventoryItem;
-  name: "onlinePrice" | "customerPrice";
-  label: string;
-}) {
+function OnlinePriceFormField({ form, item }: { form: any; item: InventoryItem }) {
     const [displayValue, setDisplayValue] = React.useState(() => {
-        const v = form.getValues(name);
+        const v = form.getValues("onlinePrice");
         return v == null ? "" : String(v);
     });
 
     React.useEffect(() => {
-        const v = form.getValues(name);
+        const v = form.getValues("onlinePrice");
         setDisplayValue(v == null ? "" : String(v));
-    }, [form, item, name]);
+    }, [form, item]);
 
     // Track the value being saved, not the stored one — if the manager is also
     // editing the selling price, that is what "leave blank to match" will mean.
@@ -165,10 +154,10 @@ function ChannelPriceFormField({
     return (
         <FormField
             control={form.control}
-            name={name}
+            name="onlinePrice"
             render={({ field }) => (
                 <FormItem>
-                    <FormLabel>{label} (per {item.uom})</FormLabel>
+                    <FormLabel>Online Price (per {item.uom})</FormLabel>
                     <div className="relative">
                         <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                             ₱
@@ -228,7 +217,6 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
       cost: item.cost || 0,
       sellingPrice: item.sellingPrice || 0,
       onlinePrice: item.onlinePrice ?? null,
-      customerPrice: item.customerPrice ?? null,
       isAddon: !!item.isAddon,
       kitchenLocationId: item.kitchenLocationId || null,
     },
@@ -247,7 +235,6 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
       cost: item.cost || 0,
       sellingPrice: item.sellingPrice || 0,
       onlinePrice: item.onlinePrice ?? null,
-      customerPrice: item.customerPrice ?? null,
       isAddon: !!item.isAddon,
       kitchenLocationId: item.kitchenLocationId || null,
     });
@@ -265,8 +252,8 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
 
   const onSubmit = (data: FormValues) => {
     // Never hand Firestore an `undefined` — an untouched blank field must
-    // persist as an explicit null ("no channel override").
-    onSave(item, { ...data, onlinePrice: data.onlinePrice ?? null, customerPrice: data.customerPrice ?? null });
+    // persist as an explicit null ("no online override").
+    onSave(item, { ...data, onlinePrice: data.onlinePrice ?? null });
   };
 
   return (
@@ -350,7 +337,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
                   checked={onlineEnabled}
                   onCheckedChange={() => handleToggleClick("onlineEnabled")}
                 />
-                <ChannelPriceFormField form={form} item={item} name="onlinePrice" label="Online Price" />
+                <OnlinePriceFormField form={form} item={item} />
               </TabsContent>
 
               <TabsContent value="customer" className="space-y-4">
@@ -360,7 +347,9 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
                   checked={customerEnabled}
                   onCheckedChange={() => handleToggleClick("customerEnabled")}
                 />
-                <ChannelPriceFormField form={form} item={item} name="customerPrice" label="Customer Price" />
+                <p className="text-xs text-muted-foreground">
+                  Always charges the store price (₱{Number(form.watch("sellingPrice") ?? item.sellingPrice ?? 0).toFixed(2)}) — there's no separate customer app price, so it can never drift from the counter.
+                </p>
               </TabsContent>
             </Tabs>
           </form>
