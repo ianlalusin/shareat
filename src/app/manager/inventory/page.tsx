@@ -15,9 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, Package, ArrowLeft, AlertTriangle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { QuickPriceCell } from "@/components/manager/inventory/quick-price-cell";
+import OptionGroupsClient from "@/components/admin/option-groups/OptionGroupsClient";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
@@ -421,11 +423,21 @@ export default function InventoryManagementPage() {
 
   return (
     <RoleGuard allow={["admin", "manager"]}>
-      <PageHeader title="Inventory Management" description={`Manage stock for ${activeStore.name}`}>
+      <PageHeader title="Menu" description={`Manage products, pricing, and availability for ${activeStore.name}`}>
         <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => router.back()}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Button>
+        </div>
+      </PageHeader>
+      <Tabs defaultValue="main-menu">
+        <TabsList className="mb-4">
+          <TabsTrigger value="main-menu">Main Menu</TabsTrigger>
+          <TabsTrigger value="menu-options">Menu Options</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="main-menu">
+      <div className="mb-4 flex justify-end gap-2">
             <Button onClick={handleBackfill} variant="outline" disabled={isBackfilling}>
                 {isBackfilling ? <Loader className="animate-spin mr-2"/> : <RefreshCw className="mr-2" />}
                 Backfill Data
@@ -434,8 +446,7 @@ export default function InventoryManagementPage() {
               <PlusCircle className="mr-2" />
               Add Products to Inventory
             </Button>
-        </div>
-      </PageHeader>
+      </div>
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
@@ -635,6 +646,12 @@ export default function InventoryManagementPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="menu-options">
+          <OptionGroupsClient />
+        </TabsContent>
+      </Tabs>
 
       {isAddDialogOpen && (
         <AddInventoryDialog
@@ -657,7 +674,7 @@ export default function InventoryManagementPage() {
             isSubmitting={isSubmitting}
         />
       )}
-      
+
       {Dialog}
     </RoleGuard>
   );

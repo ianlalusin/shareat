@@ -2,16 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { RoleGuard } from "@/components/guards/RoleGuard";
-import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
-import { Loader2, Plus, Pencil, Archive, RefreshCw, ArrowLeft, Store } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Loader2, Plus, Pencil, Archive, RefreshCw, Store } from "lucide-react";
 import { useStoreContext } from "@/context/store-context";
 import { useAuthContext } from "@/context/auth-context";
 import { OptionGroupEditDialog } from "@/components/admin/option-groups/OptionGroupEditDialog";
@@ -21,7 +18,6 @@ import type { OptionGroup } from "@/lib/types";
 const vKey = (groupId: string, valueId: string) => `${groupId}:${valueId}`;
 
 export default function OptionGroupsClient() {
-  const router = useRouter();
   const { toast } = useToast();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const { activeStore, activeStoreId } = useStoreContext();
@@ -187,19 +183,17 @@ export default function OptionGroupsClient() {
   }
 
   return (
-    <RoleGuard allow={["admin", "manager"]}>
-      <PageHeader
-        title={isAdmin ? "Option Groups" : "Menu Option Availability"}
-        description={
-          isAdmin
-            ? "Reusable modifier groups (e.g. Cheese, Size) that can be attached to products."
-            : "Turn each option group or value on or off for your store. The groups themselves are managed centrally."
-        }
-      >
+    <div>
+      <div className="mb-4 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold">{isAdmin ? "Option Groups" : "Menu Option Availability"}</h2>
+          <p className="text-sm text-muted-foreground">
+            {isAdmin
+              ? "Reusable modifier groups (e.g. Cheese, Size) that can be attached to products."
+              : "Turn each option group or value on or off for your store. The groups themselves are managed centrally."}
+          </p>
+        </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => router.back()}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
           <Button variant="outline" size="sm" onClick={load} disabled={isLoading}>
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
@@ -214,7 +208,7 @@ export default function OptionGroupsClient() {
             </>
           )}
         </div>
-      </PageHeader>
+      </div>
 
       {activeStoreId && (
         <div className="mb-3 flex items-start gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
@@ -361,6 +355,6 @@ export default function OptionGroupsClient() {
       )}
 
       {ConfirmDialog}
-    </RoleGuard>
+    </div>
   );
 }

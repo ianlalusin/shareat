@@ -160,7 +160,7 @@ export async function POST(req: Request) {
           return bad(
             d?.storeId === storeId
               ? `You already have a pending request for "${name}".`
-              : `${d?.storeName || "Another store"} already has a pending request for "${name}". Once an admin approves it you can import it from Inventory Management.`,
+              : `${d?.storeName || "Another store"} already has a pending request for "${name}". Once an admin approves it you can import it from Menu.`,
             409
           );
         }
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
         const catalogDup = await findCatalogDuplicate(db, nameKey);
         if (catalogDup) {
           return bad(
-            `"${catalogDup.name}" is already in the global catalog. Add it to your store from Inventory Management → Add Products to Inventory.`,
+            `"${catalogDup.name}" is already in the global catalog. Add it to your store from Menu → Add Products to Inventory.`,
             409
           );
         }
@@ -298,7 +298,7 @@ export async function POST(req: Request) {
             return NextResponse.json(
               {
                 ok: false,
-                error: `"${dup.name}" already exists in the catalog. Decline this request instead — the store can import the existing product from Inventory Management.`,
+                error: `"${dup.name}" already exists in the catalog. Decline this request instead — the store can import the existing product from Menu.`,
                 duplicateProductId: dup.id,
               },
               { status: 409 }
@@ -337,7 +337,7 @@ export async function POST(req: Request) {
         const autoActivationNote =
           autoActivation === "activated"
             ? null
-            : "Add-on not enabled: the requesting store's kitchen station is missing or inactive. Pick one in Inventory Management, then flip the Is Add-on switch.";
+            : "Add-on not enabled: the requesting store's kitchen station is missing or inactive. Pick one in Menu, then flip the Is Add-on switch.";
 
         const batch = db.batch();
 

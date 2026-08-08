@@ -346,7 +346,7 @@ export function ProductRequestDialog({
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <p className="text-xs">
                     <span className="font-medium">&quot;{duplicate.name}&quot; already exists</span> in the
-                    global catalog. You can add it to your store directly from Inventory Management →
+                    global catalog. You can add it to your store directly from Menu →
                     Add Products to Inventory — no request needed.
                   </p>
                 </div>
