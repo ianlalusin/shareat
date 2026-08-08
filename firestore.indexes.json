@@ -99,6 +99,14 @@
         { "fieldPath": "applicableStoreIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "isArchived", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "onlineOrders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "customerPhone", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
