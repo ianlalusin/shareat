@@ -31,20 +31,6 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 
-/**
- * Flip this on once every `catalogItems` entry is either linked and migrated
- * (see scripts/backfill-customer-catalog.ts) or intentionally dropped.
- *
- * `rebuildCustomerCatalog` fully REPLACES `catalogCache/main` from
- * `inventory.customerEnabled`. Until migration is complete, most stores'
- * cache is still populated by the old catalogItems-based system; firing the
- * new builder now would wipe every item that hasn't been migrated yet, not
- * just leave them alone. Toggling `customerEnabled` in the UI before then is
- * safe on its own (it only writes the inventory doc) — it just doesn't
- * publish anywhere until this is turned on.
- */
-const CUSTOMER_CATALOG_CUTOVER_LIVE = false;
-
 export default function InventoryManagementPage() {
   const router = useRouter();
   const { appUser } = useAuthContext();
@@ -318,7 +304,7 @@ export default function InventoryManagementPage() {
       // Cost is internal and never reaches either channel. sellingPrice feeds
       // both channels' fallback price, so it republishes both.
       if (field === 'sellingPrice' || field === 'onlinePrice') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
-      if (CUSTOMER_CATALOG_CUTOVER_LIVE && (field === 'sellingPrice' || field === 'customerPrice')) scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
+      if (field === 'sellingPrice' || field === 'customerPrice') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Update Failed", description: error.message });
       throw error;
@@ -338,7 +324,7 @@ export default function InventoryManagementPage() {
         // The form can touch sellingPrice/onlinePrice/customerPrice together, so
         // republish both channels rather than tracking which fields changed.
         scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
-        if (CUSTOMER_CATALOG_CUTOVER_LIVE) scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
+        scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     } finally {
@@ -373,7 +359,7 @@ export default function InventoryManagementPage() {
         await updateDoc(itemDocRef, { [field]: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Item Status Updated" });
         if (field === 'isActive' || field === 'onlineEnabled') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
-        if (CUSTOMER_CATALOG_CUTOVER_LIVE && field === 'customerEnabled') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
+        if (field === 'customerEnabled') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     }

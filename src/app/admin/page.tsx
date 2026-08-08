@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardCheck, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle, Gift, ShoppingBag, History } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardCheck, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Settings2, MessageCircle, Gift, ShoppingBag, History } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
@@ -29,7 +29,6 @@ const managerTools = [
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
     { title: "Product Requests", description: "Apply to add a new product or add-on to the global catalog.", href: "/manager/product-requests", icon: ClipboardCheck },
-    { title: "Customer App Catalog", description: "Manage customer menu items and link each to a POS product.", href: "/admin/customer-catalog", icon: Smartphone },
     { title: "Online Orders", description: "Accept and fulfill orders placed on the public website storefront.", href: "/admin/online-orders", icon: ShoppingBag },
     { title: "Menu Option Availability", description: "Turn add-on options (dips, extras, upgrades) on or off for your store.", href: "/admin/menu/option-groups", icon: Settings2 },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
