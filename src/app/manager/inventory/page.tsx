@@ -13,11 +13,11 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, MoreHorizontal, Package, ArrowLeft } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, Package, ArrowLeft } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
+import { QuickPriceCell } from "@/components/manager/inventory/quick-price-cell";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Label } from "@/components/ui/label";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import Image from "next/image";
 
 export default function InventoryManagementPage() {
@@ -242,15 +242,6 @@ export default function InventoryManagementPage() {
     }
   };
 
-  // The online price only when it is a real override — mirrors the catalog
-  // builder's rule (positive finite number wins, anything else falls back to
-  // sellingPrice), so the badge shows exactly what the storefront will charge.
-  const onlinePriceOverride = (item: InventoryItem): number | null => {
-    const op = Number(item.onlinePrice ?? 0);
-    if (!Number.isFinite(op) || op <= 0) return null;
-    return op === Number(item.sellingPrice ?? 0) ? null : op;
-  };
-
   // Republish the public storefront if this store is the storefront pilot store.
   // Inventory price / availability is the snapshot's pricing source, so changing
   // it here must refresh shareat.net/shop (debounced; no-op on other stores).
@@ -259,7 +250,39 @@ export default function InventoryManagementPage() {
     else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
   };
 
-  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; }) => {
+  /**
+   * Inline table edit of one price field.
+   *
+   * Throws on failure so QuickPriceCell keeps the manager's typed value on
+   * screen instead of silently reverting it. `null` only ever arrives for
+   * onlinePrice, the one field where blank is a valid instruction.
+   */
+  const handleQuickPrice = async (item: InventoryItem, field: 'cost' | 'sellingPrice' | 'onlinePrice', next: number | null) => {
+    if (!activeStore || !appUser) return;
+
+    // The edit dialog refuses to leave an add-on without a positive price; the
+    // fast path must not become a way around that.
+    if (field === 'sellingPrice' && item.isAddon && (next ?? 0) <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Add-ons need a price",
+        description: `"${getDisplayName(item)}" is an add-on, so its store price must be greater than 0.`,
+      });
+      throw new Error("add-on requires a positive selling price");
+    }
+
+    const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
+    try {
+      await updateDoc(itemDocRef, { [field]: next, updatedAt: serverTimestamp() });
+      // Cost is internal and never reaches the storefront; both prices do.
+      if (field !== 'cost') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Update Failed", description: error.message });
+      throw error;
+    }
+  };
+
+  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; isAddon: boolean; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
@@ -278,7 +301,9 @@ export default function InventoryManagementPage() {
     }
   };
   
-  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'isAddon' | 'onlineEnabled') => {
+  // `isAddon` is no longer toggled from the table — it moved into the edit
+  // dialog, next to the selling price and kitchen location it depends on.
+  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'onlineEnabled') => {
     if (!activeStore || !appUser) return;
     // `onlineEnabled` defaults to TRUE when absent (see InventoryItem), so its
     // current state cannot be read with a plain `!!` — on an untouched item
@@ -286,24 +311,8 @@ export default function InventoryManagementPage() {
     const current = field === 'onlineEnabled' ? item.onlineEnabled !== false : !!item[field];
     const newStatus = !current;
 
-    if (field === 'isAddon' && newStatus) {
-        if ((item.sellingPrice ?? 0) <= 0 || !item.kitchenLocationId) {
-            toast({
-                variant: "default",
-                title: "Additional Info Required",
-                description: `Please set a selling price and kitchen location to enable "${getDisplayName(item)}" as an add-on.`
-            });
-            setSelectedItem(item);
-            setIsEditOpen(true);
-            return;
-        }
-    }
-    
     const action = newStatus ? "Enable" : "Disable";
-    const fieldName =
-      field === 'isActive' ? 'availability'
-      : field === 'onlineEnabled' ? 'online availability'
-      : 'add-on status';
+    const fieldName = field === 'isActive' ? 'availability' : 'online availability';
 
     const confirmed = await confirm({
         title: `${action} ${getDisplayName(item)}'s ${fieldName}?`,
@@ -435,100 +444,127 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={8} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={7} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
                     <TableRow>
-                        <TableHead>Image</TableHead>
+                        <TableHead className="w-[64px]">Image</TableHead>
                         <TableHead>Product</TableHead>
-                        <TableHead>Cost</TableHead>
-                        <TableHead>Selling Price</TableHead>
-                        <TableHead>Is Add-on</TableHead>
-                        <TableHead>Online</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead className="w-[104px]">Cost</TableHead>
+                        <TableHead className="w-[104px]">Store Price</TableHead>
+                        <TableHead className="w-[70px]">Online</TableHead>
+                        <TableHead className="w-[104px]">Online Price</TableHead>
+                        <TableHead className="w-[132px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {items.map((item) => {
-                      const onlineOverride = onlinePriceOverride(item);
+                      const label = getDisplayName(item);
+                      const online = item.onlineEnabled !== false;
                       return (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.id} className={cn(!item.isActive && !showArchived && "opacity-60")}>
                         <TableCell>
                             <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
                                 {item.imageUrl ? (
-                                    <Image src={item.imageUrl} alt={getDisplayName(item)} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                    <Image src={item.imageUrl} alt={label} fill style={{objectFit:"cover"}} className="rounded-md" />
                                 ) : (
                                     <Package className="h-6 w-6 text-muted-foreground"/>
                                 )}
                             </div>
                         </TableCell>
-                        <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
-                        <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
+                        {/* Wraps to two lines rather than stretching the row — the
+                            price columns are what this table is scanned for. */}
                         <TableCell className="py-1">
-                          <div className="flex items-center gap-2">
-                            <span>₱{(item.sellingPrice || 0).toFixed(2)}</span>
-                            {onlineOverride !== null && (
-                              <Badge variant="outline" className="font-normal whitespace-nowrap" title="This item is priced differently on the online store.">
-                                Online ₱{onlineOverride.toFixed(2)}
-                              </Badge>
-                            )}
-                          </div>
+                          <span
+                            className="block max-w-[220px] whitespace-normal break-words leading-snug line-clamp-2 font-medium"
+                            title={label}
+                          >
+                            {label}
+                          </span>
                         </TableCell>
                         <TableCell className="py-1">
-                          <Switch
-                            checked={!!item.isAddon}
-                            onCheckedChange={() => handleToggle(item, 'isAddon')}
+                          <QuickPriceCell
+                            value={item.cost}
                             disabled={showArchived}
+                            ariaLabel={`Cost for ${label}`}
+                            onCommit={(next) => handleQuickPrice(item, 'cost', next)}
+                          />
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <QuickPriceCell
+                            value={item.sellingPrice}
+                            disabled={showArchived}
+                            ariaLabel={`Store price for ${label}`}
+                            onCommit={(next) => handleQuickPrice(item, 'sellingPrice', next)}
                           />
                         </TableCell>
                         <TableCell className="py-1">
                           <Switch
-                            checked={item.onlineEnabled !== false}
+                            checked={online}
                             onCheckedChange={() => handleToggle(item, 'onlineEnabled')}
                             disabled={showArchived}
-                            aria-label="Offer this item on the online store"
+                            aria-label={`Offer ${label} on the online store`}
                           />
                         </TableCell>
+                        {/* Only meaningful while the item is offered online. */}
                         <TableCell className="py-1">
-                          <Badge variant={item.isActive ? "default" : "secondary"}>
-                            {item.isActive ? "Active" : "Inactive"}
-                          </Badge>
+                          {online ? (
+                            <QuickPriceCell
+                              value={item.onlinePrice}
+                              allowEmpty
+                              placeholder={String(item.sellingPrice ?? 0)}
+                              disabled={showArchived}
+                              ariaLabel={`Online price for ${label} — blank matches the store price`}
+                              onCommit={(next) => handleQuickPrice(item, 'onlinePrice', next)}
+                            />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
                         </TableCell>
-                        <TableCell className="text-right py-1">
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                    {showArchived ? (
-                                        <DropdownMenuItem onClick={() => handleRestoreItem(item)} disabled={!appUser?.isPlatformAdmin}>
-                                            <RefreshCw className="mr-2 h-4 w-4" /> Restore
-                                        </DropdownMenuItem>
-                                    ) : (
-                                        <>
-                                            <DropdownMenuItem onClick={() => { setSelectedItem(item); setIsEditOpen(true); }}>
-                                                <Pencil className="mr-2 h-4 w-4" /> Edit
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem onClick={() => handleToggle(item, 'isActive')}>
-                                                {item.isActive ? <PowerOff className="mr-2 h-4 w-4 text-destructive" /> : <Power className="mr-2 h-4 w-4" />}
-                                                {item.isActive ? 'Deactivate' : 'Activate'}
-                                            </DropdownMenuItem>
-                                            {appUser?.isPlatformAdmin && (
-                                                <>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => handleDeleteItem(item)}>
-                                                        <Archive className="mr-2 h-4 w-4" /> Archive
-                                                    </DropdownMenuItem>
-                                                </>
-                                            )}
-                                        </>
-                                    )}
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                        <TableCell className="py-1">
+                          <div className="flex items-center justify-end gap-0.5">
+                            {showArchived ? (
+                              <Button
+                                variant="ghost" size="icon" title="Restore"
+                                disabled={!appUser?.isPlatformAdmin}
+                                onClick={() => handleRestoreItem(item)}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                                <span className="sr-only">Restore {label}</span>
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="ghost" size="icon"
+                                  title={item.isActive ? "Active — click to deactivate" : "Inactive — click to activate"}
+                                  onClick={() => handleToggle(item, 'isActive')}
+                                >
+                                  {item.isActive
+                                    ? <Power className="h-4 w-4 text-emerald-600" />
+                                    : <PowerOff className="h-4 w-4 text-muted-foreground" />}
+                                  <span className="sr-only">{item.isActive ? "Deactivate" : "Activate"} {label}</span>
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon" title="Edit"
+                                  onClick={() => { setSelectedItem(item); setIsEditOpen(true); }}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                  <span className="sr-only">Edit {label}</span>
+                                </Button>
+                                {appUser?.isPlatformAdmin && (
+                                  <Button
+                                    variant="ghost" size="icon" title="Archive"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => handleDeleteItem(item)}
+                                  >
+                                    <Archive className="h-4 w-4" />
+                                    <span className="sr-only">Archive {label}</span>
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       );
@@ -539,7 +575,7 @@ export default function InventoryManagementPage() {
               {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
                 <TableBody>
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       No results found for "{debouncedSearchTerm}".
                     </TableCell>
                   </TableRow>

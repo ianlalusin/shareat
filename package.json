@@ -17,7 +17,8 @@
     "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
     "build:storeConfig": "tsx scripts/build-store-config.ts",
-    "seed:grillerCharge": "tsx scripts/seed-griller-charge.ts"
+    "seed:grillerCharge": "tsx scripts/seed-griller-charge.ts",
+    "backfill:onlineEnabled": "tsx scripts/backfill-online-enabled.ts"
   },
   "engines": {
     "node": ">=20 <21"

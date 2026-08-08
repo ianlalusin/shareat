@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import type { InventoryItem, KitchenLocation } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 import { Info } from "lucide-react";
 
 const formSchema = z.object({
@@ -20,34 +21,33 @@ const formSchema = z.object({
   // Optional per-branch online price. NOT `z.coerce.number()` — coercion turns
   // null into 0, which is exactly the "no override" state we must preserve.
   onlinePrice: z.number().min(0, "Online price cannot be negative.").nullable().optional(),
+  isAddon: z.boolean(),
   kitchenLocationId: z.string().nullable().optional(),
 });
 
-// We need a conditional validator
-const refinedFormSchema = (isAddon: boolean) => formSchema.refine(
-  (data) => {
-    if (isAddon) {
-      return data.sellingPrice > 0;
-    }
-    return true;
-  },
-  {
-    message: "Selling price must be greater than 0 for an add-on.",
-    path: ["sellingPrice"],
+/**
+ * The add-on requirements now validate against what the manager is setting in
+ * this form, not against the item's saved state. `isAddon` used to be toggled
+ * from the table, so the schema was built from a fixed boolean; now that the
+ * switch lives here, enabling it must immediately demand a price and a kitchen.
+ */
+const refinedFormSchema = formSchema.superRefine((data, ctx) => {
+  if (!data.isAddon) return;
+  if (data.sellingPrice <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sellingPrice"],
+      message: "Selling price must be greater than 0 for an add-on.",
+    });
   }
-).refine(
-    (data) => {
-        if (isAddon) {
-            return !!data.kitchenLocationId;
-        }
-        return true;
-    },
-    {
-        message: "Kitchen location is required for an add-on.",
-        path: ["kitchenLocationId"],
-    }
-);
-
+  if (!data.kitchenLocationId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["kitchenLocationId"],
+      message: "Kitchen location is required for an add-on.",
+    });
+  }
+});
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -183,11 +183,12 @@ function OnlinePriceFormField({ form, item }: { form: any; item: InventoryItem }
 
 export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
   const form = useForm<FormValues>({
-    resolver: zodResolver(refinedFormSchema(item.isAddon || false)),
+    resolver: zodResolver(refinedFormSchema),
     defaultValues: {
       cost: item.cost || 0,
       sellingPrice: item.sellingPrice || 0,
       onlinePrice: item.onlinePrice ?? null,
+      isAddon: !!item.isAddon,
       kitchenLocationId: item.kitchenLocationId || null,
     },
   });
@@ -198,6 +199,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
         cost: item.cost || 0,
         sellingPrice: item.sellingPrice || 0,
         onlinePrice: item.onlinePrice ?? null,
+        isAddon: !!item.isAddon,
         kitchenLocationId: item.kitchenLocationId || null,
       });
     }
@@ -218,7 +220,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="edit-item-form" className="space-y-4">
-            {item.isAddon && (
+            {form.watch("isAddon") && (
                 <Alert>
                     <Info className="h-4 w-4" />
                     <AlertTitle>Add-on Requirements</AlertTitle>
@@ -244,6 +246,23 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
                         </SelectContent>
                     </Select>
                     <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="isAddon"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                  <div className="space-y-0.5">
+                    <FormLabel>Add-on</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      Offer this as an add-on at the counter. Needs a selling price and a kitchen location.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
                 </FormItem>
               )}
             />

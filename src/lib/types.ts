@@ -63,13 +63,13 @@ export type Product = {
    */
   isArchived?: boolean;
   /**
-   * When true, this product is purchasable on the public SharEat website
-   * storefront (shareat.net/shop). The storefront catalog snapshot is built
-   * from products with this flag set that also have an active, positively
-   * priced inventory record at the storefront's pilot store. Pricing always
-   * comes from that store's inventory.sellingPrice — never from the product.
+   * RETIRED — do not reintroduce. Online availability used to be a single
+   * global flag here, which meant only an admin could decide what any store
+   * sold online, for every store at once. It is now per-branch and opt-in on
+   * the store's own inventory record: see InventoryItem.onlineEnabled. The
+   * field may still exist on old product documents; nothing reads it.
    */
-  showOnStorefront?: boolean;
+  showOnStorefront?: never;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -243,11 +243,12 @@ export type InventoryItem = {
   isAddon?: boolean;
   isArchived?: boolean;
   /**
-   * Per-branch online availability. The GLOBAL products/{id}.showOnStorefront
-   * decides what MAY be sold online; this decides whether THIS branch offers
-   * it. Missing or true = offered (so existing inventory keeps publishing
-   * unchanged); false = this branch withholds it online only. Never affects
-   * dine-in.
+   * Per-branch online availability, and the ONLY gate on what the public
+   * storefront sells (the global products/{id}.showOnStorefront flag was
+   * retired in favour of this). Opt-in: only an explicit `true` publishes the
+   * item at this store, so a store's internal inventory cannot reach the
+   * public menu by default. Never affects dine-in — an item withheld online
+   * is still sold at the table.
    */
   onlineEnabled?: boolean;
   /**

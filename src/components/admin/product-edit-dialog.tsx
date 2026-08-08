@@ -46,7 +46,6 @@ const formSchema = z.object({
   uom: z.string().optional(),
   barcode: z.string().optional(),
   isActive: z.boolean().default(true),
-  showOnStorefront: z.boolean().default(false),
   optionGroupIds: z.array(z.string()).optional(),
 });
 
@@ -146,7 +145,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, showOnStorefront: false, optionGroupIds: [], },
+    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, optionGroupIds: [], },
   });
   const hasVariants = useWatch({ control: form.control, name: 'hasVariants'});
   
@@ -167,7 +166,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         uom: product ? normalizeUom(product.uom) : 'pcs',
         barcode: product?.barcode || "",
         isActive: product?.isActive ?? true,
-        showOnStorefront: (product as any)?.showOnStorefront ?? false,
         optionGroupIds: (product as any)?.optionGroupIds || [],
       });
       setSubCategoryInput(product?.subCategory || "");
@@ -271,8 +269,9 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     
     await batch.commit();
     toast({ title: editingVariant ? "Variant Updated" : "Variant Added" });
-    // A variant change affects the storefront only if the family is shown there.
-    if ((product as any)?.showOnStorefront) onStorefrontMayChange?.();
+    // Any store may be offering this family online, and the admin cannot
+    // know which; the publish itself is debounced and pilot-store scoped.
+    onStorefrontMayChange?.();
     setShowVariantForm(false);
     setEditingVariant(null);
   }
@@ -281,7 +280,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     if (await confirm({title: "Delete Variant?", description: "This cannot be undone.", destructive: true})) {
         await deleteDoc(doc(db, 'products', variant.id));
         toast({title: 'Variant Deleted'});
-        if ((product as any)?.showOnStorefront) onStorefrontMayChange?.();
+        onStorefrontMayChange?.();
     }
   }
 
@@ -341,7 +340,6 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
                   <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active</FormLabel><FormDescription className="text-xs">Inactive products cannot be used in recipes or menus.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
 
-                  <FormField control={form.control} name="showOnStorefront" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Show on online store</FormLabel><FormDescription className="text-xs">Purchasable on the public SharEat website. Uses the storefront store&apos;s price; needs an active inventory record there. Saving publishes the change to the website automatically.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
 
                   <Separator />
 

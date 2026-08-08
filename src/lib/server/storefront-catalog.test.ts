@@ -34,11 +34,19 @@ function fakeDb(opts: {
 }
 
 const STORE = "STORE_X";
-const inv = (productId: string, sellingPrice: number, over: Record<string, any> = {}) => ({ id: `i_${productId}`, productId, sellingPrice, isActive: true, isArchived: false, ...over });
+/**
+ * A store inventory row.
+ *
+ * `onlineEnabled: true` is part of the baseline because online availability is
+ * opt-in: a row without it publishes nothing at all. Every fixture below that
+ * is really testing something else (descriptions, the length cap, pricing) has
+ * to opt in explicitly in order to have anything to assert on.
+ */
+const inv = (productId: string, sellingPrice: number, over: Record<string, any> = {}) => ({ id: `i_${productId}`, productId, sellingPrice, isActive: true, isArchived: false, onlineEnabled: true, ...over });
 
 /** A group root plus variants, with whatever description fields the test needs. */
 function family(over: { root?: any; variants?: any[] } = {}) {
-  const root = { id: "grp", name: "Sharing Set", kind: "group", showOnStorefront: true, isActive: true, subCategory: "Sets", ...over.root };
+  const root = { id: "grp", name: "Sharing Set", kind: "group", isActive: true, subCategory: "Sets", ...over.root };
   const variants = over.variants ?? [
     { id: "v1", name: "Sharing Set", kind: "variant", groupId: "grp", variantLabel: "Set 1", isActive: true },
     { id: "v2", name: "Sharing Set", kind: "variant", groupId: "grp", variantLabel: "Set 2", isActive: true },
@@ -122,7 +130,7 @@ describe("REGRESSION: families that do not use per-variant copy are unchanged", 
 
   it("a single (non-group) product is unaffected", async () => {
     const cat = await build({
-      products: [{ id: "s1", name: "Samgyup In A Box", kind: "single", showOnStorefront: true, isActive: true, subCategory: "Cooked", description: "Grilled pork samgyupsal rice box, ready to go." }],
+      products: [{ id: "s1", name: "Samgyup In A Box", kind: "single", isActive: true, subCategory: "Cooked", description: "Grilled pork samgyupsal rice box, ready to go." }],
       inventory: [inv("s1", 239)],
     });
     const item = onlyItem(cat);
@@ -183,7 +191,7 @@ describe("the 1000-character cap", () => {
   it("applies the same cap and word-boundary rule to the root description", async () => {
     const long = ("kimchi tteokbokki fishcake lettuce samgyupsal ".repeat(40)).trim();
     const cat = await build({
-      products: [{ id: "s1", name: "Big", kind: "single", showOnStorefront: true, isActive: true, subCategory: "X", description: long }],
+      products: [{ id: "s1", name: "Big", kind: "single", isActive: true, subCategory: "X", description: long }],
       inventory: [inv("s1", 100)],
     });
     const d = onlyItem(cat).description!;
@@ -196,7 +204,7 @@ describe("the 1000-character cap", () => {
     const exact = "a".repeat(999) + "b";
     expect(exact.length).toBe(1000);
     const cat = await build({
-      products: [{ id: "s1", name: "Exact", kind: "single", showOnStorefront: true, isActive: true, subCategory: "X", description: exact }],
+      products: [{ id: "s1", name: "Exact", kind: "single", isActive: true, subCategory: "X", description: exact }],
       inventory: [inv("s1", 100)],
     });
     expect(onlyItem(cat).description).toBe(exact);
@@ -207,10 +215,10 @@ describe("untouched behaviour", () => {
   it("still drops variants with no price and skips a family with none priced", async () => {
     const cat = await build({
       products: [
-        { id: "grp", name: "Half", kind: "group", showOnStorefront: true, isActive: true, subCategory: "X", description: "d" },
+        { id: "grp", name: "Half", kind: "group", isActive: true, subCategory: "X", description: "d" },
         { id: "v1", name: "Half", kind: "variant", groupId: "grp", variantLabel: "Priced", isActive: true, description: "has copy" },
         { id: "v2", name: "Half", kind: "variant", groupId: "grp", variantLabel: "Unpriced", isActive: true, description: "has copy too" },
-        { id: "grp2", name: "None", kind: "group", showOnStorefront: true, isActive: true, subCategory: "X" },
+        { id: "grp2", name: "None", kind: "group", isActive: true, subCategory: "X" },
         { id: "v3", name: "None", kind: "variant", groupId: "grp2", variantLabel: "Zero", isActive: true },
       ],
       inventory: [inv("v1", 500), inv("v3", 0)],
@@ -222,45 +230,71 @@ describe("untouched behaviour", () => {
     expect(item.price).toBe(500);
   });
 
-  it("still honours the showOnStorefront gate", async () => {
-    const cat = await build({
-      products: [{ id: "s1", name: "Hidden", kind: "single", showOnStorefront: false, isActive: true, subCategory: "X", description: "d" }],
-      inventory: [inv("s1", 100)],
-    });
-    expect(cat.itemCount).toBe(0);
-  });
 });
 
 /** One storefront-flagged single SKU whose inventory row the test controls. */
 const oneSingle = (invOver: Record<string, any> = {}, sellingPrice = 249) => ({
-  products: [{ id: "s1", name: "Unli Pork", kind: "single", showOnStorefront: true, isActive: true, subCategory: "Unli" }],
+  products: [{ id: "s1", name: "Unli Pork", kind: "single", isActive: true, subCategory: "Unli" }],
   inventory: [inv("s1", sellingPrice, invOver)],
 });
 
-describe("per-branch online availability (onlineEnabled)", () => {
+describe("per-branch online availability (onlineEnabled) is the ONLY gate", () => {
   /**
-   * The backwards-compatibility guarantee, and the reason the builder tests
-   * `=== false` rather than `!== true`. No live inventory row carries this
-   * field yet; if a missing value read as "withheld", every published item at
-   * every branch would vanish the first time this ships.
+   * Online availability is opt-in, per branch. `onlineEnabled` is the single
+   * gate — the old global products/{id}.showOnStorefront flag is gone — and
+   * only an explicit `true` publishes.
+   *
+   * This is the inverse of the two-gate design that preceded it: back then a
+   * missing field had to mean "offered" so that removing nothing broke
+   * nothing. With the global gate deleted, a missing field meaning "offered"
+   * would instead put a store's entire priced inventory on the public menu,
+   * so the default flipped and existing rows are opted in by a backfill.
    */
-  it("publishes an item whose inventory has NO onlineEnabled field at all", async () => {
-    const opts = oneSingle();
-    expect(opts.inventory[0]).not.toHaveProperty("onlineEnabled");
-    const cat = await build(opts);
-    expect(cat.itemCount).toBe(1);
-    expect(onlyItem(cat).price).toBe(249);
+  it("does NOT publish an item whose inventory has no onlineEnabled field", async () => {
+    const cat = await build({
+      products: [{ id: "s1", name: "Unli Pork", kind: "single", isActive: true, subCategory: "Unli" }],
+      inventory: [{ id: "i_s1", productId: "s1", sellingPrice: 249, isActive: true, isArchived: false }],
+    });
+    expect(cat.itemCount).toBe(0);
   });
 
   it("publishes an item the branch has explicitly enabled online", async () => {
     const cat = await build(oneSingle({ onlineEnabled: true }));
     expect(cat.itemCount).toBe(1);
+    expect(onlyItem(cat).price).toBe(249);
   });
 
-  it("drops an item the branch has withheld, despite the global flag and a good price", async () => {
+  it("drops an item the branch has withheld, despite a good price", async () => {
     const cat = await build(oneSingle({ onlineEnabled: false }));
     expect(cat.itemCount).toBe(0);
     expect(cat.categories).toHaveLength(0);
+  });
+
+  /**
+   * The retired global flag must be inert in both directions — a leftover
+   * `false` on a product may not veto a branch that has opted the item in,
+   * and a leftover `true` may not publish one that has not.
+   */
+  it("ignores the retired global showOnStorefront flag entirely", async () => {
+    const offButEnabled = await build({
+      products: [{ id: "s1", name: "Unli Pork", kind: "single", showOnStorefront: false, isActive: true, subCategory: "Unli" }],
+      inventory: [inv("s1", 249)],
+    });
+    expect(offButEnabled.itemCount).toBe(1);
+
+    const onButNotEnabled = await build({
+      products: [{ id: "s1", name: "Unli Pork", kind: "single", isActive: true, subCategory: "Unli" }],
+      inventory: [inv("s1", 249, { onlineEnabled: false })],
+    });
+    expect(onButNotEnabled.itemCount).toBe(0);
+  });
+
+  it("still skips inactive and archived inventory even when opted in", async () => {
+    const inactive = await build(oneSingle({ isActive: false }));
+    expect(inactive.itemCount).toBe(0);
+
+    const archived = await build(oneSingle({ isArchived: true }));
+    expect(archived.itemCount).toBe(0);
   });
 });
 

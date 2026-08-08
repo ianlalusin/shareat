@@ -4,18 +4,23 @@ import { loadOptionOverrides, valueKey } from "./option-overrides";
 /**
  * Builds the public SharEat website storefront catalog snapshot for one store.
  *
- * Source of truth is the global `products` collection (the `showOnStorefront`
- * flag staff toggle in the product editor) overlaid with this store's
- * `inventory` for pricing + availability. Pricing ALWAYS comes from the store's
- * inventory — products carry no price — and is `onlinePrice ?? sellingPrice`:
- * a branch may charge more online (delivery/packaging) without moving the table
- * price. A product with the flag on but no active, positively-priced inventory
- * record at this store is omitted.
+ * Product copy (name, description, image, grouping) comes from the global
+ * `products` collection; everything that decides whether a customer can buy
+ * the item, and for how much, comes from this store's `inventory`.
  *
- * Availability is an AND of two gates: the global `showOnStorefront` decides
- * what MAY be sold online, and the branch's `inventory.onlineEnabled` decides
- * whether THIS branch offers it. Only an explicit `false` withholds — see the
- * gate below.
+ * Availability is store-scoped and opt-in: `inventory.onlineEnabled === true`
+ * is the ONLY gate. The old global `products/{id}.showOnStorefront` flag was
+ * retired — a single toggle owned by the branch manager replaced it, so a
+ * manager can offer an item at their store without an admin, and withhold it
+ * without affecting any other store. A missing `onlineEnabled` means NOT
+ * offered, which keeps a store's internal inventory off the public menu by
+ * default; the rows that were live under the old flag were opted in by a
+ * one-time backfill (scripts/backfill-online-enabled.ts).
+ *
+ * Pricing ALWAYS comes from the store's inventory — products carry no price —
+ * and is `onlinePrice ?? sellingPrice`: a branch may charge more online
+ * (delivery/packaging) without moving the table price. An opted-in product
+ * with no active, positively-priced inventory record here is omitted.
  *
  * The resulting doc at `stores/{storeId}/storefrontCatalog/main` is read by the
  * website's Cloud Function (getStorefrontCatalog) and is also the price
@@ -133,10 +138,10 @@ export async function rebuildStorefrontCatalog(
     const x = d.data() as any;
     if (x?.isActive === false) continue;
     if (x?.isArchived === true) continue;
-    // Per-branch online gate. Tested with `=== false`, NOT `!== true`: no live
-    // inventory row carries this field yet, so a missing value MUST read as
-    // "offered" or every currently published item would vanish on deploy.
-    if (x?.onlineEnabled === false) continue;
+    // The online gate. Opt-in and per-branch: only an explicit `true`
+    // publishes. A missing field means "not offered online", so a store's
+    // internal inventory can never leak onto the public menu by default.
+    if (x?.onlineEnabled !== true) continue;
     const pid = String(x?.productId || "");
     if (pid) invByProductId.set(pid, x);
   }
@@ -201,7 +206,6 @@ export async function rebuildStorefrontCatalog(
   // --- Build storefront items from flagged root products. ---
   const items: StorefrontItem[] = [];
   for (const p of allProducts) {
-    if (p.showOnStorefront !== true) continue;
     if (p.isActive === false) continue;
     if (p.isArchived === true) continue;
     if (p.kind === "variant") continue; // variants surface via their parent group
