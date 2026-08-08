@@ -79,15 +79,17 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      // One-click availability for the Online Orders page. Picking any state
-      // enrolls the store (acceptsOnlineOrders:true); the open/closed effect
-      // then follows the mode:
+      // One-click availability for the Online Orders page. Enrollment
+      // (acceptsOnlineOrders) is a separate, explicit switch on the store-edit
+      // dialog now — this op only ever sets the open/closed effect, so it must
+      // NOT touch acceptsOnlineOrders (it used to force it to true, which
+      // meant visiting this page could silently re-enroll a store an admin
+      // had just disabled). Mode:
       //   - "auto"   ⇒ store hours decide (openingTime/closingTime)
       //   - "manual" ⇒ manualOpen decides (force open / force closed)
       case "set-availability": {
         const mode = body?.mode === "auto" ? "auto" : "manual";
         const patch: Record<string, any> = {
-          acceptsOnlineOrders: true,
           onlineOrderMode: mode,
         };
         if (mode === "manual") patch.onlineOrderManualOpen = !!body?.manualOpen;

@@ -321,10 +321,10 @@ export default function OnlineOrdersClient() {
       mode === "auto"
         ? { op: "set-availability", storeId, mode: "auto" }
         : { op: "set-availability", storeId, mode: "manual", manualOpen: mode === "open" };
-    // optimistic
+    // optimistic (enrollment itself — acceptsOnlineOrders — is a separate
+    // switch on the store-edit dialog now; this op never touches it)
     setAvail((p) => ({
       ...p,
-      acceptsOnlineOrders: true,
       onlineOrderMode: mode === "auto" ? "auto" : "manual",
       onlineOrderManualOpen: mode === "auto" ? p.onlineOrderManualOpen : mode === "open",
     }));

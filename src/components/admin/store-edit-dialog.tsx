@@ -38,6 +38,7 @@ const formSchema = z.object({
   isActive: z.boolean().default(true),
   acceptsReservations: z.boolean().default(false),
   acceptsWebsiteChat: z.boolean().default(false),
+  acceptsOnlineOrders: z.boolean().default(false),
   aiEnabled: z.boolean().default(false),
   reservationSchedule: z.object({
     days: z.array(z.number()),
@@ -101,6 +102,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
       acceptsReservations: false,
       acceptsWebsiteChat: false,
+      acceptsOnlineOrders: false,
       aiEnabled: false,
       reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
       offersAlaCarte: true,
@@ -143,6 +145,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
         acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
+        acceptsOnlineOrders: store.acceptsOnlineOrders ?? false,
         aiEnabled: store.aiEnabled ?? false,
         reservationSchedule: store.reservationSchedule ?? DEFAULT_RESERVATION_SCHEDULE,
         offersAlaCarte: store.offersAlaCarte ?? true,
@@ -160,6 +163,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
         acceptsReservations: false,
         acceptsWebsiteChat: false,
+        acceptsOnlineOrders: false,
         aiEnabled: false,
         reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
         offersAlaCarte: true,
@@ -405,6 +409,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                   </div>
                 )}
                 <FormField control={form.control} name="acceptsWebsiteChat" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Website Chat</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's live chat; messages go to this store's cashier inbox. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="acceptsOnlineOrders" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Orders</FormLabel><FormDescription className="text-xs"> Master switch — enrolls this branch in online ordering on shareat.net. Also needs the geotag above and to be marked open on the Online Orders page to actually show up for customers. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="offersUnlimited" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Unlimited (Dine-in)</FormLabel><FormDescription className="text-xs"> Package dine-in sessions. Turn off for take-out-only kiosks. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="offersAlaCarte" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Ala Carte</FormLabel><FormDescription className="text-xs"> Ala carte / take-out sessions. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="aiEnabled" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>AI features</FormLabel><FormDescription className="text-xs"> Master switch for all Google AI for this store — daily insights, sales forecasts, and AI briefings. Off = no AI generated (saves cost / avoids errors on low-data stores). </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
