@@ -4,7 +4,7 @@ import type { Product } from "@/lib/types";
  * A minimal, product-like interface to allow variant helpers
  * to work on different but related types like Product and InventoryItem.
  */
-type ProductLike = {
+export type ProductLike = {
   id?: string;
   name?: string | null;
   kind?: "single" | "group" | "variant" | null;
@@ -107,4 +107,44 @@ export function resolveFamilyImageUrl(
         if (it.imageUrl) return it.imageUrl;
     }
     return null;
+}
+
+export type FamilyRow<T extends ProductLike> =
+    | { kind: "family"; groupId: string; groupName: string; variants: T[] }
+    | { kind: "single"; item: T };
+
+/**
+ * Groups a flat, already-sorted list into family rows for display — every
+ * `kind: "variant"` item with a `groupId` joins its family (keyed by
+ * `groupId`, labeled via `getGroupTitle`); everything else stands alone.
+ *
+ * Unlike a Product family, there is no "group" root item here (a store never
+ * carries one in inventory), so there's no orphan case to detect: each
+ * variant already carries its own mirrored `groupName`, so grouping needs no
+ * cross-reference back to the live product catalog.
+ *
+ * A family's row is inserted at the position of its first-seen variant, and
+ * later variants of the same family join that row wherever they appear in
+ * `items` — so callers don't need their input pre-clustered, only sorted.
+ */
+export function groupIntoFamilies<T extends ProductLike>(items: T[]): FamilyRow<T>[] {
+    const rows: FamilyRow<T>[] = [];
+    const familyIndexByGroupId = new Map<string, number>();
+
+    for (const item of items) {
+        if (getKind(item) === "variant" && item.groupId) {
+            const groupId = item.groupId;
+            let idx = familyIndexByGroupId.get(groupId);
+            if (idx === undefined) {
+                idx = rows.length;
+                familyIndexByGroupId.set(groupId, idx);
+                rows.push({ kind: "family", groupId, groupName: getGroupTitle(item), variants: [] });
+            }
+            (rows[idx] as { kind: "family"; groupId: string; groupName: string; variants: T[] }).variants.push(item);
+        } else {
+            rows.push({ kind: "single", item });
+        }
+    }
+
+    return rows;
 }

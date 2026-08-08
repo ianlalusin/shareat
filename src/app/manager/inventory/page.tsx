@@ -13,9 +13,10 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, Package, ArrowLeft, AlertTriangle } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, Package, ArrowLeft, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { QuickPriceCell } from "@/components/manager/inventory/quick-price-cell";
@@ -23,7 +24,7 @@ import OptionGroupsClient from "@/components/admin/option-groups/OptionGroupsCli
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
-import { getDisplayName } from "@/lib/products/variants";
+import { getDisplayName, getEffectiveVariantLabel, groupIntoFamilies } from "@/lib/products/variants";
 import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
 import { Switch } from "@/components/ui/switch";
@@ -124,6 +125,32 @@ export default function InventoryManagementPage() {
         return acc;
     }, {} as Record<string, InventoryItem[]>);
   }, [filteredInventory]);
+
+  // Family-grouped for display: variants sharing a groupId nest under one
+  // header row, matching the family view already used on admin/menu/products.
+  // Each variant keeps its own row and full editing below — this only changes
+  // how rows are visually clustered, not what any of them read or write.
+  const familyGroupedInventory = useMemo(() => {
+    const out: Record<string, ReturnType<typeof groupIntoFamilies<InventoryItem>>> = {};
+    for (const subCategory in groupedInventory) {
+      out[subCategory] = groupIntoFamilies(groupedInventory[subCategory]);
+    }
+    return out;
+  }, [groupedInventory]);
+
+  // Expanded by default: this page is used many times a day for live pricing
+  // and availability work, unlike the occasionally-browsed admin catalog —
+  // collapsing families by default would hide info managers see today with
+  // zero clicks. The chevron still lets a manager collapse a large family.
+  const [collapsedFamilyIds, setCollapsedFamilyIds] = useState<Set<string>>(new Set());
+  const toggleFamilyExpanded = (groupId: string) => {
+    setCollapsedFamilyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
 
   const handleBackfill = async () => {
     if (!activeStore || !appUser) return;
@@ -406,6 +433,183 @@ export default function InventoryManagementPage() {
     }
   };
 
+  /**
+   * One inventory row. Used both for standalone items and for a family's
+   * nested variants — `indent` only changes the label/image treatment
+   * (matching admin/menu/products' `↳ variantLabel` convention). Every
+   * field/handler below still reads and writes this exact `item`, so a
+   * variant's price, cost, and Online/Customer toggles never touch its
+   * siblings regardless of how the rows are visually clustered.
+   */
+  const renderItemRow = (item: InventoryItem, indent = false) => {
+    const displayLabel = indent ? `↳ ${getEffectiveVariantLabel(item) || item.name}` : getDisplayName(item);
+    const ariaLabel = getDisplayName(item);
+    const online = item.onlineEnabled === true;
+    const customer = item.customerEnabled === true;
+    return (
+      <TableRow key={item.id} className={cn(!item.isActive && !showArchived && "opacity-60", indent && "bg-muted/20")}>
+        <TableCell>
+            <div className={cn("rounded-md bg-muted flex items-center justify-center relative", indent ? "ml-6 w-10 h-10" : "w-12 h-12")}>
+                {item.imageUrl ? (
+                    <Image src={item.imageUrl} alt={ariaLabel} fill style={{objectFit:"cover"}} className="rounded-md" />
+                ) : (
+                    <Package className={cn("text-muted-foreground", indent ? "h-5 w-5" : "h-6 w-6")}/>
+                )}
+            </div>
+        </TableCell>
+        {/* Wraps to two lines rather than stretching the row — the
+            price columns are what this table is scanned for. */}
+        <TableCell className="py-1">
+          <span
+            className={cn("block max-w-[220px] whitespace-normal break-words leading-snug line-clamp-2 font-medium", indent && "pl-2 text-sm")}
+            title={ariaLabel}
+          >
+            {displayLabel}
+          </span>
+        </TableCell>
+        <TableCell className="py-1">
+          <QuickPriceCell
+            value={item.cost}
+            disabled={showArchived}
+            ariaLabel={`Cost for ${ariaLabel}`}
+            onCommit={(next) => handleQuickPrice(item, 'cost', next)}
+          />
+        </TableCell>
+        <TableCell className="py-1">
+          <QuickPriceCell
+            value={item.sellingPrice}
+            disabled={showArchived}
+            ariaLabel={`Store price for ${ariaLabel}`}
+            onCommit={(next) => handleQuickPrice(item, 'sellingPrice', next)}
+          />
+        </TableCell>
+        <TableCell className="py-1">
+          <Switch
+            checked={online}
+            onCheckedChange={() => handleToggle(item, 'onlineEnabled')}
+            disabled={showArchived}
+            aria-label={`Offer ${ariaLabel} on the online store`}
+          />
+        </TableCell>
+        {/* Only meaningful while the item is offered online. */}
+        <TableCell className="py-1">
+          {online ? (
+            <>
+              <QuickPriceCell
+                value={item.onlinePrice}
+                allowEmpty
+                placeholder={String(item.sellingPrice ?? 0)}
+                disabled={showArchived}
+                ariaLabel={`Online price for ${ariaLabel} — blank matches the store price`}
+                onCommit={(next) => handleQuickPrice(item, 'onlinePrice', next)}
+              />
+              {withheldByOnlinePrice(item) && (
+                <span
+                  className="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-600"
+                  title="Priced at 0 online, so it stays off the online store. Clear the box to charge the store price instead."
+                >
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  Not shown
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">—</span>
+          )}
+        </TableCell>
+        <TableCell className="py-1">
+          <Switch
+            checked={customer}
+            onCheckedChange={() => handleToggle(item, 'customerEnabled')}
+            disabled={showArchived}
+            aria-label={`Offer ${ariaLabel} on the customer app`}
+          />
+        </TableCell>
+        <TableCell className="py-1">
+          <div className="flex items-center justify-end gap-0.5">
+            {showArchived ? (
+              <Button
+                variant="ghost" size="icon" title="Restore"
+                disabled={!appUser?.isPlatformAdmin}
+                onClick={() => handleRestoreItem(item)}
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span className="sr-only">Restore {ariaLabel}</span>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="ghost" size="icon"
+                  title={item.isActive ? "Active — click to deactivate" : "Inactive — click to activate"}
+                  onClick={() => handleToggle(item, 'isActive')}
+                >
+                  {item.isActive
+                    ? <Power className="h-4 w-4 text-emerald-600" />
+                    : <PowerOff className="h-4 w-4 text-muted-foreground" />}
+                  <span className="sr-only">{item.isActive ? "Deactivate" : "Activate"} {ariaLabel}</span>
+                </Button>
+                <Button
+                  variant="ghost" size="icon" title="Edit"
+                  onClick={() => { setSelectedItem(item); setIsEditOpen(true); }}
+                >
+                  <Pencil className="h-4 w-4" />
+                  <span className="sr-only">Edit {ariaLabel}</span>
+                </Button>
+                {appUser?.isPlatformAdmin && (
+                  <Button
+                    variant="ghost" size="icon" title="Archive"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteItem(item)}
+                  >
+                    <Archive className="h-4 w-4" />
+                    <span className="sr-only">Archive {ariaLabel}</span>
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
+  /** Family header row: chevron, name, variant count, and a rollup so "may vary" is visible without expanding. */
+  const renderFamilyHeaderRow = (row: Extract<ReturnType<typeof groupIntoFamilies<InventoryItem>>[number], { kind: "family" }>) => {
+    const expanded = !collapsedFamilyIds.has(row.groupId);
+    const activePrices = row.variants
+      .filter((v) => v.isActive)
+      .map((v) => Number(v.sellingPrice))
+      .filter((p) => Number.isFinite(p) && p > 0);
+    const minPrice = activePrices.length ? Math.min(...activePrices) : null;
+    const maxPrice = activePrices.length ? Math.max(...activePrices) : null;
+    const onlineCount = row.variants.filter((v) => v.onlineEnabled === true).length;
+    const customerCount = row.variants.filter((v) => v.customerEnabled === true).length;
+    return (
+      <TableRow key={`family-${row.groupId}`} className="bg-muted/40 hover:bg-muted/50">
+        <TableCell colSpan={8} className="py-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="ghost" size="icon" className="h-6 w-6"
+              onClick={() => toggleFamilyExpanded(row.groupId)}
+              aria-label={expanded ? `Collapse ${row.groupName}` : `Expand ${row.groupName}`}
+            >
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+            <span className="font-semibold">{row.groupName}</span>
+            <Badge variant="outline" className="text-xs">Family · {row.variants.length}</Badge>
+            {minPrice != null && (
+              <span className="text-xs text-muted-foreground">
+                {minPrice === maxPrice ? `₱${minPrice.toLocaleString()}` : `₱${minPrice.toLocaleString()} – ₱${maxPrice!.toLocaleString()}`}
+              </span>
+            )}
+            <Badge variant="secondary" className="text-[11px]">Online {onlineCount}/{row.variants.length}</Badge>
+            <Badge variant="secondary" className="text-[11px]">Customer {customerCount}/{row.variants.length}</Badge>
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
   if (!activeStore) {
     return (
       <RoleGuard allow={["admin", "manager"]}>
@@ -478,7 +682,7 @@ export default function InventoryManagementPage() {
             <div className="flex justify-center items-center h-40"><Loader className="animate-spin" /></div>
           ) : inventory.length > 0 ? (
             <Table>
-              {Object.entries(groupedInventory).map(([subCategory, items]) => (
+              {Object.entries(familyGroupedInventory).map(([subCategory, rows]) => (
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
@@ -498,140 +702,22 @@ export default function InventoryManagementPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => {
-                      const label = getDisplayName(item);
-                      const online = item.onlineEnabled === true;
-                      const customer = item.customerEnabled === true;
+                    {rows.map((row) => {
+                      if (row.kind === "single") {
+                        return renderItemRow(row.item);
+                      }
+                      const expanded = !collapsedFamilyIds.has(row.groupId);
                       return (
-                      <TableRow key={item.id} className={cn(!item.isActive && !showArchived && "opacity-60")}>
-                        <TableCell>
-                            <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
-                                {item.imageUrl ? (
-                                    <Image src={item.imageUrl} alt={label} fill style={{objectFit:"cover"}} className="rounded-md" />
-                                ) : (
-                                    <Package className="h-6 w-6 text-muted-foreground"/>
-                                )}
-                            </div>
-                        </TableCell>
-                        {/* Wraps to two lines rather than stretching the row — the
-                            price columns are what this table is scanned for. */}
-                        <TableCell className="py-1">
-                          <span
-                            className="block max-w-[220px] whitespace-normal break-words leading-snug line-clamp-2 font-medium"
-                            title={label}
-                          >
-                            {label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <QuickPriceCell
-                            value={item.cost}
-                            disabled={showArchived}
-                            ariaLabel={`Cost for ${label}`}
-                            onCommit={(next) => handleQuickPrice(item, 'cost', next)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <QuickPriceCell
-                            value={item.sellingPrice}
-                            disabled={showArchived}
-                            ariaLabel={`Store price for ${label}`}
-                            onCommit={(next) => handleQuickPrice(item, 'sellingPrice', next)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <Switch
-                            checked={online}
-                            onCheckedChange={() => handleToggle(item, 'onlineEnabled')}
-                            disabled={showArchived}
-                            aria-label={`Offer ${label} on the online store`}
-                          />
-                        </TableCell>
-                        {/* Only meaningful while the item is offered online. */}
-                        <TableCell className="py-1">
-                          {online ? (
-                            <>
-                              <QuickPriceCell
-                                value={item.onlinePrice}
-                                allowEmpty
-                                placeholder={String(item.sellingPrice ?? 0)}
-                                disabled={showArchived}
-                                ariaLabel={`Online price for ${label} — blank matches the store price`}
-                                onCommit={(next) => handleQuickPrice(item, 'onlinePrice', next)}
-                              />
-                              {withheldByOnlinePrice(item) && (
-                                <span
-                                  className="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-600"
-                                  title="Priced at 0 online, so it stays off the online store. Clear the box to charge the store price instead."
-                                >
-                                  <AlertTriangle className="h-3 w-3 shrink-0" />
-                                  Not shown
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <Switch
-                            checked={customer}
-                            onCheckedChange={() => handleToggle(item, 'customerEnabled')}
-                            disabled={showArchived}
-                            aria-label={`Offer ${label} on the customer app`}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1">
-                          <div className="flex items-center justify-end gap-0.5">
-                            {showArchived ? (
-                              <Button
-                                variant="ghost" size="icon" title="Restore"
-                                disabled={!appUser?.isPlatformAdmin}
-                                onClick={() => handleRestoreItem(item)}
-                              >
-                                <RefreshCw className="h-4 w-4" />
-                                <span className="sr-only">Restore {label}</span>
-                              </Button>
-                            ) : (
-                              <>
-                                <Button
-                                  variant="ghost" size="icon"
-                                  title={item.isActive ? "Active — click to deactivate" : "Inactive — click to activate"}
-                                  onClick={() => handleToggle(item, 'isActive')}
-                                >
-                                  {item.isActive
-                                    ? <Power className="h-4 w-4 text-emerald-600" />
-                                    : <PowerOff className="h-4 w-4 text-muted-foreground" />}
-                                  <span className="sr-only">{item.isActive ? "Deactivate" : "Activate"} {label}</span>
-                                </Button>
-                                <Button
-                                  variant="ghost" size="icon" title="Edit"
-                                  onClick={() => { setSelectedItem(item); setIsEditOpen(true); }}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                  <span className="sr-only">Edit {label}</span>
-                                </Button>
-                                {appUser?.isPlatformAdmin && (
-                                  <Button
-                                    variant="ghost" size="icon" title="Archive"
-                                    className="text-destructive hover:text-destructive"
-                                    onClick={() => handleDeleteItem(item)}
-                                  >
-                                    <Archive className="h-4 w-4" />
-                                    <span className="sr-only">Archive {label}</span>
-                                  </Button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                        <React.Fragment key={`family-${row.groupId}`}>
+                          {renderFamilyHeaderRow(row)}
+                          {expanded && row.variants.map((v) => renderItemRow(v, true))}
+                        </React.Fragment>
                       );
                     })}
                   </TableBody>
                 </React.Fragment>
               ))}
-              {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
+              {Object.keys(familyGroupedInventory).length === 0 && debouncedSearchTerm && (
                 <TableBody>
                   <TableRow>
                     <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
