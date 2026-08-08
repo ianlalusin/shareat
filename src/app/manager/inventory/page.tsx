@@ -13,7 +13,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, Package, ArrowLeft } from "lucide-react";
+import { Loader, PlusCircle, Pencil, Power, PowerOff, Search, RefreshCw, Archive, Package, ArrowLeft, AlertTriangle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
@@ -240,6 +240,17 @@ export default function InventoryManagementPage() {
       setIsAddDialogOpen(false);
       setSearchTerm("");
     }
+  };
+
+  // An online price that is SET but not positive withholds the item from the
+  // storefront instead of falling back to the store price (see resolvePrice in
+  // storefront-catalog). Surface it: a manager who switched an item online
+  // would otherwise have no way to tell why it never showed up.
+  const withheldByOnlinePrice = (item: InventoryItem): boolean => {
+    const raw = item.onlinePrice;
+    if (raw === null || raw === undefined) return false;
+    const op = Number(raw);
+    return !Number.isFinite(op) || op <= 0;
   };
 
   // Republish the public storefront if this store is the storefront pilot store.
@@ -510,14 +521,25 @@ export default function InventoryManagementPage() {
                         {/* Only meaningful while the item is offered online. */}
                         <TableCell className="py-1">
                           {online ? (
-                            <QuickPriceCell
-                              value={item.onlinePrice}
-                              allowEmpty
-                              placeholder={String(item.sellingPrice ?? 0)}
-                              disabled={showArchived}
-                              ariaLabel={`Online price for ${label} — blank matches the store price`}
-                              onCommit={(next) => handleQuickPrice(item, 'onlinePrice', next)}
-                            />
+                            <>
+                              <QuickPriceCell
+                                value={item.onlinePrice}
+                                allowEmpty
+                                placeholder={String(item.sellingPrice ?? 0)}
+                                disabled={showArchived}
+                                ariaLabel={`Online price for ${label} — blank matches the store price`}
+                                onCommit={(next) => handleQuickPrice(item, 'onlinePrice', next)}
+                              />
+                              {withheldByOnlinePrice(item) && (
+                                <span
+                                  className="mt-1 flex items-center gap-1 text-[11px] font-medium text-amber-600"
+                                  title="Priced at 0 online, so it stays off the online store. Clear the box to charge the store price instead."
+                                >
+                                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                                  Not shown
+                                </span>
+                              )}
+                            </>
                           ) : (
                             <span className="text-sm text-muted-foreground">—</span>
                           )}

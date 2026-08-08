@@ -304,22 +304,45 @@ describe("per-branch online price (onlinePrice)", () => {
     expect(onlyItem(cat).price).toBe(299);
   });
 
-  // Anything that is not a positive finite number means "no online price set"
-  // and must fall back to sellingPrice — never to 0, which downstream reads as
-  // "not sellable" and would silently drop the item.
-  const fallbacks: [string, Record<string, any>][] = [
+  // An UNSET online price means "charge the same as the table" — this is what
+  // the edit dialog's "leave blank to match" writes, and it must keep working.
+  const unset: [string, Record<string, any>][] = [
     ["missing", {}],
     ["null", { onlinePrice: null }],
-    ["zero", { onlinePrice: 0 }],
-    ["negative", { onlinePrice: -50 }],
   ];
-  for (const [label, over] of fallbacks) {
+  for (const [label, over] of unset) {
     it(`falls back to sellingPrice when onlinePrice is ${label}`, async () => {
       const cat = await build(oneSingle(over, 249));
       expect(cat.itemCount).toBe(1);
       expect(onlyItem(cat).price).toBe(249);
     });
   }
+
+  /**
+   * A SET but non-positive online price is an explicit "not sellable online",
+   * and must NOT fall back to the dine-in price.
+   *
+   * An item a manager has switched online but priced at 0 is one they have not
+   * finished pricing. Publishing it at the table price would charge a customer
+   * a number nobody chose; publishing it at 0 would give it away. It is
+   * withheld until the price is real.
+   */
+  const withheld: [string, Record<string, any>][] = [
+    ["zero", { onlinePrice: 0 }],
+    ["negative", { onlinePrice: -50 }],
+  ];
+  for (const [label, over] of withheld) {
+    it(`withholds the item when onlinePrice is ${label}, despite a good store price`, async () => {
+      const cat = await build(oneSingle(over, 249));
+      expect(cat.itemCount).toBe(0);
+    });
+  }
+
+  it("withholds a zero-priced item even though the branch toggled it online", async () => {
+    const cat = await build(oneSingle({ onlineEnabled: true, onlinePrice: 0 }, 500));
+    expect(cat.itemCount).toBe(0);
+    expect(cat.categories).toHaveLength(0);
+  });
 });
 
 describe("online overrides on variant families", () => {
@@ -348,6 +371,26 @@ describe("online overrides on variant families", () => {
     const cat = await build(f);
     expect(cat.itemCount).toBe(0);
     expect(cat.categories).toHaveLength(0); // dropped, not published as an empty family
+  });
+
+  it("drops only the variant priced 0 online, and recomputes the family's 'from'", async () => {
+    // v1 is the cheaper tier, so dropping it must move the family's "from"
+    // price up to v2 rather than leaving a stale 1111 behind.
+    const f = family();
+    f.inventory = [inv("v1", 1111, { onlinePrice: 0 }), inv("v2", 2222)];
+
+    const item = onlyItem(await build(f));
+    expect(item.variants!.map((v) => v.productId)).toEqual(["v2"]);
+    expect(item.price).toBe(2222);
+  });
+
+  it("drops the whole family when every variant is priced 0 online", async () => {
+    const f = family();
+    f.inventory = [inv("v1", 1111, { onlinePrice: 0 }), inv("v2", 2222, { onlinePrice: 0 })];
+
+    const cat = await build(f);
+    expect(cat.itemCount).toBe(0);
+    expect(cat.categories).toHaveLength(0);
   });
 
   it("keeps the surviving variants when the branch withholds only one", async () => {

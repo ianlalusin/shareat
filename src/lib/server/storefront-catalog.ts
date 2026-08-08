@@ -147,16 +147,30 @@ export async function rebuildStorefrontCatalog(
   }
 
   /**
-   * The price the storefront charges: the branch's `onlinePrice` when it has
-   * set one, otherwise the dine-in `sellingPrice`. Only a positive finite
-   * number counts as an override — missing/null/0/negative all mean "not set".
-   * A non-positive resolved price still means the item is not sellable.
+   * The price the storefront charges, or null when the item is not sellable
+   * here and must be omitted.
+   *
+   * Two distinct states, and the difference matters:
+   *
+   *   onlinePrice UNSET (missing/null) → charge the dine-in `sellingPrice`.
+   *     This is what the dialog's "leave blank to match" writes.
+   *
+   *   onlinePrice SET but not a positive number (0, negative) → WITHHELD.
+   *     It does NOT fall back. An item switched online but priced at 0 is one
+   *     the manager has not finished pricing; publishing it at the table price
+   *     would charge a number nobody chose, and publishing it at 0 would give
+   *     it away. It stays off the menu until the price is real.
    */
   function resolvePrice(productId: string): number | null {
     const inv = invByProductId.get(String(productId));
     if (!inv) return null;
-    const op = Number(inv.onlinePrice ?? 0);
-    if (Number.isFinite(op) && op > 0) return op;
+
+    const raw = inv.onlinePrice;
+    if (raw !== null && raw !== undefined && raw !== "") {
+      const op = Number(raw);
+      return Number.isFinite(op) && op > 0 ? op : null;
+    }
+
     const sp = Number(inv.sellingPrice ?? 0);
     if (!Number.isFinite(sp) || sp <= 0) return null;
     return sp;

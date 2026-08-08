@@ -252,11 +252,17 @@ export type InventoryItem = {
    */
   onlineEnabled?: boolean;
   /**
-   * Per-branch online price, in pesos. A positive number is what the
-   * storefront charges; anything else (missing, null, 0, negative) falls back
-   * to sellingPrice. NEVER used by the cashier, receipts, or dine-in — it
-   * exists so delivery/packaging cost can be priced in without moving the
-   * table price.
+   * Per-branch online price, in pesos. NEVER used by the cashier, receipts,
+   * analytics or dine-in — it exists so delivery/packaging cost can be priced
+   * in without moving the table price.
+   *
+   * Three states, and 0 is not the same as blank:
+   *   unset (missing/null) → charge the same as sellingPrice;
+   *   positive number      → charge that instead;
+   *   0 or negative        → WITHHOLD the item from the storefront. It does
+   *                          not fall back — an item priced 0 online is one
+   *                          nobody has finished pricing, so it stays off the
+   *                          public menu even while onlineEnabled is true.
    */
   onlinePrice?: number | null;
   kitchenLocationId?: string | null;

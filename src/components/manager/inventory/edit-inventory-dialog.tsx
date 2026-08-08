@@ -173,6 +173,7 @@ function OnlinePriceFormField({ form, item }: { form: any; item: InventoryItem }
                     </div>
                     <p className="text-xs text-muted-foreground">
                         Dine-in: ₱{(isNaN(dineIn) ? 0 : dineIn).toFixed(2)} — leave blank to match.
+                        Enter 0 to keep it off the online store.
                     </p>
                     <FormMessage />
                 </FormItem>
