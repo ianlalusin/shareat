@@ -1,25 +1,31 @@
 import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
-import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
-import { generateDailyInsight as runDailyInsightFlow } from "@/ai/flows/daily-insight";
-import { INSIGHT_MODEL } from "@/ai/model-config";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import type {
-  DailyInsight,
-  InsightMetric,
-  InsightSectionData,
-  DailyContext,
-} from "@/lib/types";
+import type { DailyMetricsDigest, InsightMetric } from "@/lib/types";
 
-// Keep bursts well under the Gemini rate limit (gentle off-peak generation).
-const INSIGHT_CONCURRENCY = 2;
-// Max NEW (not-yet-done) stores generated per cron fire. With several off-peak
+/**
+ * Deterministic daily performance digest — no AI involved.
+ *
+ * This used to be the signal layer feeding an AI-narrated brief
+ * (`generate-daily-insight.ts` called Gemini to write a headline/narrative on
+ * top of these numbers). That generation was retired in favor of ERP's own
+ * AI brief; this file is what's left — the same metric computation, now
+ * written straight to Firestore as `stores/{storeId}/dailyMetrics/{dayId}`
+ * for ERP to pull. See docs/erp-daily-metrics-forwarding.md for the full
+ * inventory of what's measured here.
+ *
+ * Runs for every active store — no longer gated by the `aiEnabled` flag
+ * (that flag now only matters to the AI features POS still owns: sales
+ * forecasting and holiday-calendar generation).
+ */
+
+// Max NEW (not-yet-done) stores computed per cron fire. With several off-peak
 // fires + per-store skip-if-done, the work spreads into small batches and no
-// store is ever generated twice in a day.
-const INSIGHT_BATCH = 4;
+// store is ever computed twice in a day.
+const DIGEST_CONCURRENCY = 2;
+const DIGEST_BATCH = 4;
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /* ----------------------------- date helpers ----------------------------- */
 
@@ -42,8 +48,8 @@ function addDays(d: Date, n: number): Date {
   return new Date(d.getTime() + n * 86400000);
 }
 
-/** The day the insight analyzes = yesterday (Asia/Manila), YYYYMMDD. */
-export function getInsightDayId(now: Date = new Date()): string {
+/** The day the digest analyzes = yesterday (Asia/Manila), YYYYMMDD. */
+export function getMetricsDayId(now: Date = new Date()): string {
   return dayIdOf(addDays(now, -1));
 }
 
@@ -188,8 +194,8 @@ type DigestExtras = {
   leakageBaselinePct: number | null;
 };
 
-/** Exported for testing/diagnostics: builds the deterministic digest the model
- *  narrates. Pure — takes analytics docs, does no I/O and calls no model. */
+/** Exported for testing/diagnostics: builds the deterministic digest. Pure —
+ *  takes analytics docs, does no I/O and calls no model. */
 export function buildMetricsAndDigest(
   yest: DM,
   prevDay: DM | null,
@@ -309,7 +315,8 @@ export function buildMetricsAndDigest(
     if (noGuestHours > 0) anomalies.push({ label: "Idle hours (within open window)", value: count(noGuestHours), sub: "no sessions", direction: "down" });
   }
 
-  // Digest text (what the model reads)
+  // Digest text — a free byproduct of the chips above, handy for
+  // forwarding/logging without re-deriving meaning from the arrays.
   const line = (m: InsightMetric) => `- ${m.label}: ${m.value}${m.sub ? ` (${m.sub})` : ""}`;
   const streakLine = extras.streakDays >= 2 && extras.streakDir !== 0
     ? `- Momentum: sales ${extras.streakDir > 0 ? "rose" : "fell"} ${extras.streakDays} days in a row (through yesterday)`
@@ -335,64 +342,6 @@ export function buildMetricsAndDigest(
   return { sections: { sales, operations, inventory, anomalies }, digest };
 }
 
-/* ----------------------------- weather + context ------------------------ */
-
-function monthsBetween(start: Date, end: Date): string[] {
-  const out: string[] = [];
-  let y = manilaParts(start).y, m = manilaParts(start).m;
-  const ey = manilaParts(end).y, em = manilaParts(end).m;
-  while (y < ey || (y === ey && m <= em)) {
-    out.push(`${y}-${String(m).padStart(2, "0")}`);
-    if (++m > 12) { m = 1; y++; }
-  }
-  return out;
-}
-
-async function buildWeatherContext(storeId: string, now: Date): Promise<string | undefined> {
-  const db = getAdminDb();
-  const ids = monthsBetween(addDays(now, -2), addDays(now, 2));
-  const snaps = await Promise.all(ids.map((ym) => db.doc(`stores/${storeId}/weatherForecasts/${ym}`).get()));
-  const days: Record<string, any> = {};
-  for (const s of snaps) {
-    if (!s.exists) continue;
-    const d = (s.data()?.days ?? {}) as Record<string, any>;
-    for (const k of Object.keys(d)) days[k] = d[k];
-  }
-  const readable = (c: any) => (typeof c === "string" ? c.replace(/_/g, " ") : c);
-  const fmt = (offset: number, label: string) => {
-    const id = dayIdOf(addDays(now, offset));
-    const w = days[id];
-    if (!w) return null;
-    return `${label}: ${readable(w.condition)}${w.pm ? ` (PM ${readable(w.pm)})` : ""}${typeof w.pop === "number" ? `, ${Math.round(w.pop * 100)}% rain` : ""}`;
-  };
-  const parts = [fmt(-1, "Yesterday"), fmt(0, "Today"), fmt(1, "Tomorrow")].filter(Boolean);
-  return parts.length ? parts.join("\n") : undefined;
-}
-
-async function buildDayContext(storeId: string, yesterday: Date, today: Date): Promise<string | undefined> {
-  const db = getAdminDb();
-  const yId = dayIdOf(yesterday);
-  const tId = dayIdOf(today);
-  const [yS, tS] = await Promise.all([
-    db.doc(`stores/${storeId}/dailyContext/${yId}`).get(),
-    db.doc(`stores/${storeId}/dailyContext/${tId}`).get(),
-  ]);
-  const parts: string[] = [];
-  const yd = yS.exists ? (yS.data() as DailyContext) : null;
-  const td = tS.exists ? (tS.data() as DailyContext) : null;
-  if (yd?.isPayday?.value) parts.push("Yesterday was a payday.");
-  if (yd?.holiday && yd.holiday.name !== "None") parts.push(`Yesterday was ${yd.holiday.name}.`);
-  if (td?.isPayday?.value) parts.push("Today is a payday.");
-  if (td?.holiday && td.holiday.name !== "None") parts.push(`Today is ${td.holiday.name}.`);
-  return parts.length ? parts.join(" ") : undefined;
-}
-
-/** Absolute epoch ms for Asia/Manila midnight of the given date. */
-function manilaDayStartMs(d: Date): number {
-  const s = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Manila" }).format(d);
-  return new Date(`${s}T00:00:00+08:00`).getTime();
-}
-
 /**
  * Staff responsiveness to customer "need assistance" taps (customer app) for
  * yesterday — count, answered/unanswered, avg & slowest response, % within 2 min.
@@ -404,6 +353,10 @@ async function buildAssistanceMetrics(
   yesterday: Date,
 ): Promise<{ chips: InsightMetric[]; digest: string }> {
   const db = getAdminDb();
+  const manilaDayStartMs = (d: Date): number => {
+    const s = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Manila" }).format(d);
+    return new Date(`${s}T00:00:00+08:00`).getTime();
+  };
   const start = manilaDayStartMs(yesterday);
   const end = manilaDayStartMs(now); // today's midnight = end of yesterday
   const snap = await db
@@ -460,34 +413,23 @@ async function buildAssistanceMetrics(
 
 /* ----------------------------- main entry ------------------------------- */
 
-type StoreData = { id: string; name?: string; isActive?: boolean; aiEnabled?: boolean };
+type StoreData = { id: string; name?: string; isActive?: boolean };
 
-const emptySection = (headline: string, metrics: InsightMetric[]): InsightSectionData => ({
-  headline, metrics, narrative: "", flags: [],
-});
-
-export async function generateDailyInsightForStore(
+export async function computeDailyMetricsForStore(
   store: StoreData,
   source: "manual" | "cron" = "manual",
   opts: { force?: boolean } = {},
 ): Promise<{ storeId: string; ok: boolean; status?: string; error?: string; skipped?: boolean }> {
   const db = getAdminDb();
 
-  // Master AI switch: a store with AI off never calls Gemini (gates the manual
-  // route too — the cron path already filters disabled stores out).
-  if (!(await isStoreAiEnabled(db, store.id))) {
-    return { storeId: store.id, ok: true, status: "ai_disabled", skipped: true };
-  }
-
   const now = new Date();
   const yesterday = addDays(now, -1);
   const dayId = dayIdOf(yesterday);
-  const insightRef = db.doc(`stores/${store.id}/aiInsights/${dayId}`);
+  const digestRef = db.doc(`stores/${store.id}/dailyMetrics/${dayId}`);
 
-  // Cost guard: a store already analyzed today needs no second Gemini call.
-  // (Manual "Regenerate" passes force=true to override.)
+  // A store already computed today needs no repeat work.
   if (!opts.force) {
-    const existing = await insightRef.get();
+    const existing = await digestRef.get();
     const st = existing.exists ? (existing.data() as any)?.status : null;
     if (st === "ok" || st === "no_data") {
       return { storeId: store.id, ok: true, status: st, skipped: true };
@@ -504,17 +446,12 @@ export async function generateDailyInsightForStore(
 
     const yest = byOffset.get(1);
     if (!yest || grossOf(yest) <= 0) {
-      const doc: DailyInsight = {
-        // No Gemini call happens on this path — the model id is recorded only
-        // to show which model WOULD have run.
-        dayId, storeId: store.id, status: "no_data", source, model: INSIGHT_MODEL,
+      const doc: DailyMetricsDigest = {
+        dayId, storeId: store.id, status: "no_data", source,
         generatedAt: FieldValue.serverTimestamp(), generatedAtMs: Date.now(),
-        summary: { headline: "No sales recorded yesterday.", bullets: [], sentiment: "mixed" },
-        sales: emptySection("No data", []), operations: emptySection("No data", []),
-        inventory: emptySection("No data", []), anomalies: emptySection("No data", []),
-        suggestions: [], error: null,
+        sales: [], operations: [], inventory: [], anomalies: [], error: null,
       };
-      await insightRef.set(doc);
+      await digestRef.set(doc);
       return { storeId: store.id, ok: true, status: "no_data" };
     }
 
@@ -539,7 +476,8 @@ export async function generateDailyInsightForStore(
     const { trendPct, streakDir, streakDays } = computeTrend(byOffset);
     const leakageBaselinePct = computeLeakageBaseline(byOffset);
 
-    // Forecast vs actual — closes the loop with the sales forecaster.
+    // Forecast vs actual — closes the loop with the sales forecaster (still
+    // AI-generated in POS; unaffected by this retirement).
     const yp = manilaParts(yesterday);
     const yMd = `${yp.y}-${String(yp.m).padStart(2, "0")}-${String(yp.day).padStart(2, "0")}`;
     let forecastProjected: number | null = null;
@@ -552,54 +490,26 @@ export async function generateDailyInsightForStore(
     const { sections, digest } = buildMetricsAndDigest(yest, prevDay, sameDowAvgGross, avg7Gross, sameDowAvgCovers, DAY_NAMES[yDow], extras);
 
     const staffOps = computeStaffOps(yest);
-
-    const [weatherContext, dayContext, assistance] = await Promise.all([
-      buildWeatherContext(store.id, now).catch(() => undefined),
-      buildDayContext(store.id, yesterday, now).catch(() => undefined),
-      buildAssistanceMetrics(store.id, now, yesterday).catch(() => ({ chips: [] as InsightMetric[], digest: "" })),
-    ]);
+    const assistance = await buildAssistanceMetrics(store.id, now, yesterday).catch(() => ({ chips: [] as InsightMetric[], digest: "" }));
 
     // Per-staff leaders + assistance responsiveness both belong in operations.
-    const opsMetrics = [...sections.operations, ...staffOps.chips, ...assistance.chips];
-    const fullDigest = [digest, staffOps.digest, assistance.digest].filter(Boolean).join("\n\n");
+    const operations = [...sections.operations, ...staffOps.chips, ...assistance.chips];
+    const digestText = [digest, staffOps.digest, assistance.digest].filter(Boolean).join("\n\n");
 
-    const p = manilaParts(yesterday);
-    const dateLabel = `${DAY_NAMES[yDow]}, ${p.day} ${MONTH_NAMES[p.m - 1]} ${p.y}`;
-
-    const { insight: ai, usage } = await runDailyInsightFlow({
-      storeName: store.name || store.id,
-      dateLabel,
-      dayOfWeek: DAY_NAMES[yDow],
-      metricsDigest: fullDigest,
-      weatherContext,
-      dayContext,
-    });
-
-    const merge = (key: "sales" | "operations" | "inventory" | "anomalies"): InsightSectionData => ({
-      headline: ai[key].headline,
-      metrics: key === "operations" ? opsMetrics : sections[key],
-      narrative: ai[key].narrative,
-      flags: ai[key].flags ?? [],
-    });
-
-    const doc: DailyInsight = {
-      dayId, storeId: store.id, status: "ok", source, model: usage.model,
+    const doc: DailyMetricsDigest = {
+      dayId, storeId: store.id, status: "ok", source,
       generatedAt: FieldValue.serverTimestamp(), generatedAtMs: Date.now(),
-      summary: ai.summary,
-      sales: merge("sales"),
-      operations: merge("operations"),
-      inventory: merge("inventory"),
-      anomalies: merge("anomalies"),
-      suggestions: ai.suggestions ?? [],
-      promptTokens: usage.promptTokens,
-      outputTokens: usage.outputTokens,
-      costPesos: usage.costPesos,
+      sales: sections.sales,
+      operations,
+      inventory: sections.inventory,
+      anomalies: sections.anomalies,
+      digestText,
       error: null,
     };
-    await insightRef.set(doc);
+    await digestRef.set(doc);
     return { storeId: store.id, ok: true, status: "ok" };
   } catch (err: any) {
-    console.error(`[generateDailyInsightForStore] store=${store.id} failed:`, err);
+    console.error(`[computeDailyMetricsForStore] store=${store.id} failed:`, err);
     return { storeId: store.id, ok: false, error: err?.message || String(err) };
   }
 }
@@ -620,19 +530,17 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
-export async function generateInsightsForAllActiveStores(opts: { batchSize?: number } = {}) {
+export async function computeDailyMetricsForAllActiveStores(opts: { batchSize?: number } = {}) {
   const db = getAdminDb();
-  const dayId = getInsightDayId();
+  const dayId = getMetricsDayId();
   const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
-  // Only AI-enabled stores are eligible — disabled stores are never generated
-  // (no Gemini, and they don't linger as "pending").
-  const stores: StoreData[] = storesSnap.docs
-    .map((d) => ({ id: d.id, name: d.data().name, isActive: d.data().isActive, aiEnabled: d.data().aiEnabled }))
-    .filter((s) => s.aiEnabled === true);
-  if (stores.length === 0) return { totalStores: 0, pending: 0, processed: 0, remaining: 0, results: [] as Awaited<ReturnType<typeof generateDailyInsightForStore>>[] };
+  // Every active store — no longer gated by `aiEnabled` (that flag now only
+  // gates the AI features POS still owns: forecasting and holiday calendars).
+  const stores: StoreData[] = storesSnap.docs.map((d) => ({ id: d.id, name: d.data().name, isActive: d.data().isActive }));
+  if (stores.length === 0) return { totalStores: 0, pending: 0, processed: 0, remaining: 0, results: [] as Awaited<ReturnType<typeof computeDailyMetricsForStore>>[] };
 
-  // Skip stores already done today (output doc ok/no_data) — no Gemini call.
-  const doneSnaps = await db.getAll(...stores.map((s) => db.doc(`stores/${s.id}/aiInsights/${dayId}`)));
+  // Skip stores already done today (output doc ok/no_data).
+  const doneSnaps = await db.getAll(...stores.map((s) => db.doc(`stores/${s.id}/dailyMetrics/${dayId}`)));
   const pending = stores.filter((_, i) => {
     const st = doneSnaps[i].exists ? (doneSnaps[i].data() as any)?.status : null;
     return !(st === "ok" || st === "no_data");
@@ -641,7 +549,7 @@ export async function generateInsightsForAllActiveStores(opts: { batchSize?: num
   // Process only a batch of pending stores per fire (the rest wait for the next
   // off-peak fire), keeping each burst small.
   const slice = opts.batchSize ? pending.slice(0, opts.batchSize) : pending;
-  const results = await mapWithConcurrency(slice, INSIGHT_CONCURRENCY, (s) => generateDailyInsightForStore(s, "cron"));
+  const results = await mapWithConcurrency(slice, DIGEST_CONCURRENCY, (s) => computeDailyMetricsForStore(s, "cron"));
   return {
     totalStores: stores.length,
     pending: pending.length,
@@ -654,10 +562,10 @@ export async function generateInsightsForAllActiveStores(opts: { batchSize?: num
 function getManilaDateStr(): string {
   return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Manila" }).format(new Date());
 }
-const CRON_LOG_DOC = "system/insightCronLog";
+const CRON_LOG_DOC = "system/dailyMetricsCronLog";
 const MAX_DAILY_ATTEMPTS = 5;
 
-export async function runInsightWithTracking(): Promise<{ skipped: boolean; reason: string; result?: Awaited<ReturnType<typeof generateInsightsForAllActiveStores>> }> {
+export async function runDailyMetricsWithTracking(): Promise<{ skipped: boolean; reason: string; result?: Awaited<ReturnType<typeof computeDailyMetricsForAllActiveStores>> }> {
   const db = getAdminDb();
   const dateStr = getManilaDateStr();
   const logDoc = await db.doc(CRON_LOG_DOC).get();
@@ -668,7 +576,7 @@ export async function runInsightWithTracking(): Promise<{ skipped: boolean; reas
 
   const attempts = (log?.attempts ?? 0) + 1;
   try {
-    const result = await generateInsightsForAllActiveStores({ batchSize: INSIGHT_BATCH });
+    const result = await computeDailyMetricsForAllActiveStores({ batchSize: DIGEST_BATCH });
     const batchOk = result.results.every((r) => r.ok);
     // "success" only when no stores remain pending AND this batch had no errors;
     // otherwise stay "pending" so the next off-peak fire picks up the rest /
@@ -680,7 +588,7 @@ export async function runInsightWithTracking(): Promise<{ skipped: boolean; reas
     );
     return {
       skipped: false,
-      reason: allDone ? "All insights generated." : `Processed ${result.processed}; ${result.remaining} store(s) remaining.`,
+      reason: allDone ? "All metrics computed." : `Processed ${result.processed}; ${result.remaining} store(s) remaining.`,
       result,
     };
   } catch (err) {

@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { runInsightWithTracking } from "@/lib/server/generate-daily-insight";
+import { runDailyMetricsWithTracking } from "@/lib/server/daily-metrics-digest";
 
 export const runtime = "nodejs";
-// Gemini call + Firestore reads/writes for all active stores.
+// Firestore reads/writes for all active stores. No AI call — the AI-narrated
+// brief this used to produce was retired in favor of ERP's own AI brief; this
+// now only computes the deterministic metrics digest ERP will pull from
+// stores/{storeId}/dailyMetrics/{dayId}. Route path kept as-is so the
+// existing Cloud Scheduler job doesn't need reconfiguring.
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
@@ -20,7 +24,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { skipped, reason, result } = await runInsightWithTracking();
+    const { skipped, reason, result } = await runDailyMetricsWithTracking();
     if (skipped) return NextResponse.json({ ok: true, skipped: true, reason });
     return NextResponse.json({
       ok: true,
@@ -33,6 +37,6 @@ export async function GET(request: Request) {
     });
   } catch (err: any) {
     console.error("[cron/generate-daily-insight] failed:", err);
-    return NextResponse.json({ error: err?.message || "Insight cron failed." }, { status: 500 });
+    return NextResponse.json({ error: err?.message || "Metrics digest cron failed." }, { status: 500 });
   }
 }

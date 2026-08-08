@@ -8,8 +8,6 @@ import { useStoreContext } from '@/context/store-context';
 import { useLocalProfile } from '@/context/local-profile-context';
 import { bypassesLocalUserGate } from '@/lib/server-profiles/localGate';
 import { ServerSignInGate } from '@/components/server/ServerSignInGate';
-import { RoleBriefGate } from '@/components/insights/RoleBriefGate';
-import { InsightFloatingBadge } from '@/components/dashboard/InsightFloatingBadge';
 import { Loader2 } from 'lucide-react';
 
 // This is a helper function to merge FirebaseUser and AppUser
@@ -84,11 +82,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 ) : needsLocalUser ? (
                     <ServerSignInGate {...gateProps} />
                 ) : (
-                    <>
-                        {children}
-                        <RoleBriefGate />
-                        <InsightFloatingBadge />
-                    </>
+                    children
                 )}
             </main>
         </div>

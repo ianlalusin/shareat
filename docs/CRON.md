@@ -38,21 +38,26 @@ via `system/forecastCronLog.runs[<date>]` — the first successful run marks the
 day "success" and later attempts short-circuit. The extra fires only exist as
 fallbacks for transient Gemini or Firestore failures.
 
-`generate-daily-insight` analyzes **yesterday's** performance per active store
-and writes `stores/<storeId>/aiInsights/<YYYYMMDD>` for the manager dashboard
-badge/report and the cashier/server/kitchen shift-start briefs. It reuses
-`CRON_SECRET` (auth) and `GEMINI_API_KEY` (model); no new secret is required.
+`generate-daily-insight` computes **yesterday's** performance per active store
+— no AI involved — and writes `stores/<storeId>/dailyMetrics/<YYYYMMDD>`. This
+used to feed an AI-narrated manager brief; that generation was retired in
+favor of ERP's own AI brief (2026-08-08), so this route now only produces the
+deterministic metrics digest ERP pulls from. Reuses `CRON_SECRET` (auth); no
+Gemini call, no `GEMINI_API_KEY` dependency. See
+`docs/erp-daily-metrics-forwarding.md` for what's measured.
 
-**Cost control (both AI crons):** generation is **per-store idempotent** — a
+**Cost control (forecast cron):** generation is **per-store idempotent** — a
 store already done for the day is skipped (no Gemini call), so a single flaky
 store never re-runs the whole fleet. Each fire processes only a small **batch**
 of not-yet-done stores at low concurrency, so the work spreads across the
-multiple off-peak fires (insight: `0 1-5 * * *`; forecast keeps its evening
-window) and bursts stay under the Gemini rate limit. A day is marked `success`
-only once every active store is done; otherwise it stays `pending` and the next
-fire picks up the remainder / retries failures (capped by `MAX_DAILY_ATTEMPTS`).
-The forecast tracks completed stores in `system/forecastCronLog.runs[<date>].doneStoreIds`;
-the insight uses the presence of each store's `aiInsights/<date>` doc.
+multiple off-peak fires and bursts stay under the Gemini rate limit. A day is
+marked `success` only once every active store is done; otherwise it stays
+`pending` and the next fire picks up the remainder / retries failures (capped
+by `MAX_DAILY_ATTEMPTS`). The forecast tracks completed stores in
+`system/forecastCronLog.runs[<date>].doneStoreIds`. `generate-daily-insight`
+uses the same idempotent/batched shape (tracked in
+`system/dailyMetricsCronLog`) purely to spread Firestore load, not for any
+rate-limit reason — there's no model call left to throttle.
 
 `reconcile-analytics` is the durable backstop for the analytics server lockdown
 (M-1). Analytics rollups are server-write-only (Firestore rules), and the client
@@ -158,10 +163,10 @@ gcloud scheduler jobs create http holiday-calendar \
   --attempt-deadline=120s
 ```
 
-**Secrets**: `generate-daily-insight` needs no new secret — it reuses
-`CRON_SECRET` and `GEMINI_API_KEY`, both already declared in `apphosting.yaml`
-and provisioned for the forecast jobs. Just ensure the new route is deployed
-(rolled out) before creating the job.
+**Secrets**: `generate-daily-insight` needs only `CRON_SECRET` (already
+declared in `apphosting.yaml`) — it no longer calls Gemini, so
+`GEMINI_API_KEY` is not required for this route. Just ensure the new route is
+deployed (rolled out) before creating the job.
 
 **Weather key**: `log-weather` also needs `OPENWEATHER_API_KEY` (declared in
 `apphosting.yaml`). Create + grant it before the first rollout, e.g.

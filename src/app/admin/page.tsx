@@ -32,7 +32,6 @@ const managerTools = [
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
     { title: "Sales Reports", description: "Daily & monthly sales summary for printing and cash-up.", href: "/sales-report", icon: LineChart },
     { title: "Daily Session Timeline", description: "Every closed session for one day — expand any row for its full event sequence, plus the day's voids, comps and staff adjustments.", href: "/admin/daily-session-timeline", icon: History },
-    { title: "AI Daily Insights", description: "AI analysis of yesterday's sales, operations, and movement.", href: "/admin/insights", icon: Sparkles },
     { title: "Printer Setup", description: "Configure Bluetooth thermal printers.", href: "/admin/tools/printer-test", icon: Printer },
     { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },
 ]

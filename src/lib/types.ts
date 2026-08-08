@@ -1333,10 +1333,14 @@ export type DailyMetric = {
 }
 
 /* ------------------------------------------------------------------ */
-/*  AI Daily Insight  (stored at stores/{storeId}/aiInsights/{dayId}) */
+/*  Daily Metrics Digest  (stored at stores/{storeId}/dailyMetrics/{dayId}) */
+/*  Deterministic performance metrics computed every day, no AI involved.  */
+/*  Was the signal layer under an AI-narrated brief until that generation */
+/*  was retired in favor of ERP's own AI brief (2026-08-08) — this doc is */
+/*  what gets forwarded to ERP. See docs/erp-daily-metrics-forwarding.md. */
 /* ------------------------------------------------------------------ */
 
-/** One deterministic, server-computed figure shown as a chip. Never AI-authored. */
+/** One deterministic, server-computed figure shown as a chip. */
 export type InsightMetric = {
   label: string;
   value: string;            // pre-formatted (₱, %, min, count)
@@ -1344,40 +1348,21 @@ export type InsightMetric = {
   direction?: "up" | "down" | "flat" | null;
 };
 
-/** A report section: deterministic metrics + AI narrative/flags. */
-export type InsightSectionData = {
-  headline: string;         // AI
-  metrics: InsightMetric[];  // server-computed (source of truth for numbers)
-  narrative: string;        // AI
-  flags: string[];          // AI
-};
-
-export type DailyInsightSuggestion = {
-  text: string;
-  area: "sales" | "ops" | "inventory" | "general";
-  priority: "high" | "medium" | "low";
-};
-
-export type DailyInsight = {
+export type DailyMetricsDigest = {
   dayId: string;            // the analyzed day (yesterday), YYYYMMDD (Asia/Manila)
   storeId: string;
   status: "ok" | "no_data" | "error";
   source: "manual" | "cron";
-  model: string;
   generatedAt: any;         // serverTimestamp
   generatedAtMs: number;
-  summary: { headline: string; bullets: string[]; sentiment: "good" | "mixed" | "poor" };
-  sales: InsightSectionData;
-  operations: InsightSectionData;
-  inventory: InsightSectionData;
-  anomalies: InsightSectionData;
-  suggestions: DailyInsightSuggestion[];
-  /** Token/cost of the Gemini call that produced this doc. Absent on no_data /
-   *  error docs (no call was made) and on docs generated before cost capture
-   *  existed. Lets spend be measured per store/day without a separate call log. */
-  promptTokens?: number;
-  outputTokens?: number;
-  costPesos?: number;
+  sales: InsightMetric[];
+  operations: InsightMetric[];
+  inventory: InsightMetric[];
+  anomalies: InsightMetric[];
+  /** Plain-text rollup of every metric below, generated for free alongside
+   *  them — handy for forwarding/logging without re-deriving meaning from
+   *  the chip arrays. */
+  digestText?: string;
   error?: string | null;
 };
 

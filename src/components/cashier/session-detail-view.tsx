@@ -790,9 +790,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                   </div>
 
                   {/* Action bar: Bill Discount, Add Charge, Pay — grouped under
-                      Billable Items only (not full-width), so the bottom-left
-                      corner (Customer Info / bill preview column) stays clear
-                      for the floating AI Brief badge instead of overlapping it. */}
+                      Billable Items only (not full-width), leaving the
+                      bottom-left corner (Customer Info / bill preview column)
+                      clear. */}
                   <div className="shrink-0 border-t bg-background/95 backdrop-blur-sm px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
                     <div className="flex items-center gap-2">
                       <BillAdjustments
