@@ -12,11 +12,60 @@ service cloud.firestore {
     function staffData() { return get(staffPath()).data; }
     function isActiveStaff() { return staffExists() && staffData().status == 'active'; }
 
+    // isActiveStaff() (not staffExists()) on the staff-doc branch: a deactivated
+    // admin must not keep god access to every store. The platformAdmin custom
+    // claim is the break-glass path and stays deliberately un-status-gated, so
+    // it still works when the staff-doc branch cannot let anyone through.
+    //
+    // Grant it with `node scripts/set-platform-admin.mjs <UID>` (Admin SDK, so
+    // it needs a service account, not a signed-in user). An earlier version of
+    // this comment claimed nothing in the repo called setCustomUserClaims and
+    // that the claim was therefore set out of band — that was wrong, and it
+    // mattered: it made this branch look like a door nobody could open, which
+    // is the reasoning that held back the isActiveStaff() change above.
+    //
+    // Note: the emulator logs an evaluation error here on deny paths, because
+    // `platformAdmin` is absent from every real token and the property read
+    // raises instead of returning false. It is verdict-neutral — an errored
+    // operand of `||` still yields true when the other side is true, so admins
+    // pass and non-admins deny, which is what the rules tests assert. Rewriting
+    // it as a keys()/`in` membership test does NOT silence it (verified), so it
+    // is left in its original form rather than made more complex for no gain.
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.platformAdmin == true ||
-        (staffExists() && staffData().role == 'admin')
+        (isActiveStaff() && staffData().role == 'admin')
       );
+    }
+
+    // Safe to trust staffData().role here for the same reason isAdmin() is:
+    // /staff/{uid} grants update+delete only to isAdmin(), the root fallback
+    // denies all writes, and the self-signup create pins role to 'server' and
+    // status to 'pending'. A user cannot promote themselves to manager.
+    function isManager() {
+      return isActiveStaff() && staffData().role == 'manager';
+    }
+    function isManagerOrAdmin() { return isAdmin() || isManager(); }
+
+    // Writing any of these changes money or the menu, so it is a manager/admin
+    // decision. Everything else under a store is operational and stays open to
+    // the shift roles. Names here are FIRST path segments only — the catch-all
+    // binds {coll} to one segment, so nested docs inherit their parent's verdict
+    // (receipts/{id}/revisions/{v} is 'receipts'; storeConfig/current/tables/{t}
+    // is 'storeConfig').
+    // savedQrCodes is the QR wallet (static merchant QRs shown to customers at
+    // the till). It is config, not operational: any staffer may DISPLAY a saved
+    // QR, but adding or editing one changes which account receives money, so it
+    // is a manager/admin decision.
+    //
+    // Deliberately NOT listed here: paymentProofs and qrWalletEvents. Cashiers
+    // write both on their critical path, and locking them would surface as
+    // silent offline data loss (see the note in tests/rules/store-scoped.test.ts).
+    function isConfigCollection(coll) {
+      return coll in ['inventory', 'storeDiscounts', 'storeCharges', 'storeModesOfPayment',
+                      'storePackages', 'storeRefills', 'storeFlavors', 'menuSchedules',
+                      'kitchenLocations', 'receiptSettings', 'salesTargets', 'optionOverrides',
+                      'savedQrCodes'];
     }
 
     function hasStoreAccess(storeId) {
@@ -36,30 +85,48 @@ service cloud.firestore {
     function customerStoreId() { return request.auth.token.storeId; }
     function customerSessionId() { return request.auth.token.sessionId; }
 
+    function isLoyaltyCustomer() {
+      return isSignedIn() && request.auth.token.loyaltyCustomer == true;
+    }
+    function loyaltyPhone() { return request.auth.token.phone; }
+
     function isCustomerForSession(storeId, sessionId) {
       return isCustomer()
         && customerStoreId() == storeId
         && customerSessionId() == sessionId;
     }
+    function customerParticipantId() { return request.auth.token.participantId; }
 
     function msNow() { return request.time.toMillis(); }
+    // Uses .get(field, null) rather than direct field access so the guard is safe
+    // on documents that have no PIN fields at all — this is applied to the
+    // activeSessions wildcard block below, which also matches subcollection docs
+    // like customerParticipants, and a missing-field read would error to deny.
+    // `resource == null` is the create case. The previous version used
+    // !resource.exists(), which raises "Null value error" on create — the guard
+    // was doubly broken: it errored here, and the activeSessions wildcard block
+    // OR-ed past it anyway, so nothing ever surfaced.
     function pinFieldsUnchanged() {
-      return !resource.exists()
+      return resource == null
         || (
-          request.resource.data.customerPin == resource.data.customerPin
-          && request.resource.data.customerAccessEnabled == resource.data.customerAccessEnabled
-          && request.resource.data.customerAccessExpiresAtMs == resource.data.customerAccessExpiresAtMs
+          request.resource.data.get('customerPin', null) == resource.data.get('customerPin', null)
+          && request.resource.data.get('customerAccessEnabled', null) == resource.data.get('customerAccessEnabled', null)
+          && request.resource.data.get('customerAccessExpiresAtMs', null) == resource.data.get('customerAccessExpiresAtMs', null)
         );
     }
 
     // -----------------------------
     // Collection Group Rules
     // -----------------------------
+    // Scoped to the querying user's stores. Collection-group rules are evaluated
+    // per returned document, so any client collectionGroup() query over these
+    // MUST filter where('storeId','==',...) or it will be denied for non-admins.
+    // The only live one, SyncKdsTicketsTool, already does.
     match /{path=**}/kitchentickets/{ticketId} {
-      allow read: if isActiveStaff();
+      allow read: if isActiveStaff() && hasStoreAccess(resource.data.storeId);
     }
     match /{path=**}/activityLogs/{logId} {
-      allow read: if isActiveStaff();
+      allow read: if isActiveStaff() && hasStoreAccess(resource.data.storeId);
     }
 
     // -----------------------------
@@ -68,7 +135,15 @@ service cloud.firestore {
     match /staff/{uid} {
       allow read, write: if isAdmin();
       allow get: if isSignedIn() && request.auth.uid == uid;
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      // Public self-signup may create ONLY its own non-privileged, pending
+      // profile. Role/status/store access are locked here so a signer-up
+      // cannot self-elevate to admin or active by writing the doc directly
+      // (bypassing the UI). Promotion happens admin-side via the isAdmin write.
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.role == 'server'
+        && request.resource.data.assignedStoreIds == [];
     }
 
     // -----------------------------
@@ -109,28 +184,242 @@ service cloud.firestore {
         && resource.data.customerAccessExpiresAtMs > msNow();
     }
 
-    // Keep your existing catch-all for staff subpaths under activeSessions if needed
+    // Customer participants: customers read only their own active doc; staff have full access via wildcard below.
+    match /stores/{storeId}/activeSessions/{sessionId}/customerParticipants/{participantId} {
+      allow get: if isCustomerForSession(storeId, sessionId)
+        && customerParticipantId() == participantId
+        && resource.data.status == 'active';
+    }
+
+    // Catch-all for staff subpaths under activeSessions. This block also matches
+    // the activeSessions/{sessionId} document itself ({docPath=**} covers one or
+    // more segments), so it MUST repeat pinFieldsUnchanged() — otherwise it ORs
+    // straight past the guard on the block above and the PIN fields are freely
+    // forgeable by any store-scoped staff member.
+    //
+    // Known residual: a client may still delete the session doc and recreate it
+    // with arbitrary PIN fields, since !resource.exists() permits any values on
+    // create and cashiers legitimately delete activeSessions on payment/void.
+    // Closing that requires PIN issuance to move fully server-side.
+    //
+    // create/update and delete are listed separately on purpose: `write` covers
+    // all three, but on a delete `request.resource` is null, so evaluating
+    // pinFieldsUnchanged() would error to deny and break every payment and void
+    // (both delete the activeSessions doc).
     match /stores/{storeId}/activeSessions/{docPath=**} {
-      allow read, write: if hasStoreAccess(storeId);
+      allow read: if hasStoreAccess(storeId);
+      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged();
+      allow delete: if hasStoreAccess(storeId);
     }
 
     match /stores/{storeId}/closedSessions/{docPath=**} {
       allow read, write: if hasStoreAccess(storeId);
     }
 
-    // Store scoped (everything else)
-    match /stores/{storeId}/{docPath=**} {
+    // The store document itself (kept separate so the collection-scoped rule
+    // below can inspect the top-level collection name as a plain string).
+    match /stores/{storeId} {
       allow read, write, delete: if hasStoreAccess(storeId);
     }
 
-    // Root (non-store) - keep as-is, but note: pinRegistry is now explicitly handled above
+    // Store scoped (everything else). Analytics rollups
+    // (analytics / analyticsMonths / analyticsYears / dashPresets / dailySessions)
+    // are SERVER-ONLY
+    // writes: every writer goes through the admin SDK (which bypasses these rules),
+    // so clients may READ them but not write/delete. `coll` is a single-segment
+    // wildcard (a string), so the membership check is unambiguous.
+    //
+    // The online storefront collections are likewise server-only writes: the
+    // catalog snapshot + config are built by the admin API, online orders are
+    // created by the website Cloud Function and advanced by the transition API.
+    // Staff may READ them (the Online Orders inbox listens live) but never write.
+    //
+    // paymentIntents (PayMongo QR Ph bridge docs) are also server-only writes:
+    // created by the create-qr route and advanced by the PayMongo webhook (the
+    // webhook is the source of truth for status). Staff may READ them (to show
+    // the live QR/payment status on the POS) but never write, so a cashier
+    // device cannot forge a "paid" status.
+    //
+    // Config collections (isConfigCollection above) are further restricted to
+    // managers and admins. hasStoreAccess() alone does not distinguish roles, so
+    // without this a cashier or server could rewrite selling prices, discounts,
+    // charges, or payment methods straight from a devtools console — the
+    // manager-only restriction on /manager/inventory and /manager/store-settings
+    // is RoleGuard, i.e. UI-only. Operational collections stay open: a shift
+    // cannot run otherwise, and a denied offline replay is silent data loss
+    // (commitLocalFirst does not await the commit).
+    //
+    // activeSessions is excluded entirely: it has dedicated blocks above that
+    // cover read/create/update/delete, and this catch-all would otherwise OR
+    // straight past their pinFieldsUnchanged() guard, leaving the customer PIN
+    // fields forgeable by any store-scoped staff member.
+    //
+    // serverProfileSecrets is excluded from READ as well as write — the only
+    // store-scoped collection that is. It holds the hashed passcodes for local
+    // device profiles, which are 6 digits, so a readable hash is a sub-second
+    // offline crack and lets anyone act on a shared tablet under a colleague's
+    // name. Note this exclusion has to live in the catch-all condition itself:
+    // a separate `match … { allow read: if false }` block would do nothing,
+    // because rules OR across every matching block. /api/server-profiles reads
+    // and writes it through the Admin SDK.
+    match /stores/{storeId}/{coll}/{docPath=**} {
+      allow read: if hasStoreAccess(storeId)
+        && coll != 'serverProfileSecrets';
+      allow write, delete: if hasStoreAccess(storeId)
+        && coll != 'activeSessions'
+        && coll != 'serverProfileSecrets'
+        && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets', 'dailySessions',
+                      'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents'])
+        && (!isConfigCollection(coll) || isManagerOrAdmin());
+    }
+
+    // PayMongo intent -> bridge-doc reverse index (server-only; written by create-qr,
+    // read by the webhook via Admin SDK, which bypasses rules).
+    match /paymongoIntentIndex/{intentId} {
+      allow read, write, delete: if false;
+    }
+
+    // -----------------------------
+    // SHARELEBRATOR AUDIT LOG (server-only writes)
+    // -----------------------------
+    match /loyaltyLogs/{logId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
+    // Daily projection for the audit log (server-only writes)
+    // Doc ID shape: {dayId}_{partIndex} or {dayId}_meta
+    match /loyaltyLogsDaily/{docId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
+    // -----------------------------
+    // SHARELEBRATOR AGGREGATES (server-only writes)
+    // Single projection doc: loyaltyStats/global
+    // -----------------------------
+    match /loyaltyStats/{docId} {
+      allow read: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
+    // -----------------------------
+    // SHARELEBRATOR LOYALTY CUSTOMERS
+    // Top-level (cross-branch). Server-only writes via Admin SDK.
+    // -----------------------------
+    match /customers/{phone} {
+      allow get: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
+      allow list: if isActiveStaff();
+      allow create, update, delete: if false;
+
+      match /pointsLedger/{ledgerId} {
+        allow get, list: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
+        allow create, update, delete: if false;
+      }
+    }
+
+    // -----------------------------
+    // SHARELEBRATOR REWARDS CATALOG + REDEMPTIONS
+    // -----------------------------
+    // Global rewards catalog: readable by staff (POS cashier UI) and loyalty /
+    // session customers (Hub); writable only by platform admins.
+    match /loyaltyRewards/{rewardId} {
+      allow read, list: if isActiveStaff() || isLoyaltyCustomer() || isCustomer();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Redemption records / vouchers — created, validated, and applied
+    // server-side via the Admin SDK only.
+    match /loyaltyRedemptions/{id} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    // -----------------------------
+    // PLATFORM-WIDE (UNIVERSAL) DISCOUNTS & CHARGES
+    // Admins create/update/delete; any active staff can read (POS/manager views need them).
+    // -----------------------------
+    match /globalDiscounts/{discountId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /globalCharges/{chargeId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // -----------------------------
+    // PLATFORM-WIDE MENU CATALOGS
+    // POS clients read these directly; writes are admin-only.
+    // Customer-app backends using Admin SDK bypass these rules.
+    // -----------------------------
+    match /packages/{packageId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /refills/{refillId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /flavors/{flavorId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /products/{productId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    match /addonCategories/{categoryId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // -----------------------------
+    // PRODUCT REGISTRATION REQUESTS
+    // A manager applies for a new global product from /manager/product-requests;
+    // a platform admin approves (which creates products/{id} and auto-imports it
+    // into the requesting store) or declines with a reason.
+    //
+    // EVERY write goes through POST /api/product-requests (Admin SDK, which
+    // bypasses these rules), so clients are strictly read-only here. A requester
+    // must never be able to forge `status`, `requestedByUid`, `nameKey`,
+    // `approvedProductId`, or the reviewer fields by writing the doc directly.
+    //
+    // NOTE: the read grant below is already implied by the root fallback at the
+    // bottom of this file (rules are OR-ed across matching blocks). It is spelled
+    // out here for the explicit write denial and so the collection is documented
+    // alongside the other platform-wide catalogs.
+    // -----------------------------
+    match /productRequests/{requestId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
+    // Legacy user profiles can be read only by admins for migration tools.
+    match /users/{userId} {
+      allow read, list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Root fallback: read-only for authenticated staff. Do not grant writes here,
+    // otherwise this fallback can override server-only collection rules above.
+    // paymongoIntentIndex is server-only (Admin SDK): exclude it from this read grant,
+    // otherwise the OR-semantics of this fallback would expose its correlation docs.
+    //
+    // 'stores' is excluded from BOTH fallbacks. Without that exclusion the deep
+    // fallback matched stores/{anyStoreId}/{anything} with no hasStoreAccess
+    // check, so any active staff member could read every store's receipts,
+    // sessions and analytics. Store data is governed by the store-scoped blocks
+    // above; admins still reach every store because isAdmin() short-circuits
+    // hasStoreAccess().
     match /{collection}/{docId} {
-      allow read, create, update: if isActiveStaff();
-      allow delete: if isAdmin();
+      allow read: if isActiveStaff()
+        && collection != 'paymongoIntentIndex'
+        && collection != 'stores';
+      allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
-      allow read, create, update: if isActiveStaff();
-      allow delete: if isAdmin();
+      allow read: if isActiveStaff() && collection != 'stores';
+      allow create, update, delete: if false;
     }
   }
 }

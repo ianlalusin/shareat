@@ -20,9 +20,21 @@
     ]
   },
   "firestore": {
-    "database": "shareatv5",
+    "database": "(default)",
     "location": "asia-southeast1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "singleProjectMode": true,
+    "ui": {
+      "enabled": false
+    }
   }
 }

@@ -2,21 +2,42 @@
 
 const QUEUE_KEY = "offline_payment_queue";
 
-export type QueuedPayment = {
+export type DeferredEffect = "analytics" | "loyaltyFinalize" | "loyaltyEarn" | "pinFinalize" | "loyaltyReverse";
+export type EffectState = "pending" | "done" | "skip";
+
+export interface QueuedReceiptContext {
+  pin?: string | null;
+  phone?: string | null;
+  amount: number;
+  redemptionIds?: string[];
+}
+
+export interface QueuedPayment {
   id: string;
   storeId: string;
   sessionId: string;
+  receiptId: string;
   queuedAtMs: number;
   status: "pending" | "syncing" | "failed";
-  payload: {
-    payments: any[];
-    billLines: any[];
-    billDiscount: any | null;
-    customAdjustments: any[];
-    totalAmount: number;
-  };
+  kind?: "payment" | "void";
+  ctx: QueuedReceiptContext;
+  effects: Record<DeferredEffect, EffectState>;
   errorMessage?: string;
-};
+}
+
+const ALL_EFFECTS: DeferredEffect[] = ["analytics", "loyaltyFinalize", "loyaltyEarn", "pinFinalize", "loyaltyReverse"];
+
+export function pendingEffects(item: QueuedPayment): DeferredEffect[] {
+  return ALL_EFFECTS.filter((e) => item.effects[e] === "pending");
+}
+
+export function markEffect(item: QueuedPayment, effect: DeferredEffect, state: EffectState): QueuedPayment {
+  return { ...item, effects: { ...item.effects, [effect]: state } };
+}
+
+export function isItemComplete(item: QueuedPayment): boolean {
+  return pendingEffects(item).length === 0;
+}
 
 export function getQueue(): QueuedPayment[] {
   try {

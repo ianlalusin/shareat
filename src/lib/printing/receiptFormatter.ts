@@ -7,8 +7,16 @@ import { format } from "date-fns";
 /**
  * Formats receipt data into plain text for thermal printing (ESC/POS).
  */
-export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): string {
-  const charsPerLine = width === 58 ? 32 : 48;
+export function formatReceiptText(
+  data: ReceiptData,
+  width: 58 | 80 = 80,
+  fontMode: 'small' | 'normal' | 'large' = 'normal',
+): string {
+  // Thermal fonts: Font A (normal) and the denser Font B (small) fit a
+  // different number of columns per line. "large" is Font A at double height —
+  // the character WIDTH is unchanged, so it uses the same columns as normal.
+  const charsPerLine =
+    fontMode === 'small' ? (width === 58 ? 42 : 64) : (width === 58 ? 32 : 48);
   const qtyWidth = 4;
   const priceWidth = 10;
   const nameWidth = charsPerLine - qtyWidth - priceWidth;
@@ -52,7 +60,10 @@ export function formatReceiptText(data: ReceiptData, width: 58 | 80 = 80): strin
   const headerRow = 'Qty'.padEnd(qtyWidth) + 'Item'.padEnd(nameWidth) + 'Total'.padStart(priceWidth);
   lines.push(headerRow);
 
-  const activeLines = (data.lines || []).filter(l => (l.qtyOrdered - (l.voidedQty || 0)) > 0);
+  const activeLines = (data.lines || [])
+    .filter(l => (l.qtyOrdered - (l.voidedQty || 0)) > 0)
+    // Pin the package/bundle line to the top (dine-in); stable for the rest.
+    .sort((a, b) => ((a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1)));
   activeLines.forEach(line => {
     const billableQty = line.qtyOrdered - (line.voidedQty || 0);
     const lineTotal = (billableQty * line.unitPrice).toFixed(2);
@@ -100,6 +111,48 @@ export interface PinTextParts {
   bottom: string;
 }
 
+export function formatSharelebratorPasswordText(opts: {
+  name: string;
+  phone: string;
+  tempPassword: string;
+  resetAtMs?: number;
+  width: 58 | 80;
+}): string {
+  const charsPerLine = opts.width === 58 ? 32 : 38;
+  const center = (text: string) => text.trim();
+  const hr = () => '-'.repeat(charsPerLine);
+  const dashed = () => '='.repeat(charsPerLine);
+
+  const lines: string[] = [
+    center('* SHARELEBRATOR *'),
+    center('Password Reset'),
+    hr(),
+    '',
+    center('Cardholder:'),
+    center(opts.name),
+    '',
+    center('Phone:'),
+    center(opts.phone),
+    '',
+    dashed(),
+    center('TEMPORARY PASSWORD'),
+    '',
+    center(opts.tempPassword),
+    '',
+    dashed(),
+    '',
+    center('Use this to log in to your'),
+    center('Sharelebrator account.'),
+    center('Please change it after login.'),
+    '',
+    hr(),
+    center(new Date(opts.resetAtMs ?? Date.now()).toLocaleString()),
+    '\n\n\n\n',
+  ];
+
+  return lines.join('\n');
+}
+
 export function formatPinText(opts: {
   pin: string;
   customerName?: string | null;
@@ -121,10 +174,9 @@ export function formatPinText(opts: {
     center('SHARELEBRATE'),
     center('with us.'),
     '',
-    center('Scan the code below or go to'),
-    center('customer.shareat.net'),
-    center('then enter your PIN and enjoy'),
-    center('our new refilling system.'),
+    center('Scan the QR code to join instantly'),
+    center('or go to customer.shareat.net'),
+    center('and enter your PIN below.'),
     '',
   ];
 

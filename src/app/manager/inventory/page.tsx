@@ -22,6 +22,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
 import { normalizeUom } from "@/lib/uom";
 import { getDisplayName } from "@/lib/products/variants";
+import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -241,6 +242,14 @@ export default function InventoryManagementPage() {
     }
   };
 
+  // Republish the public storefront if this store is the storefront pilot store.
+  // Inventory price / availability is the snapshot's pricing source, so changing
+  // it here must refresh shareat.net/shop (debounced; no-op on other stores).
+  const notifyPublish = (r: StorefrontPublishResult) => {
+    if (r.ok) toast({ title: "Storefront updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the website.` });
+    else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
+  };
+
   const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
@@ -251,6 +260,7 @@ export default function InventoryManagementPage() {
             updatedAt: serverTimestamp(),
         });
         toast({ title: "Item Updated", description: `${getDisplayName(item)} details have been saved.`});
+        scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     } finally {
@@ -290,6 +300,7 @@ export default function InventoryManagementPage() {
     try {
         await updateDoc(itemDocRef, { [field]: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Item Status Updated" });
+        if (field === 'isActive') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     }
@@ -311,6 +322,7 @@ export default function InventoryManagementPage() {
     try {
         await updateDoc(itemDocRef, { isActive: false, isArchived: true, archivedAt: serverTimestamp() });
         toast({ title: "Inventory Item Archived" });
+        scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Archive Failed", description: error.message });
     }

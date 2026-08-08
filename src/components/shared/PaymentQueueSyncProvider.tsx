@@ -1,36 +1,39 @@
 "use client";
-import { useMemo } from "react";
+import { doc, getDoc } from "firebase/firestore";
 import { usePaymentQueueSync } from "@/hooks/use-payment-queue-sync";
-import { completePaymentFromUnits } from "@/components/cashier/firestore";
+import { replayDeferredEffects } from "@/lib/offline/replayDeferredEffects";
+import { updateQueueItem } from "@/lib/offline/payment-queue";
 import { useAuthContext } from "@/context/auth-context";
-import { useStoreContext } from "@/context/store-context";
-import { useStoreConfigDoc } from "@/hooks/useStoreConfigDoc";
+import { db } from "@/lib/firebase/client";
 
 export function PaymentQueueSyncProvider() {
-  const { appUser } = useAuthContext();
-  const { activeStore } = useStoreContext();
-  const { config: storeConfig } = useStoreConfigDoc(activeStore?.id);
+  const { user: firebaseUser } = useAuthContext();
 
-  const paymentMethods = useMemo(() => {
-    if (!storeConfig?.modesOfPayment) return [];
-    return storeConfig.modesOfPayment.filter(m => m.isActive && !(m as any).isArchived);
-  }, [storeConfig]);
+  usePaymentQueueSync(async (item) => {
+    if (!firebaseUser) return { item, complete: false }; // transient: auth not ready
 
-  usePaymentQueueSync(async (_queuedId, storeId, sessionId, payload) => {
-    if (!appUser) throw new Error("Not authenticated");
-    if (!activeStore) throw new Error("No active store");
-    return await completePaymentFromUnits(
-      storeId,
-      sessionId,
-      appUser,
-      payload.payments,
-      payload.billLines,
-      activeStore,
-      paymentMethods,
-      payload.billDiscount,
-      payload.customAdjustments,
-    );
-  });
+    // Guardrail 5a: only a NETWORK/read failure is transient; a genuine online
+    // final receipt is a terminal conflict. Void items have no receipt — skip.
+    if (item.kind !== "void") {
+      let receiptSnap;
+      try {
+        receiptSnap = await getDoc(doc(db, "stores", item.storeId, "receipts", item.sessionId));
+      } catch {
+        return { item, complete: false }; // transient read failure — retry later
+      }
+      if (receiptSnap.exists()) {
+        const r: any = receiptSnap.data();
+        if (r.status === "final" && r.offlineOrigin !== true) {
+          throw new Error(`Server already has an online receipt for session ${item.sessionId}; offline effects skipped (conflict).`);
+        }
+      }
+    }
+
+    return await replayDeferredEffects(item, {
+      getToken: () => firebaseUser.getIdToken(),
+      onEffectDone: (updated) => updateQueueItem(updated.id, { effects: updated.effects }),
+    });
+  }, !!firebaseUser);
 
   return null;
 }

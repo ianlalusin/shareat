@@ -24,6 +24,7 @@ const formSchema = z.object({
   stackable: z.boolean().default(false),
   sortOrder: z.coerce.number().int().default(1000),
   isEnabled: z.boolean().default(true),
+  vatExempt: z.boolean().default(false),
 }).refine(data => !(data.type === 'percent' && data.value > 100), {
   message: "Percentage cannot exceed 100.",
   path: ["value"],
@@ -52,6 +53,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
       stackable: false,
       sortOrder: 1000,
       isEnabled: true,
+      vatExempt: false,
     },
   });
 
@@ -70,6 +72,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
         stackable: item.stackable,
         sortOrder: item.sortOrder,
         isEnabled: item.isEnabled,
+        vatExempt: item.vatExempt ?? false,
       });
     } else {
       form.reset({
@@ -80,6 +83,7 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
         stackable: false,
         sortOrder: 1000,
         isEnabled: true,
+        vatExempt: false,
       });
     }
   }, [item, form, isOpen]);
@@ -210,6 +214,16 @@ export function DiscountEditDialog({ isOpen, onClose, onSave, item }: DiscountEd
             <FormField control={form.control} name="isEnabled" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
                 <FormLabel>Enabled</FormLabel>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="vatExempt" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <FormLabel>VAT-Exempt (Senior / PWD)</FormLabel>
+                  <p className="text-xs text-muted-foreground">Removes VAT from the whole bill; the discount is taken on the net price.</p>
+                </div>
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />

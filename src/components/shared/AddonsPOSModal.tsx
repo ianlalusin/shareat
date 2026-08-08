@@ -7,24 +7,34 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Search, Minus, Plus, Loader2, Layers } from "lucide-react";
 import Image from "next/image";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment } from "firebase/firestore";
+import { collection, doc, writeBatch, serverTimestamp, runTransaction, increment, getDoc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import { commitLocalFirst } from "@/lib/offline/commit";
+import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
+import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
+import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { stripUndefined } from "@/lib/firebase/utils";
-import type { InventoryItem, PendingSession, SessionBillLine } from "@/lib/types";
+import type { InventoryItem, OptionGroup, PendingSession, SelectedModifier, SessionBillLine } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { QuantityInput } from "../cashier/quantity-input";
 import { allowsDecimalQty } from "@/lib/uom";
+import { resolveFamilyImageUrl } from "@/lib/products/variants";
 import { getActorStamp, createKitchenTickets } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
+import { ModifierPicker, type PickerResult } from "../cashier/modifier-picker";
+import { FamilyOrderModal, type FamilyOrderAddArgs } from "../cashier/family-order-modal";
+import { getAuth } from "firebase/auth";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -33,6 +43,7 @@ interface AddonsPOSModalProps {
   session: PendingSession;
   sessionIsLocked?: boolean;
   onAddLine?: (line: SessionBillLine) => void;
+  serverProfile?: { id: string; name: string } | null;
 }
 
 type EnrichedStoreAddon = InventoryItem & {
@@ -65,14 +76,15 @@ function AddonItem({ addon, onSelect }: { addon: EnrichedStoreAddon; onSelect: (
 }
 
 function GroupTile({ group, onSelect }: { group: AddonGroup; onSelect: (group: AddonGroup) => void }) {
+  const familyImage = resolveFamilyImageUrl(group.items);
   return (
     <button
       onClick={() => onSelect(group)}
       className="flex flex-col items-center justify-center p-2 border rounded-md hover:bg-muted/50 transition-colors text-center h-32 focus:outline-none focus:ring-2 focus:ring-ring"
     >
       <div className="w-16 h-16 bg-muted rounded-md mb-1 relative overflow-hidden flex items-center justify-center">
-        {group.items[0].imageUrl ? (
-          <Image src={group.items[0].imageUrl} alt={group.title} fill style={{ objectFit: "cover" }} />
+        {familyImage ? (
+          <Image src={familyImage} alt={group.title} fill style={{ objectFit: "cover" }} />
         ) : (
           <Layers className="h-8 w-8 text-muted-foreground" />
         )}
@@ -83,40 +95,8 @@ function GroupTile({ group, onSelect }: { group: AddonGroup; onSelect: (group: A
   );
 }
 
-function VariantPicker({
-  group,
-  open,
-  onOpenChange,
-  onSelectVariant,
-}: {
-  group: AddonGroup | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSelectVariant: (addon: EnrichedStoreAddon) => void;
-}) {
-  if (!group) return null;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Select Variant: {group.title}</DialogTitle>
-        </DialogHeader>
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 py-4">
-          {group.items.map((addon) => (
-            <AddonItem
-              key={addon.id}
-              addon={addon}
-              onSelect={() => {
-                onSelectVariant(addon);
-                onOpenChange(false);
-              }}
-            />
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+// The old VariantPicker is replaced by FamilyOrderModal which handles
+// variant pick + modifier pick + qty + Add Item in one combined modal.
 
 function POSContent({
   storeId,
@@ -124,6 +104,7 @@ function POSContent({
   sessionIsLocked,
   onClose,
   onAddLine,
+  serverProfile,
   isMobile = false,
 }: {
   storeId: string;
@@ -131,24 +112,43 @@ function POSContent({
   sessionIsLocked?: boolean;
   onClose: () => void;
   onAddLine?: (line: SessionBillLine) => void;
+  serverProfile?: { id: string; name: string } | null;
   isMobile?: boolean;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const isOnline = useOnlineStatus();
 
-  const { storeAddons, storeAddonsLoading, refreshStoreAddons } = useStoreContext();
+  const { storeAddons, storeAddonsLoading, refreshStoreAddons, enableStoreAddons } = useStoreContext();
   const addons = storeAddons as unknown as EnrichedStoreAddon[];
   const isLoading = storeAddonsLoading;
+
+  // Opt the session into the addons subscription on first mount of the picker.
+  // Idempotent. Devices that never mount this picker never subscribe.
+  useEffect(() => {
+    enableStoreAddons();
+  }, [enableStoreAddons]);
 
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
 
   const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [note, setNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [variantPickerGroup, setVariantPickerGroup] = useState<AddonGroup | null>(null);
-  const [isVariantPickerOpen, setIsVariantPickerOpen] = useState(false);
+  // Combined family flow (replaces the old VariantPicker → AddonsPOSModal flow).
+  // When the cashier clicks a family tile, this modal opens layered over the
+  // main addons modal; it handles variant lock + modifier picks + qty + Add
+  // Item all in one place. Cancelling it returns the cashier to the main grid.
+  const [familyOrderGroup, setFamilyOrderGroup] = useState<AddonGroup | null>(null);
+  const [familyOrderOpen, setFamilyOrderOpen] = useState(false);
+
+  // Modifier picker for the SINGLETON flow only. Opens after "Add to Order"
+  // when a non-family addon has option groups attached.
+  const [modifierPickerOpen, setModifierPickerOpen] = useState(false);
+  const [pendingOptionGroups, setPendingOptionGroups] = useState<OptionGroup[]>([]);
+  const [loadingOptionGroups, setLoadingOptionGroups] = useState(false);
 
   const categories = useMemo(() => {
     return ["All", ...Array.from(new Set(addons.map((a) => a.subCategory || "Uncategorized")))];
@@ -181,8 +181,12 @@ function POSContent({
 
     return Object.values(groups)
       .map((group) => {
-        const isGroup = group.items.length > 1;
-        return { ...group, isGroup };
+        // Stable order so the family picture (first item with an image) and the
+        // variant list are deterministic.
+        const items = group.items
+          .slice()
+          .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+        return { ...group, items, isGroup: items.length > 1 };
       })
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [addons, search, activeCategory]);
@@ -192,11 +196,20 @@ function POSContent({
     setQuantity(1);
   };
 
+  // Click on a family tile opens the combined FamilyOrderModal which handles
+  // variant pick + modifier pick + qty + Add Item all in one place. The main
+  // addons modal stays open behind it so the cashier can add more after.
   const handleSelectGroup = (group: AddonGroup) => {
-    setVariantPickerGroup(group);
-    setIsVariantPickerOpen(true);
+    setFamilyOrderGroup(group);
+    setFamilyOrderOpen(true);
   };
 
+  /**
+   * Step 1 of adding a SINGLETON addon (non-family path): validate, check
+   * whether the underlying Product has any option groups. If yes, open the
+   * modifier picker; otherwise jump straight to performAdd() with no modifiers.
+   * Family items skip this entirely — FamilyOrderModal does it all in one go.
+   */
   const handleAddToOrder = async () => {
     if (sessionIsLocked) {
       toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
@@ -206,14 +219,8 @@ function POSContent({
       toast({ variant: "destructive", title: "Cannot Add Item", description: "Missing user, store, or session context." });
       return;
     }
-    if (!selectedAddon.kitchenLocationId) {
-      toast({
-        variant: "destructive",
-        title: "Kitchen Not Assigned",
-        description: `"${selectedAddon.displayName}" has no kitchen location assigned.`,
-      });
-      return;
-    }
+    // Items with no kitchen location are still orderable (they just won't make a
+    // kitchen ticket — see performAdd). No block here.
 
     const unitPriceNum = Number((selectedAddon as any).sellingPrice);
     const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
@@ -222,19 +229,154 @@ function POSContent({
       return;
     }
 
+    // Look up option groups attached to the underlying Product.
+    const productId = (selectedAddon as any).productId || selectedAddon.id;
+    setLoadingOptionGroups(true);
+    try {
+      const user = getAuth().currentUser;
+      const idToken = user ? await user.getIdToken() : null;
+      const res = idToken
+        ? await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups?storeId=${encodeURIComponent(storeId)}`, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          })
+        : null;
+      const json = res ? await res.json().catch(() => ({})) : ({} as any);
+      const groups: OptionGroup[] = res?.ok && json?.ok ? (json.optionGroups || []) : [];
+      if (groups.length === 0) {
+        await performAdd([], "", 0);
+      } else {
+        setPendingOptionGroups(groups);
+        setModifierPickerOpen(true);
+      }
+    } catch {
+      // If the fetch fails for any reason, fall through to add without modifiers
+      // rather than block the cashier. The line still goes on the bill correctly.
+      await performAdd([], "", 0);
+    } finally {
+      setLoadingOptionGroups(false);
+    }
+  };
+
+  /**
+   * Writes the bill line and kitchen ticket, optionally with modifiers.
+   * Called by:
+   *  - the singleton path (uses `selectedAddon` + `quantity` state)
+   *  - the FamilyOrderModal callback (passes its own `override` with the
+   *    locked variant and chosen quantity)
+   * Modifiers contribute their priceDelta to the per-unit price and are stored
+   * structurally (for analytics) plus as modifiersText (for KDS/receipt).
+   */
+  const performAdd = async (
+    modifiers: SelectedModifier[],
+    modifiersText: string,
+    modifiersTotal: number,
+    override?: { addon: EnrichedStoreAddon; qty: number; note?: string }
+  ) => {
+    const addon = override?.addon ?? selectedAddon;
+    const qty = override?.qty ?? quantity;
+    const lineNote = (override ? (override.note ?? "") : note).trim();
+    if (!appUser || !storeId || !session?.id || !addon) return;
+
+    const unitPriceNum = Number((addon as any).sellingPrice);
+    const safeUnitPrice = Number.isFinite(unitPriceNum) ? unitPriceNum : 0;
+    const effectiveUnitPrice = safeUnitPrice + (modifiersTotal || 0);
+
     setIsSubmitting(true);
 
     try {
-      const lineId = `addon_${selectedAddon.id}_${safeUnitPrice}`;
+      // Same item with different modifier picks must land on separate lines.
+      const modHash = modifiers.length
+        ? modifiers.map((m) => m.valueId).sort().join("-")
+        : "";
+      const lineId = modHash
+        ? `addon_${addon.id}_${safeUnitPrice}_${modHash}`
+        : `addon_${addon.id}_${safeUnitPrice}`;
       const actor = getActorStamp(appUser);
-      
-      await runTransaction(db, async (tx) => {
+
+      if (isOnline) {
+        await runTransaction(db, async (tx) => {
+          const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
+          const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
+          const lineSnap = await tx.get(lineRef);
+
+          if (lineSnap.exists()) {
+            tx.update(lineRef, {
+              qtyOrdered: increment(qty),
+              updatedAt: serverTimestamp(),
+              updatedByUid: actor.uid,
+              updatedByName: actor.username,
+            });
+          } else {
+            const newLinePayload = stripUndefined({
+              id: lineId,
+              type: "addon",
+              itemId: addon.id,
+              itemName: addon.displayName,
+              category: addon.subCategory ?? null,
+              barcode: addon.barcode ?? null,
+              unitPrice: safeUnitPrice,
+              qtyOrdered: qty,
+              discountType: null,
+              discountValue: 0,
+              discountQty: 0,
+              freeQty: 0,
+              voidedQty: 0,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              updatedByUid: actor.uid,
+              updatedByName: actor.username,
+              kitchenLocationId: addon.kitchenLocationId ?? null,
+              kitchenLocationName: addon.kitchenLocationName ?? null,
+              modifiers: modifiers.length ? modifiers : null,
+              modifiersText: modifiersText || null,
+              modifiersTotal: modifiers.length ? modifiersTotal : null,
+              note: lineNote || null,
+            });
+            tx.set(lineRef, newLinePayload);
+          }
+
+          // Only items with a kitchen location produce a kitchen ticket. Items with
+          // none are still billed (line above) but exempt from KDS so the order
+          // doesn't break.
+          if (addon.kitchenLocationId) {
+            await createKitchenTickets(
+              db,
+              storeId,
+              session.id,
+              session,
+              "addon",
+              {
+                itemId: addon.id,
+                itemName: addon.displayName,
+                kitchenLocationId: addon.kitchenLocationId,
+                kitchenLocationName: addon.kitchenLocationName,
+                billLineId: lineId,
+              },
+              qty,
+              actor,
+              { tx },
+              lineNote || undefined,
+              // `extra` is spread into the ticket payload. Pass modifier structure
+              // so KDS can render it richly if it wants, plus a flat text field.
+              modifiers.length ? { modifiers, modifiersText } : undefined
+            );
+          }
+          tx.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+        });
+      } else {
+        // Offline: this is the one read-modify-write flow in the modal. `getDoc`
+        // resolves from Firestore's local cache (no network needed) so we can
+        // still decide increment-vs-create, then batch the same writes the online
+        // transaction would have made and commit local-first.
         const lineRef = doc(db, `stores/${storeId}/sessions/${session.id}/sessionBillLines`, lineId);
-        const lineSnap = await tx.get(lineRef);
-        
+        const sessionRef = doc(db, "stores", storeId, "sessions", session.id);
+        const lineSnap = await getDoc(lineRef); // cache-served offline
+
+        const batch = writeBatch(db);
+
         if (lineSnap.exists()) {
-          tx.update(lineRef, {
-            qtyOrdered: increment(quantity),
+          batch.update(lineRef, {
+            qtyOrdered: increment(qty),
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
             updatedByName: actor.username,
@@ -243,12 +385,12 @@ function POSContent({
           const newLinePayload = stripUndefined({
             id: lineId,
             type: "addon",
-            itemId: selectedAddon.id,
-            itemName: selectedAddon.displayName,
-            category: selectedAddon.subCategory ?? null,
-            barcode: selectedAddon.barcode ?? null,
+            itemId: addon.id,
+            itemName: addon.displayName,
+            category: addon.subCategory ?? null,
+            barcode: addon.barcode ?? null,
             unitPrice: safeUnitPrice,
-            qtyOrdered: quantity,
+            qtyOrdered: qty,
             discountType: null,
             discountValue: 0,
             discountQty: 0,
@@ -258,51 +400,123 @@ function POSContent({
             updatedAt: serverTimestamp(),
             updatedByUid: actor.uid,
             updatedByName: actor.username,
-            kitchenLocationId: selectedAddon.kitchenLocationId,
-            kitchenLocationName: selectedAddon.kitchenLocationName,
+            kitchenLocationId: addon.kitchenLocationId ?? null,
+            kitchenLocationName: addon.kitchenLocationName ?? null,
+            modifiers: modifiers.length ? modifiers : null,
+            modifiersText: modifiersText || null,
+            modifiersTotal: modifiers.length ? modifiersTotal : null,
+            note: lineNote || null,
           });
-          tx.set(lineRef, newLinePayload);
+          batch.set(lineRef, newLinePayload);
         }
 
-        // Use the helper for tickets + projections
-        await createKitchenTickets(db, storeId, session.id, session, 'addon', {
-            itemId: selectedAddon.id,
-            itemName: selectedAddon.displayName,
-            kitchenLocationId: selectedAddon.kitchenLocationId!,
-            kitchenLocationName: selectedAddon.kitchenLocationName,
-            billLineId: lineId
-        }, quantity, actor, { tx });
-      });
-      
-      // OPTIMISTIC UI HOOK
-      if (onAddLine) {
-          const newLine: SessionBillLine = {
-              id: lineId,
-              type: "addon",
-              itemId: selectedAddon.id,
-              itemName: selectedAddon.displayName,
-              category: selectedAddon.subCategory ?? null,
-              barcode: selectedAddon.barcode ?? null,
-              unitPrice: safeUnitPrice,
-              qtyOrdered: quantity,
-              discountType: null,
-              discountValue: 0,
-              discountQty: 0,
-              freeQty: 0,
-              voidedQty: 0,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-              kitchenLocationId: selectedAddon.kitchenLocationId,
-              kitchenLocationName: selectedAddon.kitchenLocationName,
-          };
-          onAddLine(newLine);
+        // Only items with a kitchen location produce a kitchen ticket. Items with
+        // none are still billed (line above) but exempt from KDS so the order
+        // doesn't break.
+        let ticketPayload: Record<string, any> | null = null;
+        if (addon.kitchenLocationId) {
+          ticketPayload = await createKitchenTickets(
+            db,
+            storeId,
+            session.id,
+            session,
+            "addon",
+            {
+              itemId: addon.id,
+              itemName: addon.displayName,
+              kitchenLocationId: addon.kitchenLocationId,
+              kitchenLocationName: addon.kitchenLocationName,
+              billLineId: lineId,
+            },
+            qty,
+            actor,
+            { batch },
+            lineNote || undefined,
+            // `extra` is spread into the ticket payload. Pass modifier structure
+            // so KDS can render it richly if it wants, plus a flat text field.
+            modifiers.length ? { modifiers, modifiersText } : undefined
+          );
+        }
+        batch.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
+
+        commitLocalFirst(batch, (err) => console.error("[AddonsPOSModal] offline sync failed", err));
+
+        // Fire-and-forget backup print to the shared kitchen Bluetooth printer.
+        // Never awaited into the order flow; any dep (or the kitchenLocations
+        // fetch) throwing is swallowed by the trailing .catch.
+        if (ticketPayload) {
+          void (async () => {
+            const klSnap = await getDocs(collection(db, "stores", storeId, "kitchenLocations"));
+            const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+            const deps = makeKitchenBackupDeps({
+              kitchenLocations,
+              stampTicket: (ticketId) => {
+                const ref = doc(db, "stores", storeId, "sessions", session.id, "kitchentickets", ticketId);
+                void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+                // Also patch the rtKdsTickets projection the KDS page actually
+                // reads from, so the auto-ack effect there can see the stamp.
+                const _stationId = ticketPayload?.kitchenLocationId;
+                if (_stationId) {
+                  void updateDoc(doc(db, "stores", storeId, "rtKdsTickets", _stationId), {
+                    [`tickets.${ticketId}.printedOffline`]: true,
+                    [`tickets.${ticketId}.printedOfflineAt`]: Date.now(),
+                  }).catch(() => {});
+                }
+              },
+              alert: (message) => toast({ variant: "destructive", title: "Kitchen printer", description: message }),
+            });
+            await printKitchenTicketBackup(ticketPayload as any, deps);
+          })().catch(() => {});
+        }
       }
 
-      writeActivityLog({ action: "ADDON_ADDED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedAddon.displayName, qty: quantity, amount: safeUnitPrice * quantity }, note: `Addon: ${selectedAddon.displayName} x${quantity}` });
-      toast({ title: "Added", description: `${selectedAddon.displayName} x${quantity} added.` });
-      setSelectedAddon(null);
-      setQuantity(1);
+      // Optimistic UI hook
+      if (onAddLine) {
+        const newLine: SessionBillLine = {
+          id: lineId,
+          type: "addon",
+          itemId: addon.id,
+          itemName: addon.displayName,
+          category: addon.subCategory ?? null,
+          barcode: addon.barcode ?? null,
+          unitPrice: safeUnitPrice,
+          qtyOrdered: qty,
+          discountType: null,
+          discountValue: 0,
+          discountQty: 0,
+          freeQty: 0,
+          voidedQty: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          kitchenLocationId: addon.kitchenLocationId,
+          kitchenLocationName: addon.kitchenLocationName,
+          modifiers: modifiers.length ? modifiers : undefined,
+          modifiersText: modifiersText || undefined,
+          modifiersTotal: modifiers.length ? modifiersTotal : undefined,
+          note: lineNote || undefined,
+        };
+        onAddLine(newLine);
+      }
 
+      const noteSuffix = modifiersText ? ` (${modifiersText})` : "";
+      writeActivityLog({
+        action: "ADDON_ADDED",
+        storeId,
+        sessionId: session.id,
+        user: appUser,
+        meta: { itemName: addon.displayName, qty, amount: effectiveUnitPrice * qty },
+        note: `Addon: ${addon.displayName}${noteSuffix} x${qty}`,
+        serverProfile,
+      });
+      toast({ title: "Added", description: `${addon.displayName}${noteSuffix} x${qty} added.` });
+      // Only reset singleton-flow state. Family flow callers passed their own
+      // state and don't depend on these resets.
+      if (!override) {
+        setSelectedAddon(null);
+        setQuantity(1);
+        setNote("");
+        setPendingOptionGroups([]);
+      }
     } catch (e: any) {
       console.error("[AddonsPOSModal] add failed:", e);
       toast({ variant: "destructive", title: "Failed", description: "Could not add add-on to order. " + e.message });
@@ -311,16 +525,37 @@ function POSContent({
     }
   };
 
+  const handlePickerConfirm = (result: PickerResult) => {
+    void performAdd(result.modifiers, result.modifiersText, result.modifiersTotal);
+  };
+
   return (
     <>
-      <VariantPicker
-        group={variantPickerGroup}
-        open={isVariantPickerOpen}
-        onOpenChange={setIsVariantPickerOpen}
-        onSelectVariant={(addon) => handleSelectAddon(addon)}
+      <FamilyOrderModal
+        open={familyOrderOpen}
+        onOpenChange={setFamilyOrderOpen}
+        storeId={storeId}
+        group={familyOrderGroup}
+        onAdd={async (args: FamilyOrderAddArgs) => {
+          await performAdd(args.modifiers, args.modifiersText, args.modifiersTotal, {
+            addon: args.variant,
+            qty: args.quantity,
+            note: args.note,
+          });
+        }}
       />
 
-      <div className={cn("space-y-3", isMobile && "flex flex-col flex-1 min-h-0")}>
+      {modifierPickerOpen && selectedAddon && (
+        <ModifierPicker
+          open={modifierPickerOpen}
+          onOpenChange={setModifierPickerOpen}
+          itemName={selectedAddon.displayName}
+          groups={pendingOptionGroups}
+          onConfirm={handlePickerConfirm}
+        />
+      )}
+
+      <div className={cn("space-y-3 flex flex-col flex-1 min-h-0")}>
         <div className={cn("flex gap-2", isMobile && "shrink-0")}>
           <div className="relative w-full">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -336,7 +571,7 @@ function POSContent({
           </Button>
         </div>
 
-        <ScrollArea className={cn("pr-2", isMobile ? "flex-1 min-h-0" : "h-[55vh]")}>
+        <ScrollArea className={cn("pr-2 flex-1 min-h-0")}>
           <div className="flex flex-wrap gap-2 pb-3">
             {categories.map((cat) => (
               <Badge
@@ -369,13 +604,24 @@ function POSContent({
           )}
         </ScrollArea>
 
-        <div className={cn("border-t pt-3 space-y-2", isMobile && "shrink-0")}>
+        <div className={cn("border-t pt-3 space-y-2 shrink-0")}>
           <div className="text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Selected</span>
               <span className="font-medium">{selectedAddon ? selectedAddon.displayName : "-"}</span>
             </div>
           </div>
+
+          {selectedAddon && (
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={2}
+              maxLength={140}
+              placeholder="Special instructions (optional) — e.g. no onions, extra spicy"
+              disabled={isSubmitting || sessionIsLocked}
+            />
+          )}
 
           <div className="flex items-center gap-2">
             <Button
@@ -414,7 +660,7 @@ function POSContent({
   );
 }
 
-export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked, onAddLine }: AddonsPOSModalProps) {
+export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked, onAddLine, serverProfile }: AddonsPOSModalProps) {
   const isMobile = useIsMobile();
 
   const content = (
@@ -424,6 +670,7 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
       sessionIsLocked={sessionIsLocked}
       onClose={() => onOpenChange(false)}
       onAddLine={onAddLine}
+      serverProfile={serverProfile}
       isMobile={isMobile}
     />
   );
@@ -444,13 +691,13 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[88dvh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Add-ons</DialogTitle>
           <DialogDescription>Select add-on items to add to the order.</DialogDescription>
         </DialogHeader>
         {content}
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>

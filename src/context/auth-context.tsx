@@ -21,6 +21,11 @@ export type AppUser = {
   contactNumber?: string;
   address?: string;
   isPlatformAdmin?: boolean;
+  /**
+   * Set by an admin password reset. While true, RoleGuard routes every guarded
+   * page to /change-password until the user sets their own password.
+   */
+  mustChangePassword?: boolean;
 };
 
 type AuthCtx = {
@@ -47,7 +52,11 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
+    let unsubStaff: (() => void) | null = null;
+
     const unsubAuth = onAuthStateChanged(auth, (u) => {
+      unsubStaff?.();
+      unsubStaff = null;
       setUser(u);
       setAppUser(null);
       setAuthLoading(false); // Firebase auth state is now resolved.
@@ -62,7 +71,7 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
       setStaffLoading(true);
 
       const staffDocRef = doc(db, "staff", u.uid);
-      const unsubUser = onSnapshot(
+      unsubStaff = onSnapshot(
         staffDocRef,
         (snap) => {
           if (snap.exists()) {
@@ -79,6 +88,15 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
             };
             setAppUser(baseAppUser);
           } else {
+            // No staff doc for this uid. With offline persistence enabled, the
+            // first snapshot can be a negative *cache* hit for a doc that does
+            // exist on the server. Concluding "needs_profile" from that cached
+            // miss bounced real users (including admins) to /signup, where the
+            // profile-creation flow could overwrite and demote them. Wait for
+            // the authoritative server snapshot before treating it as missing.
+            if (snap.metadata.fromCache) {
+              return; // stay in loading; the server emission will follow
+            }
             // User exists in Firebase Auth, but no staff doc found.
             // This is the "needs_profile" state for new sign-ups.
             setAppUser({
@@ -103,13 +121,12 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
           setAppUser(null);
         }
       );
-      
-      // Return the unsubscribe function for the staff listener.
-      return () => unsubUser();
     });
 
-    // Return the unsubscribe function for the auth state listener.
-    return () => unsubAuth();
+    return () => {
+      unsubStaff?.();
+      unsubAuth();
+    };
   }, []);
 
   const signOut = useCallback(async () => {

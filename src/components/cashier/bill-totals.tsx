@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 import { Separator } from "../ui/separator";
-import type { SessionBillLine, Discount, Store, Adjustment, LineAdjustment } from "@/lib/types";
+import type { SessionBillLine, Discount, Store, Adjustment, LineAdjustment, SessionLoyaltyRedemption } from "@/lib/types";
 import { calculateBillTotals, type TaxAndTotals } from "@/lib/tax";
 
 interface BillTotalsProps {
@@ -11,6 +11,7 @@ interface BillTotalsProps {
   store: Store;
   billDiscount: Discount | null;
   customAdjustments: Adjustment[];
+  loyaltyRedemptions?: SessionLoyaltyRedemption[];
   totalPaid: number;
   isLocked?: boolean;
   onRemoveLineAdjustment?: (lineId: string, adjId: string) => void;
@@ -21,19 +22,22 @@ export function BillTotals({
   store,
   billDiscount,
   customAdjustments,
+  loyaltyRedemptions,
   totalPaid,
   isLocked,
   onRemoveLineAdjustment,
 }: BillTotalsProps) {
-    
+
+    const redemptions = loyaltyRedemptions ?? [];
     const totals = useMemo(() => {
         if (!store) return {
           subtotal: 0, taxableAmount: 0, taxTotal: 0, lineDiscountsTotal: 0,
-          billDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
+          billDiscountTotal: 0, loyaltyDiscountTotal: 0, totalDiscounts: 0, chargesTotal: 0, grandTotal: 0,
           vatableSales: 0, vatExemptSales: 0
         };
-        return calculateBillTotals(lines, store, billDiscount, customAdjustments);
-    }, [lines, store, billDiscount, customAdjustments]);
+        return calculateBillTotals(lines, store, billDiscount, customAdjustments,
+          redemptions.map((r) => ({ type: r.type, value: r.value })));
+    }, [lines, store, billDiscount, customAdjustments, redemptions]);
 
     // Add guards for totals being null
     const grandTotal = totals?.grandTotal ?? 0;
@@ -50,8 +54,11 @@ export function BillTotals({
             const freeQty = line.freeQty || 0;
             const billableQty = Math.max(0, orderedQty - freeQty);
 
-            const unitPrice = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+            const baseUnit = Number.isFinite(Number(line.unitPrice)) ? Number(line.unitPrice) : 0;
+            const modTotal = Number((line as any).modifiersTotal || 0);
+            const unitPrice = baseUnit + modTotal;
             const lineGross = billableQty * unitPrice;
+            const modifiersText = (line as any).modifiersText as string | undefined;
             
             const hasAdjDiscount = Object.values(line.lineAdjustments ?? {}).some((a: any) => a.kind === "discount");
             const hasDiscount = !hasAdjDiscount && line.discountValue && line.discountValue > 0 && line.discountQty > 0;
@@ -96,6 +103,9 @@ export function BillTotals({
                         <span>{billableQty}x {line.itemName}</span>
                         <span>₱{lineGross.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
+                    {modifiersText && (
+                      <div className="pl-4 text-xs italic text-muted-foreground">— {modifiersText}</div>
+                    )}
                     {lineSubRows}
                     {adjs.map(adj => {
                         const billableQtyForAdj = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
@@ -154,10 +164,17 @@ export function BillTotals({
             <span>₱{(totals?.subtotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         
-        {((totals?.totalDiscounts ?? 0) > 0) && (
+        {(((totals?.totalDiscounts ?? 0) - (totals?.loyaltyDiscountTotal ?? 0)) > 0) && (
              <div className="flex justify-between text-red-600">
                 <span>Discounts</span>
-                <span>- ₱{(totals?.totalDiscounts ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>- ₱{((totals?.totalDiscounts ?? 0) - (totals?.loyaltyDiscountTotal ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+        )}
+
+        {((totals?.loyaltyDiscountTotal ?? 0) > 0) && (
+             <div className="flex justify-between text-red-600">
+                <span>★ Sharelebrator{redemptions.length === 1 ? `: ${redemptions[0].rewardName}` : ` (${redemptions.length} rewards)`}</span>
+                <span>- ₱{(totals?.loyaltyDiscountTotal ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
         )}
 

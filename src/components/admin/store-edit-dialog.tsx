@@ -22,16 +22,30 @@ import { useToast } from "@/hooks/use-toast";
 import { uploadStoreLogo } from "@/lib/firebase/client";
 import { Timestamp } from "firebase/firestore";
 import { ImageBoundary } from "@/components/shared/ImageBoundary";
+import { StoreGeoPicker } from "@/components/admin/store-geo-picker";
 
 const formSchema = z.object({
   name: z.string().min(2, "Store name must be at least 2 characters."),
   code: z.string().min(2, "Code must be at least 2 characters.").max(10, "Code cannot be more than 10 characters.").toUpperCase(),
   address: z.string().min(5, "Address is required."),
+  geoLat: z.string().optional(),
+  geoLng: z.string().optional(),
+  deliveryRadiusKmInput: z.string().optional(),
   tin: z.string().optional(),
   taxType: z.enum(["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"]).optional(),
   taxRatePct: z.coerce.number().min(0).max(30).optional(),
   logoUrl: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  acceptsReservations: z.boolean().default(false),
+  acceptsWebsiteChat: z.boolean().default(false),
+  aiEnabled: z.boolean().default(false),
+  reservationSchedule: z.object({
+    days: z.array(z.number()),
+    fromTime: z.string(),
+    toTime: z.string(),
+  }).optional(),
+  offersAlaCarte: z.boolean().default(true),
+  offersUnlimited: z.boolean().default(true),
   email: z.string().email("Invalid email address.").optional().or(z.literal('')),
   contactNumber: z.string().optional(),
   openingDate: z.date().optional().nullable(),
@@ -40,6 +54,17 @@ const formSchema = z.object({
 });
 
 type StoreFormValues = z.infer<typeof formSchema>;
+
+const WEEKDAYS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+];
+const DEFAULT_RESERVATION_SCHEDULE = { days: [0, 1, 2, 3, 4, 5, 6], fromTime: "11:00", toTime: "21:00" };
 
 interface StoreEditDialogProps {
   isOpen: boolean;
@@ -73,7 +98,13 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "", code: "", address: "", tin: "", isActive: true,
+      name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
+      acceptsReservations: false,
+      acceptsWebsiteChat: false,
+      aiEnabled: false,
+      reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
+      offersAlaCarte: true,
+      offersUnlimited: true,
       email: "", contactNumber: "", openingDate: null,
       logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
       openingTime: "", closingTime: ""
@@ -82,6 +113,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
   const logoUrl = form.watch("logoUrl");
   const taxType = useWatch({ control: form.control, name: 'taxType' });
+  const acceptsReservations = useWatch({ control: form.control, name: 'acceptsReservations' });
 
   useEffect(() => {
       if (taxType === "NON_VAT") {
@@ -105,7 +137,16 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
       form.reset({
         name: store.name, code: store.code, address: store.address,
+        geoLat: store.geo?.lat != null ? String(store.geo.lat) : "",
+        geoLng: store.geo?.lng != null ? String(store.geo.lng) : "",
+        deliveryRadiusKmInput: store.deliveryRadiusKm != null ? String(store.deliveryRadiusKm) : "",
         tin: store.tin || "", isActive: store.isActive,
+        acceptsReservations: store.acceptsReservations ?? false,
+        acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
+        aiEnabled: store.aiEnabled ?? false,
+        reservationSchedule: store.reservationSchedule ?? DEFAULT_RESERVATION_SCHEDULE,
+        offersAlaCarte: store.offersAlaCarte ?? true,
+        offersUnlimited: store.offersUnlimited ?? true,
         email: store.email || "", contactNumber: store.contactNumber || "",
         openingDate: toJsDate(store.openingDate),
         openingTime: store.openingTime || "",
@@ -116,7 +157,13 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       });
     } else {
       form.reset({
-        name: "", code: "", address: "", tin: "", isActive: true,
+        name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
+        acceptsReservations: false,
+        acceptsWebsiteChat: false,
+        aiEnabled: false,
+        reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
+        offersAlaCarte: true,
+        offersUnlimited: true,
         email: "", contactNumber: "", openingDate: null,
         openingTime: "", closingTime: "",
         logoUrl: null, taxType: "NON_VAT", taxRatePct: 0,
@@ -143,7 +190,13 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
 
   const onSubmit = (data: StoreFormValues) => {
-    onSave(data);
+    const { geoLat, geoLng, deliveryRadiusKmInput, ...rest } = data;
+    const lat = geoLat && geoLat.trim() !== "" ? Number(geoLat) : NaN;
+    const lng = geoLng && geoLng.trim() !== "" ? Number(geoLng) : NaN;
+    const geo = !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : undefined;
+    const radiusNum = deliveryRadiusKmInput && deliveryRadiusKmInput.trim() !== "" ? Number(deliveryRadiusKmInput) : NaN;
+    const radius = Number.isFinite(radiusNum) && radiusNum >= 0 ? radiusNum : undefined;
+    onSave({ ...rest, ...(geo ? { geo } : {}), ...(radius != null ? { deliveryRadiusKm: radius } : {}) } as any);
   };
 
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: any) => {
@@ -172,7 +225,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+      <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>{dialogDescription}</DialogDescription>
@@ -186,6 +239,36 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                     <FormField control={form.control} name="code" render={({ field }) => ( <FormItem><FormLabel>Store Code</FormLabel><FormControl><Input placeholder="e.g., MAIN" {...field} /></FormControl><FormMessage /></FormItem> )} />
                 </div>
                 <FormField control={form.control} name="address" render={({ field }) => ( <FormItem><FormLabel>Address</FormLabel><FormControl><Input placeholder="e.g., 123 Main St, Anytown" {...field} /></FormControl><FormMessage /></FormItem> )} />
+
+                <FormItem>
+                  <FormLabel>Geotag (for weather forecast)</FormLabel>
+                  <StoreGeoPicker
+                    lat={form.watch("geoLat") ?? ""}
+                    lng={form.watch("geoLng") ?? ""}
+                    onChange={(la, ln) => {
+                      form.setValue("geoLat", la, { shouldDirty: true });
+                      form.setValue("geoLng", ln, { shouldDirty: true });
+                    }}
+                  />
+                  <FormDescription>Pin the branch on the map (or paste coordinates) so weather is fetched for the right location.</FormDescription>
+                </FormItem>
+
+                <FormField
+                  control={form.control}
+                  name="deliveryRadiusKmInput"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Online delivery radius (km)</FormLabel>
+                      <FormControl>
+                        <Input inputMode="decimal" placeholder="e.g. 5" {...field} />
+                      </FormControl>
+                      <FormDescription>
+                        Buyers within this distance of the branch can order delivery online. Leave blank for pickup-only. Pickup ignores this.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={form.control} name="contactNumber" render={({ field }) => ( <FormItem><FormLabel>Contact Number</FormLabel><FormControl><Input placeholder="e.g., +1 234 567 890" {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="email" render={({ field }) => ( <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="e.g., contact@store.com" {...field} /></FormControl><FormMessage /></FormItem> )} />
@@ -263,6 +346,68 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                 </FormItem>
 
                 <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active Status</FormLabel><FormDescription className="text-xs"> Inactive stores cannot be selected by users. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="acceptsReservations" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Reservations</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's reservation form. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                {acceptsReservations && (
+                  <div className="rounded-lg border p-3 shadow-sm space-y-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Reservation Availability</FormLabel>
+                      <FormDescription className="text-xs">
+                        Customers can only book on these days, within this time window. Validated when they submit on the website.
+                      </FormDescription>
+                    </div>
+                    <FormField control={form.control} name="reservationSchedule.days" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Available days</FormLabel>
+                        <div className="flex flex-wrap gap-1.5">
+                          {WEEKDAYS.map((d) => {
+                            const selected = (field.value ?? []).includes(d.value);
+                            return (
+                              <button
+                                type="button"
+                                key={d.value}
+                                onClick={() => {
+                                  const cur: number[] = field.value ?? [];
+                                  field.onChange(
+                                    selected ? cur.filter((x) => x !== d.value) : [...cur, d.value].sort((a, b) => a - b),
+                                  );
+                                }}
+                                className={cn(
+                                  "h-8 w-11 rounded-md border text-xs font-medium transition-colors",
+                                  selected
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-background text-muted-foreground hover:bg-muted",
+                                )}
+                              >
+                                {d.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField control={form.control} name="reservationSchedule.fromTime" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Earliest time</FormLabel>
+                          <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="reservationSchedule.toTime" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Latest time</FormLabel>
+                          <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                )}
+                <FormField control={form.control} name="acceptsWebsiteChat" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Website Chat</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's live chat; messages go to this store's cashier inbox. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="offersUnlimited" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Unlimited (Dine-in)</FormLabel><FormDescription className="text-xs"> Package dine-in sessions. Turn off for take-out-only kiosks. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="offersAlaCarte" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Ala Carte</FormLabel><FormDescription className="text-xs"> Ala carte / take-out sessions. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="aiEnabled" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>AI features</FormLabel><FormDescription className="text-xs"> Master switch for all Google AI for this store — daily insights, sales forecasts, and AI briefings. Off = no AI generated (saves cost / avoids errors on low-data stores). </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
               </form>
             </Form>
           </div>

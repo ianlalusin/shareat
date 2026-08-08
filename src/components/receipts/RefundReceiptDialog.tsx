@@ -192,7 +192,7 @@ export function RefundReceiptDialog(props: RefundReceiptDialogProps) {
   if (isMobile) {
     return (
       <Drawer open={props.isOpen} onOpenChange={props.onClose}>
-        <DrawerContent className="h-[90vh] flex flex-col">
+        <DrawerContent className="h-[90dvh] flex flex-col">
           <DrawerHeader>
             <DrawerTitle>Refund: {props.receipt.receiptNumber}</DrawerTitle>
             <DrawerDescription>Select items and quantities to refund.</DrawerDescription>
@@ -205,7 +205,7 @@ export function RefundReceiptDialog(props: RefundReceiptDialogProps) {
 
   return (
     <Dialog open={props.isOpen} onOpenChange={props.onClose}>
-      <DialogContent className="max-w-2xl h-[85vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-2xl h-[85dvh] flex flex-col p-0 gap-0">
         <DialogHeader className="p-4 border-b">
           <DialogTitle>Refund: {props.receipt.receiptNumber}</DialogTitle>
           <DialogDescription>Select items and quantities to refund. A new RF- receipt will be created.</DialogDescription>

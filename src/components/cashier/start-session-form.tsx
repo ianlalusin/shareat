@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Loader2, PlusCircle, Minus, Plus, MessageSquarePlus } from "lucide-react";
+import { Loader2, PlusCircle, Minus, Plus, MessageSquarePlus, X, Users } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,6 +22,7 @@ import { QuantityInput } from "./quantity-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "../ui/form";
 import type { StorePackage, StoreFlavor } from "@/lib/types";
+import { bundleExtraPax } from "@/lib/billing/bundle";
 
 // --- TYPES ---
 export type Table = {
@@ -58,19 +59,42 @@ type AlaCarteFormValues = z.infer<typeof alacarteSchema>;
 
 
 // --- PROPS ---
+export interface PendingSeat {
+    id: string;
+    name: string;
+    partySize: number;
+    phone?: string | null;
+    /**
+     * Present when the seat originates from a /reservations "Seat now" rather
+     * than the walk-in waitlist. The cashier marks this reservation seated (and
+     * links the new session) on completion instead of deleting a waitlist entry.
+     */
+    reservationId?: string;
+}
+
 interface StartSessionFormProps {
     tables: Table[];
     packages: StorePackage[];
     flavors: StoreFlavor[];
     user: AppUser | null;
     storeId: string;
+    /** Store session-mode flags. Absent ⇒ offered (existing stores keep both). */
+    offersUnlimited?: boolean;
+    offersAlaCarte?: boolean;
+    pendingSeat?: PendingSeat | null;
+    onSeatCompleted?: (sessionId: string) => void;
+    onSeatCleared?: () => void;
 }
 
-export function StartSessionForm({ tables, packages, flavors, user, storeId }: StartSessionFormProps) {
+export function StartSessionForm({ tables, packages, flavors, user, storeId, offersUnlimited, offersAlaCarte, pendingSeat, onSeatCompleted, onSeatCleared }: StartSessionFormProps) {
     const { toast } = useToast();
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [mode, setMode] = useState<"unlimited" | "alacarte">("unlimited");
+    // Which order modes this store offers (absent ⇒ offered). Drives the tabs.
+    const showUnlimited = offersUnlimited !== false;
+    const showAlaCarte = offersAlaCarte !== false;
+    const bothModes = showUnlimited && showAlaCarte;
+    const [mode, setMode] = useState<"unlimited" | "alacarte">(showUnlimited ? "unlimited" : "alacarte");
 
     // State for rice/cheese qty touched status
     const [riceTouched, setRiceTouched] = useState(false);
@@ -102,6 +126,41 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     const guestCount = unlimitedForm.watch("guestCount");
     const riceQty = unlimitedForm.watch("riceQty");
     const cheeseQty = unlimitedForm.watch("cheeseQty");
+
+    // A bundle's cap is the headcount its flat price covers, NOT a seating limit —
+    // the party may be any size, and guests beyond the cap are billed per-head at
+    // `bundleExtraHeadPrice` (0 = included at no charge).
+    const selectedPackageId = unlimitedForm.watch("packageId");
+    const selectedPackage = packages.find(p => p.packageId === selectedPackageId);
+    const isBundle = !!selectedPackage?.isBundle;
+    const bundleCap = Number(selectedPackage?.bundleMaxCap ?? 0);
+    const bundleExtraPrice = Number(selectedPackage?.bundleExtraHeadPrice ?? 0);
+    const extraPax = isBundle ? bundleExtraPax(guestCount, bundleCap) : 0;
+
+    const setGuestCount = (val: number) => {
+        unlimitedForm.setValue('guestCount', Math.max(1, Math.floor(Number(val) || 1)));
+    };
+
+    // Seat-from-waitlist: prefill form when parent sets a pending seat.
+    const formRef = useRef<HTMLDivElement>(null);
+    const lastSeatIdRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!pendingSeat) {
+            lastSeatIdRef.current = null;
+            return;
+        }
+        if (lastSeatIdRef.current === pendingSeat.id) return;
+        lastSeatIdRef.current = pendingSeat.id;
+        if (showUnlimited) setMode("unlimited");
+        unlimitedForm.setValue("customerName", pendingSeat.name);
+        if (pendingSeat.partySize > 0) {
+            unlimitedForm.setValue("guestCount", pendingSeat.partySize);
+        }
+        // Defer scroll so the tab change and setValue commit first.
+        setTimeout(() => {
+            formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+    }, [pendingSeat, unlimitedForm]);
 
     // Effect to sync rice/cheese with guest count if not manually touched
     useEffect(() => {
@@ -145,6 +204,7 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
             setIsSubmitting(false);
             return;
         }
+
         
         const normOpt = (v: any) => {
             const s = typeof v === "string" ? v.trim() : "";
@@ -174,6 +234,10 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
 
         try {
             const newSessionId = await startSession(storeId, sessionPayload, user);
+
+            if (pendingSeat) {
+                onSeatCompleted?.(newSessionId);
+            }
 
             toast({ title: 'Session Created!', description: `Table ${chosenTable.tableNumber} is now pending server verification.` });
             router.push(`/pins?sessionId=${newSessionId}`);
@@ -228,12 +292,39 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
     }
     
     return (
-        <CardContent className="px-4 pt-0">
+        <CardContent className="px-4 pt-0" ref={formRef}>
+            {pendingSeat && (
+                <div className="mb-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary shrink-0" />
+                    <div className="flex-1 min-w-0 text-sm">
+                        <span className="font-semibold">Seating: {pendingSeat.name}</span>
+                        <span className="text-muted-foreground"> · {pendingSeat.partySize} pax</span>
+                    </div>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => onSeatCleared?.()}
+                        aria-label="Clear seating"
+                    >
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
+            )}
+            {!showUnlimited && !showAlaCarte ? (
+                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No order modes are enabled for this store. Turn on dine-in (Unlimited) and/or à la carte in Store settings.
+                </div>
+            ) : (
             <Tabs value={mode} onValueChange={(v) => setMode(v as any)} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
-                    <TabsTrigger value="alacarte">Ala Carte</TabsTrigger>
-                </TabsList>
+                {bothModes && (
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="unlimited">Unlimited</TabsTrigger>
+                        <TabsTrigger value="alacarte">Ala Carte</TabsTrigger>
+                    </TabsList>
+                )}
+                {showUnlimited && (
                 <TabsContent value="unlimited">
                     <Form {...unlimitedForm}>
                         <form onSubmit={unlimitedForm.handleSubmit(onSubmitUnlimited)} className="space-y-6 pt-4">
@@ -259,16 +350,22 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                         )}
                                     />
                                     <div className="space-y-2">
-                                        <Label>Guests</Label>
+                                        <Label>Guests{isBundle && bundleCap > 0 ? ` (first ${bundleCap} covered)` : ''}</Label>
                                         <div className="flex items-center gap-2">
-                                            <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', Math.max(1, guestCount - 1))}><Minus /></Button>
+                                            <Button type="button" variant="outline" size="icon" onClick={() => setGuestCount(guestCount - 1)}><Minus /></Button>
                                             <QuantityInput
                                                 value={guestCount}
-                                                onChange={(val) => unlimitedForm.setValue('guestCount', val)}
+                                                onChange={(val) => setGuestCount(val)}
                                                 className="w-16 text-center"
                                             />
-                                            <Button type="button" variant="outline" size="icon" onClick={() => unlimitedForm.setValue('guestCount', guestCount + 1)}><Plus /></Button>
+                                            <Button type="button" variant="outline" size="icon" onClick={() => setGuestCount(guestCount + 1)}><Plus /></Button>
                                         </div>
+                                        {extraPax > 0 && (
+                                            <p className="text-xs text-amber-600">
+                                                +{extraPax} beyond the {bundleCap} covered
+                                                {bundleExtraPrice > 0 ? ` @ ₱${bundleExtraPrice} each` : ' — no extra charge'}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -287,7 +384,9 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                                             <SelectContent>
                                                 {packages.map(pkg => (
                                                     <SelectItem key={pkg.packageId} value={pkg.packageId}>
-                                                        {pkg.packageName} - ₱{pkg.pricePerHead}/head
+                                                        {pkg.isBundle
+                                                            ? `${pkg.packageName} - ₱${pkg.bundlePrice ?? 0} (≤${pkg.bundleMaxCap ?? 1} pax)`
+                                                            : `${pkg.packageName} - ₱${pkg.pricePerHead}/head`}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
@@ -409,6 +508,8 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                         </form>
                     </Form>
                 </TabsContent>
+                )}
+                {showAlaCarte && (
                     <TabsContent value="alacarte">
                         <Form {...alaCarteForm}>
                         <form onSubmit={alaCarteForm.handleSubmit(onSubmitAlaCarte)} className="space-y-6 pt-4">
@@ -462,7 +563,9 @@ export function StartSessionForm({ tables, packages, flavors, user, storeId }: S
                         </form>
                         </Form>
                 </TabsContent>
+                )}
             </Tabs>
+            )}
         </CardContent>
     );
 }

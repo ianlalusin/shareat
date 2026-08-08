@@ -7,8 +7,11 @@ android {
         applicationId "net.shareat.pos"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // versionCode/Name are overridable from the build command so CI can bump
+        // them per build (e.g. -PversionCode=${{ github.run_number }}). A higher
+        // versionCode is what marks an APK as a newer version for in-place updates.
+        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 1
+        versionName project.hasProperty('versionName') ? project.property('versionName') : "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +19,31 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            // CI decodes the ANDROID_KEYSTORE_BASE64 secret to android/app/release.jks.
+            // Passwords/alias come from env (workflow secrets). Populated only when
+            // the keystore is present so local/dev builds don't need it.
+            def ks = file("release.jks")
+            if (ks.exists()) {
+                storeFile ks
+                storePassword System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Sign with the PERSISTENT release key when present (CI via secrets) so
+            // every build shares one signature and installs as an in-place update.
+            // Falls back to the debug key otherwise (local builds, or before the
+            // keystore secret is added). NOTE: the first release-signed build won't
+            // update over a debug-signed install — uninstall once at the cutover,
+            // then every future build updates in place.
+            signingConfig file("release.jks").exists() ? signingConfigs.release : signingConfigs.debug
         }
     }
 }

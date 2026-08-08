@@ -1,8 +1,9 @@
 
-'use client';
-
+// Universal module: pure contribution math + a client doc-ref helper. No
+// 'use client' so server (admin-SDK) code can reuse the contribution functions.
+// `doc`/Firestore are only used by dailyAnalyticsDocRef (client callers).
 import { doc, type Firestore } from "firebase/firestore";
-import { Timestamp } from "firebase/firestore";
+import type { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, Store, LineAdjustment } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 
@@ -22,21 +23,56 @@ function isVoidReceipt(r: any): boolean {
  * @returns The millisecond epoch time for midnight.
  */
 export function getDayStartMs(ts: Timestamp | Date | number): number {
-    const date = toJsDate(ts);
-    if (!date) {
-        // Fallback to current time if timestamp is invalid to avoid crashing.
-        const now = new Date();
-        now.setHours(0,0,0,0);
-        return now.getTime();
-    };
-    
-    // Create a new Date object representing midnight in the UTC of the *local* machine,
-    // but with the date parts from the 'Asia/Manila' timezone.
-    const dateInManila = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
-    const midnightInManila = new Date(dateInManila);
-    midnightInManila.setHours(0, 0, 0, 0);
+    // Use "now" when the timestamp is invalid, to avoid crashing.
+    const base = toJsDate(ts) ?? new Date();
 
-    return midnightInManila.getTime();
+    // Epoch ms of Manila midnight for this instant. We take the Manila calendar
+    // date (PHT = UTC+8, no DST) then anchor it at the +08:00 offset. This is
+    // correct regardless of the machine's local timezone — the old approach used
+    // setHours(), which produced *local-machine* midnight, not Manila midnight,
+    // on any device not set to UTC+8. Matches getDayIdFromTimestamp's day split.
+    const manilaYmd = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(base);
+
+    return new Date(`${manilaYmd}T00:00:00+08:00`).getTime();
+}
+
+
+/**
+ * Hour of day (0..23) for an instant, read off the Asia/Manila wall clock.
+ *
+ * Never use Date#getHours() for analytics buckets: it reads the *host* timezone,
+ * so prod (Cloud Run, UTC) shifted every hourly bucket by -8 while dev machines
+ * (PHT) looked correct. Mirrors getDayStartMs's Manila-explicit approach.
+ */
+export function getManilaHour(ts: Timestamp | Date | number): number {
+    const base = toJsDate(ts) ?? new Date();
+    const hh = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Manila",
+        hour: "2-digit",
+        hourCycle: "h23",
+    }).format(base);
+    // Some ICU builds render midnight as "24" under h23; normalise to 0.
+    return Number(hh) % 24;
+}
+
+/**
+ * Day of week (0 = Sunday .. 6 = Saturday) for an instant, in Asia/Manila.
+ *
+ * Same rationale as getManilaHour — Date#getDay() reads the host timezone and
+ * lands on the previous calendar day when the server runs in UTC.
+ */
+export function getManilaDayOfWeek(ts: Timestamp | Date | number): number {
+    const base = toJsDate(ts) ?? new Date();
+    const short = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Manila",
+        weekday: "short",
+    }).format(base);
+    return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(short);
 }
 
 
@@ -94,6 +130,12 @@ export function dailyAnalyticsDocRef(db: Firestore, storeId: string, dayId: stri
     return doc(db, "stores", storeId, "analytics", dayId);
 }
 
+export type SessionModeKey = "dineIn" | "walkIn";
+
+export function modeKeyOf(receipt: Receipt | null | undefined): SessionModeKey {
+  return receipt?.sessionMode === "package_dinein" ? "dineIn" : "walkIn";
+}
+
 // --- Payment Contribution ---
 type PaymentContribution = {
   dayId: string;
@@ -103,13 +145,14 @@ type PaymentContribution = {
   byMethod: Record<string, number>;
   discountsTotal: number;
   chargesTotal: number;
+  mode: SessionModeKey | null;
 };
 
 export function getPaymentContribution(receipt: Receipt | null): PaymentContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {}, discountsTotal: 0, chargesTotal: 0 };
+    const defaultReturn = { dayId: "", dayStartMs: 0, totalGross: 0, txCount: 0, byMethod: {}, discountsTotal: 0, chargesTotal: 0, mode: null as SessionModeKey | null };
     const r = receipt;
     if (!r || isVoidReceipt(r)) return defaultReturn;
-    
+
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
 
@@ -124,6 +167,7 @@ export function getPaymentContribution(receipt: Receipt | null): PaymentContribu
         byMethod: analytics?.mop ?? {},
         discountsTotal: analytics?.discountsTotal ?? 0,
         chargesTotal: analytics?.chargesTotal ?? 0,
+        mode: modeKeyOf(r),
     };
 }
 
@@ -188,17 +232,23 @@ type SalesContribution = {
     addonSalesQtyByCategory: Record<string, number>;
     addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }>;
     dineInAddonSalesAmount: number;
+    dineInSalesGross: number;
+    dineInDiscountsTotal: number;
+    dineInChargesTotal: number;
+    mode: SessionModeKey | null;
+    salesGrossByMode: { dineIn: number; walkIn: number };
+    netSalesByMode: { dineIn: number; walkIn: number };
 };
 
 export function getSalesContribution(receipt: Receipt | null, store?: Store | null): SalesContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0 };
+    const defaultReturn: SalesContribution = { dayId: "", dayStartMs: 0, packageSalesAmountByName: {}, packageSalesQtyByName: {}, addonSalesAmountByCategory: {}, addonSalesQtyByCategory: {}, addonSalesByItem: {}, dineInAddonSalesAmount: 0, dineInSalesGross: 0, dineInDiscountsTotal: 0, dineInChargesTotal: 0, mode: null, salesGrossByMode: { dineIn: 0, walkIn: 0 }, netSalesByMode: { dineIn: 0, walkIn: 0 } };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
-    
+
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
-    
+
     const dayId = getDayIdFromTimestamp(eventMs);
     const dayStartMs = getDayStartMs(eventMs);
 
@@ -210,6 +260,10 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
 
     const taxRate = (store?.taxRatePct || 0) / 100;
     const isVatInclusive = store?.taxType === 'VAT_INCLUSIVE';
+    const isDineIn = r.sessionMode === 'package_dinein';
+    const mode: SessionModeKey = isDineIn ? "dineIn" : "walkIn";
+    let dineInSalesGross = 0;
+    let lineGrossSum = 0;
 
     (r.lines || []).forEach(line => {
         const billableQty = (line.qtyOrdered || 0) - (line.voidedQty || 0) - (line.freeQty || 0);
@@ -217,10 +271,11 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
 
         const unitPrice = line.unitPrice || 0;
         const lineGross = billableQty * unitPrice;
-        
+        lineGrossSum += lineGross;
+
         let lineDiscount = 0;
         const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
-        
+
         const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
         if (adjs.length > 0) {
             let remainingQty = billableQty;
@@ -243,29 +298,44 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
                 lineDiscount = discountedQty * Math.min(baseUnitPrice, line.discountValue);
             }
         }
-        
+
         const netAmount = lineGross - lineDiscount;
 
         if (line.type === 'package') {
             packageSalesAmountByName[line.itemName] = (packageSalesAmountByName[line.itemName] || 0) + netAmount;
             packageSalesQtyByName[line.itemName] = (packageSalesQtyByName[line.itemName] || 0) + billableQty;
+            if (isDineIn) dineInSalesGross += lineGross;
         } else if (line.type === 'addon') {
             const categoryName = line.category || 'Uncategorized';
-            
+
             addonSalesAmountByCategory[categoryName] = (addonSalesAmountByCategory[categoryName] || 0) + netAmount;
             addonSalesQtyByCategory[categoryName] = (addonSalesQtyByCategory[categoryName] || 0) + billableQty;
-            
+
             if (!addonSalesByItem[line.itemName]) {
                 addonSalesByItem[line.itemName] = { qty: 0, amount: 0, categoryName: categoryName };
             }
             addonSalesByItem[line.itemName].qty += billableQty;
             addonSalesByItem[line.itemName].amount += netAmount;
+            if (isDineIn) dineInSalesGross += lineGross;
         }
     });
-    
-    const dineInAddonSalesAmount = r.sessionMode === 'package_dinein' 
+
+    const dineInAddonSalesAmount = isDineIn
         ? Object.values(addonSalesAmountByCategory).reduce((sum, amount) => sum + amount, 0)
         : 0;
+
+    const analytics = (r.analytics || {}) as ReceiptAnalyticsV2;
+    const dineInDiscountsTotal = isDineIn ? Number(analytics?.discountsTotal ?? 0) : 0;
+    const dineInChargesTotal = isDineIn ? Number(analytics?.chargesTotal ?? 0) : 0;
+
+    const receiptDiscounts = Number(analytics?.discountsTotal ?? 0);
+    const receiptCharges = Number(analytics?.chargesTotal ?? 0);
+    const receiptNet = lineGrossSum - receiptDiscounts - receiptCharges;
+
+    const salesGrossByMode = { dineIn: 0, walkIn: 0 };
+    const netSalesByMode = { dineIn: 0, walkIn: 0 };
+    salesGrossByMode[mode] = lineGrossSum;
+    netSalesByMode[mode] = receiptNet;
 
     return {
         dayId,
@@ -276,6 +346,12 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
         addonSalesQtyByCategory,
         addonSalesByItem,
         dineInAddonSalesAmount,
+        dineInSalesGross,
+        dineInDiscountsTotal,
+        dineInChargesTotal,
+        mode,
+        salesGrossByMode,
+        netSalesByMode,
     };
 }
 
@@ -287,28 +363,72 @@ type PeakHourContribution = {
     hourKey: string | null; // "0".."23"
     amount: number;
     count: number; // 1 if valid, 0 if not
+    mode: SessionModeKey | null;
 };
 
 export function getPeakHourContribution(receipt: Receipt | null): PeakHourContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0 };
+    const defaultReturn: PeakHourContribution = { dayId: "", dayStartMs: 0, hourKey: null, amount: 0, count: 0, mode: null };
     const r = receipt;
     if (!r) return defaultReturn;
-    if (isVoidReceipt(r) || r.analytics?.v !== 2) return defaultReturn;
-    
-    // Use session start time first, which is more accurate for peak hour calculation
-    const eventMs = r.analytics.sessionStartedAtClientMs || toJsDate(r.analytics.sessionStartedAt)?.getTime();
+    if (isVoidReceipt(r)) return defaultReturn;
+
+    // Peak hour reflects when the customer arrived (session start), not when they paid.
+    // Fall back to createdAt only for receipts that pre-date sessionStartedAt tracking.
+    const sessionMs = r.analytics?.sessionStartedAtClientMs || toJsDate(r.analytics?.sessionStartedAt)?.getTime();
+    const eventMs = sessionMs || r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
-    
+
     const date = new Date(eventMs);
     const dayId = getDayIdFromTimestamp(date);
     const dayStartMs = getDayStartMs(date);
-    const hour = date.getHours();
+    const hour = getManilaHour(date);
 
     return {
         dayId: dayId,
         dayStartMs,
         hourKey: String(hour),
         amount: r.total ?? r.analytics?.grandTotal ?? 0,
+        count: 1,
+        mode: modeKeyOf(r),
+    };
+}
+
+// --- Day-of-Week Contribution ---
+type DayOfWeekContribution = {
+    dayId: string;
+    dayStartMs: number;
+    dowKey: string | null; // "0".."6" (0 = Sunday), Asia/Manila
+    amount: number;
+    count: number;
+};
+
+export function getDayOfWeekContribution(receipt: Receipt | null): DayOfWeekContribution {
+    const defaultReturn: DayOfWeekContribution = { dayId: "", dayStartMs: 0, dowKey: null, amount: 0, count: 0 };
+    const r = receipt;
+    if (!r) return defaultReturn;
+    if (isVoidReceipt(r)) return defaultReturn;
+
+    // DOW reflects when the customer arrived (session start), matching peak-hour semantics.
+    // Fall back to createdAt only for receipts that pre-date sessionStartedAt tracking.
+    const sessionMs = r.analytics?.sessionStartedAtClientMs || toJsDate(r.analytics?.sessionStartedAt)?.getTime();
+    const sessionEventMs = sessionMs || r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
+    if (!sessionEventMs) return defaultReturn;
+
+    // dayId/dayStartMs are keyed off the ARRIVAL day, not the payment day, so the bucket
+    // agrees with dowKey. A party arriving 11:30 PM Sat and paying 12:30 AM Sun counts as
+    // Saturday traffic in both. Writers route this contribution by its own dayId.
+    const dayStartMs = getDayStartMs(sessionEventMs);
+    const dayId = getDayIdFromTimestamp(sessionEventMs);
+    const dow = getManilaDayOfWeek(sessionEventMs);
+
+    const analytics = (r.analytics || {}) as ReceiptAnalyticsV2;
+    const amount = Number(r.total ?? analytics?.grandTotal ?? 0);
+
+    return {
+        dayId,
+        dayStartMs,
+        dowKey: String(dow),
+        amount,
         count: 1,
     };
 }
@@ -377,10 +497,16 @@ type ClosedSessionsContribution = {
   dayStartMs: number;
   closedCount: number;
   totalPaid: number;
+  mode: SessionModeKey | null;
+  dineInDurationMs: number;
+  dineInDurationCount: number;
 };
 
+// Reject absurd durations (clock skew / stale sessions) so they don't skew the average.
+const MAX_SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
 export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSessionsContribution {
-    const defaultReturn = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0 };
+    const defaultReturn: ClosedSessionsContribution = { dayId: "", dayStartMs: 0, closedCount: 0, totalPaid: 0, mode: null, dineInDurationMs: 0, dineInDurationCount: 0 };
     const r = receipt;
     if (!r) return defaultReturn;
     if (isVoidReceipt(r)) return defaultReturn;
@@ -388,11 +514,28 @@ export function getClosedSessionsContribution(receipt: Receipt | null): ClosedSe
     const eventMs = r.createdAtClientMs || toJsDate(r.createdAt)?.getTime();
     if (!eventMs) return defaultReturn;
 
+    const mode = modeKeyOf(r);
+    let dineInDurationMs = 0;
+    let dineInDurationCount = 0;
+    if (mode === "dineIn") {
+        const startMs = r.analytics?.sessionStartedAtClientMs ?? toJsDate(r.analytics?.sessionStartedAt)?.getTime() ?? null;
+        if (startMs && eventMs > startMs) {
+            const dur = eventMs - startMs;
+            if (dur > 0 && dur <= MAX_SESSION_DURATION_MS) {
+                dineInDurationMs = dur;
+                dineInDurationCount = 1;
+            }
+        }
+    }
+
     return {
         dayId: getDayIdFromTimestamp(eventMs),
         dayStartMs: getDayStartMs(eventMs),
         closedCount: 1,
         totalPaid: r.total ?? 0,
+        mode,
+        dineInDurationMs,
+        dineInDurationCount,
     };
 }
 

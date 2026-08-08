@@ -17,11 +17,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { RefillEditDialog } from "@/components/admin/menu/refill-edit-dialog";
 import type { Flavor, Refill } from "@/lib/types";
+import { useStoreContext } from "@/context/store-context";
+import { rebuildCustomerRefillOptionsCachesSafely } from "@/lib/manager/dataManagement";
 
 export default function RefillsManagementPage() {
   const router = useRouter();
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const { stores } = useStoreContext();
   const [refills, setRefills] = useState<Refill[]>([]);
   const [flavors, setFlavors] = useState<Flavor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,6 +62,12 @@ export default function RefillsManagementPage() {
     setIsDialogOpen(false);
   };
 
+  // This "refills" collection is global, so an edit here can affect every
+  // store's CUSTOMER refill-options cache — rebuild all of them.
+  const syncAllStoresRefillCache = () => {
+    rebuildCustomerRefillOptionsCachesSafely(stores.map((s) => s.id));
+  };
+
   const handleSave = async (data: Omit<Refill, 'id' | 'createdAt' | 'updatedAt'>) => {
     if (!appUser) return;
     setIsSubmitting(true);
@@ -78,6 +87,7 @@ export default function RefillsManagementPage() {
         }).commit();
         toast({ title: "Refill Created" });
       }
+      syncAllStoresRefillCache();
       handleCloseDialog();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Save Failed", description: error.message });
@@ -95,6 +105,7 @@ export default function RefillsManagementPage() {
 
     try {
         await updateDoc(doc(db, "refills", item.id), { isActive: newStatus, updatedAt: serverTimestamp() });
+        syncAllStoresRefillCache();
         toast({ title: "Status Updated" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
@@ -112,6 +123,7 @@ export default function RefillsManagementPage() {
 
     try {
         await updateDoc(doc(db, "refills", item.id), { isActive: false, isArchived: true, updatedAt: serverTimestamp() });
+        syncAllStoresRefillCache();
         toast({ title: "Refill Archived" });
     } catch (error: any) {
         toast({ variant: "destructive", title: "Archive Failed", description: error.message });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase/client";
@@ -10,6 +10,9 @@ import { useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CustomersAdmin } from "@/components/pins/customers-admin";
 
 type ActiveSession = {
   id: string;
@@ -21,6 +24,8 @@ type ActiveSession = {
   customerPin?: string | null;
   customerAccessEnabled?: boolean | null;
   customerAccessExpiresAtMs?: number | null;
+  customerParticipantActiveCount?: number | null;
+  customerParticipantLimit?: number | null;
   startedAtClientMs?: number | null;
 };
 
@@ -101,6 +106,7 @@ export default function PinsClient() {
   const { activeStore } = useStoreContext();
   const { user } = useAuthContext();
   const { confirm, Dialog } = useConfirmDialog();
+  const { toast } = useToast();
 
   const storeId = activeStore?.id;
   const targetSessionId = searchParams.get("sessionId");
@@ -111,7 +117,9 @@ export default function PinsClient() {
   const [now, setNow] = useState(() => Date.now());
 
   const [archivedPins, setArchivedPins] = useState<ArchivedPin[]>([]);
+  const [closedWithPins, setClosedWithPins] = useState<ArchivedPin[]>([]);
   const [isLoadingArchivedPins, setIsLoadingArchivedPins] = useState(true);
+  const [isLoadingClosedPins, setIsLoadingClosedPins] = useState(true);
   const [archivedPinsPage, setArchivedPinsPage] = useState(0);
   const autoIssueAttemptedRef = useRef<string | null>(null);
   const autoFinalizeExpiredRef = useRef<Record<string, true>>({});
@@ -159,7 +167,7 @@ export default function PinsClient() {
     autoIssueAttemptedRef.current = targetSessionId;
 
     if (hasActivePin) {
-      router.replace(`/print/session-pin/${targetSessionId}`);
+      router.replace(`/print/session-pin?sessionId=${targetSessionId}`);
       return;
     }
 
@@ -177,7 +185,7 @@ export default function PinsClient() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "Failed to issue PIN.");
-        router.replace(`/print/session-pin/${targetSessionId}`);
+        router.replace(`/print/session-pin?sessionId=${targetSessionId}`);
       } catch (error) {
         console.error("Auto-issue PIN failed:", error);
         autoIssueAttemptedRef.current = null;
@@ -258,8 +266,52 @@ export default function PinsClient() {
     return () => unsub();
   }, [storeId, todayDayId]);
 
+  // Also read today's closedSessions that still have a customerPin (missed by finalize)
+  useEffect(() => {
+    if (!storeId) {
+      setIsLoadingClosedPins(false);
+      setClosedWithPins([]);
+      return;
+    }
+    setIsLoadingClosedPins(true);
+    const ref = collection(db, `stores/${storeId}/closedSessions`);
+    const unsub = onSnapshot(ref, (snap) => {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const todayMs = todayStart.getTime();
+      const rows: ArchivedPin[] = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .filter((s: any) => {
+          if (!s.customerPin) return false;
+          const closedMs = s.closedAtClientMs ?? (s.closedAt?.toMillis?.() || 0);
+          return closedMs >= todayMs;
+        })
+        .map((s: any) => ({
+          id: s.customerPin,
+          pin: s.customerPin,
+          sessionId: s.id,
+          storeId: storeId,
+          customerName: s.customerName ?? null,
+          tableDisplayName: s.tableDisplayName ?? null,
+          tableNumber: s.tableNumber ?? null,
+          status: s.status === "voided" ? "voided" : "closed",
+          expiresAtMs: s.customerAccessExpiresAtMs ?? undefined,
+          archiveReason: s.status === "voided" ? "session_voided" : "payment_closed",
+        }));
+      setClosedWithPins(rows);
+      setIsLoadingClosedPins(false);
+    }, () => setIsLoadingClosedPins(false));
+    return () => unsub();
+  }, [storeId]);
+
+  const mergedArchivedPins = useMemo(() => {
+    const archiveIds = new Set(archivedPins.map(p => p.id));
+    const extras = closedWithPins.filter(p => !archiveIds.has(p.id));
+    return [...archivedPins, ...extras];
+  }, [archivedPins, closedWithPins]);
+
   const { paginatedArchivedPins, totalArchivedPinPages } = useMemo(() => {
-    const allArchived = [...archivedPins].sort((a, b) => {
+    const allArchived = [...mergedArchivedPins].sort((a, b) => {
       const aMs = typeof a.expiresAtMs === "number" ? a.expiresAtMs : 0;
       const bMs = typeof b.expiresAtMs === "number" ? b.expiresAtMs : 0;
       return bMs - aMs;
@@ -272,7 +324,7 @@ export default function PinsClient() {
     const totalPages = Math.ceil(allArchived.length / PAST_PINS_PAGE_SIZE);
 
     return { paginatedArchivedPins: paginated, totalArchivedPinPages: totalPages };
-  }, [archivedPins, archivedPinsPage]);
+  }, [mergedArchivedPins, archivedPinsPage]);
 
   const latestArchivedPinBySession = useMemo(() => {
     const sorted = [...archivedPins].sort((a, b) => {
@@ -313,7 +365,7 @@ export default function PinsClient() {
       <div className="p-6 space-y-4">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-xl font-semibold">PINs</h1>
+            <h1 className="text-xl font-semibold">PINs & Customers</h1>
             <p className="text-sm opacity-70">
               Store: <span className="font-medium">{activeStore?.name || "—"}</span>
             </p>
@@ -324,7 +376,17 @@ export default function PinsClient() {
         {!storeId ? (
           <div className="text-sm opacity-70">No store selected.</div>
         ) : (
-          <div className="space-y-4">
+          <Tabs defaultValue="pins" className="w-full">
+            <TabsList className="grid w-full max-w-md grid-cols-2 mb-4">
+              <TabsTrigger value="pins">PINs</TabsTrigger>
+              <TabsTrigger value="customers">Customers</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="customers">
+              <CustomersAdmin />
+            </TabsContent>
+
+            <TabsContent value="pins" className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {view.map((s) => {
                 const pinLabel = s.customerPin ? String(s.customerPin) : "WAITING FOR PIN";
@@ -373,11 +435,32 @@ export default function PinsClient() {
                         </div>
                       </div>
 
+                      {s.customerParticipantLimit != null && (
+                        <div className="flex items-center justify-between rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 text-sm">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-zinc-700">Connected Guests</span>
+                            <span className="text-zinc-400 text-xs">of {s.customerParticipantLimit} allowed</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-2xl font-black ${
+                              (s.customerParticipantActiveCount ?? 0) >= (s.customerParticipantLimit ?? 1)
+                                ? "text-destructive"
+                                : "text-primary"
+                            }`}>
+                              {s.customerParticipantActiveCount ?? 0}
+                            </span>
+                            {(s.customerParticipantActiveCount ?? 0) >= (s.customerParticipantLimit ?? 1) && (
+                              <span className="text-[10px] font-bold text-destructive uppercase tracking-wide">Full</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex gap-2 flex-wrap justify-end pt-1">
                         <button
                           className="border rounded px-3 py-2 text-sm disabled:opacity-50"
                           disabled={!s.customerPin}
-                          onClick={() => router.push(`/print/session-pin/${s.id}`)}
+                          onClick={() => router.push(`/print/session-pin?sessionId=${s.id}`)}
                           type="button"
                         >
                           Print
@@ -417,7 +500,7 @@ export default function PinsClient() {
                                   if (!res.ok) throw new Error(data?.error || "Failed to disable PIN.");
                                 } catch (error: any) {
                                   console.error("Disable PIN failed:", error);
-                                  window.alert(error?.message || "Failed to disable PIN.");
+                                  toast({ variant: "destructive", title: "Failed to disable PIN", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -453,6 +536,9 @@ export default function PinsClient() {
                                   });
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data?.error || "Failed to extend PIN.");
+                                } catch (error: any) {
+                                  console.error("Extend PIN failed:", error);
+                                  toast({ variant: "destructive", title: "Failed to extend PIN", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -481,9 +567,9 @@ export default function PinsClient() {
                                   });
                                   const data = await res.json();
                                   if (!res.ok) throw new Error(data?.error || "Repair failed.");
-                                  if (data.repaired === 0) window.alert("No PIN found in registry for this session. Use Reissue instead.");
+                                  if (data.repaired === 0) toast({ title: "No PIN found", description: "No PIN found in registry for this session. Use Reissue instead." });
                                 } catch (error: any) {
-                                  window.alert(error?.message || "Repair failed.");
+                                  toast({ variant: "destructive", title: "Repair failed", description: error?.message });
                                 } finally {
                                   setBusyId(null);
                                 }
@@ -493,7 +579,88 @@ export default function PinsClient() {
                           >
                             Repair
                           </button>
+                          <button
+                            className="border rounded px-3 py-2 text-sm bg-green-50 border-green-300 text-green-800 disabled:opacity-50"
+                            disabled={busyId === s.id}
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: "Issue new PIN?",
+                                description: "A brand-new PIN will be generated for this session. Any previously archived PIN will remain in the archive.",
+                                confirmText: "Issue PIN",
+                                cancelText: "Cancel",
+                              });
+                              if (!ok) return;
+
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  if (!user) throw new Error("You must be signed in to issue a PIN.");
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/issue", {
+                                    method: "POST",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({ storeId, sessionId: s.id }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to issue PIN.");
+                                  router.push(`/print/session-pin?sessionId=${s.id}`);
+                                } catch (error: any) {
+                                  console.error("Reissue PIN failed:", error);
+                                  toast({ variant: "destructive", title: "Failed to issue PIN", description: error?.message });
+                                } finally {
+                                  setBusyId(null);
+                                }
+                              });
+                            }}
+                            type="button"
+                          >
+                            Reissue
+                          </button>
                           </>
+                        )}
+
+                        {s.customerAccessEnabled && (
+                          <button
+                            className="border rounded px-3 py-2 text-sm text-destructive border-destructive/30 hover:bg-destructive/10 disabled:opacity-50"
+                            disabled={busyId === s.id}
+                            onClick={async () => {
+                              if (!user) {
+                                toast({ variant: "destructive", title: "You must be signed in." });
+                                return;
+                              }
+                              const ok = await confirm({
+                                title: "Disconnect all customer devices?",
+                                description: "This will disconnect all customer devices from this session.",
+                                confirmText: "Disconnect",
+                                destructive: true,
+                              });
+                              if (!ok) return;
+                              startTransition(async () => {
+                                try {
+                                  setBusyId(s.id);
+                                  const token = await user.getIdToken();
+                                  const res = await fetch("/api/pins/participants/reset", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                                    body: JSON.stringify({ storeId, sessionId: s.id }),
+                                  });
+                                  const data = await res.json();
+                                  if (!res.ok) throw new Error(data?.error || "Failed to reset participants.");
+                                  toast({ title: "Guests disconnected", description: `${data.revokedCount ?? 0} device(s) disconnected.` });
+                                } catch (error: any) {
+                                  toast({ variant: "destructive", title: "Reset failed", description: error?.message });
+                                } finally {
+                                  setBusyId(null);
+                                }
+                              });
+                            }}
+                            type="button"
+                          >
+                            Reset Guests
+                          </button>
                         )}
                       </div>
                     </CardContent>
@@ -516,7 +683,7 @@ export default function PinsClient() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {isLoadingArchivedPins ? (
+                {(isLoadingArchivedPins || isLoadingClosedPins) ? (
                   <p className="text-sm text-muted-foreground">Loading archived PINs...</p>
                 ) : paginatedArchivedPins.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No archived PINs for today.</p>
@@ -538,39 +705,55 @@ export default function PinsClient() {
                         <div className="col-span-2 text-xs">{pin.archiveReason || "—"}</div>
                         <div className="col-span-2 text-xs">{fmtExpiry(pin.expiresAtMs)}</div>
                         <div className="col-span-1 text-right">
-                          <button
-                            className="border rounded px-2 py-1 text-sm disabled:opacity-50"
-                            disabled={isPending || busyId === pin.id || pin.status === "revived"}
-                            onClick={() => {
-                              startTransition(async () => {
-                                try {
-                                  setBusyId(pin.id);
-                                  if (!user) throw new Error("You must be signed in to revive a PIN.");
-                                  const token = await user.getIdToken();
-                                  const res = await fetch("/api/pins/revive", {
-                                    method: "POST",
-                                    headers: {
-                                      "Content-Type": "application/json",
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                    body: JSON.stringify({
-                                      storeId,
-                                      sessionId: pin.sessionId,
-                                      pin: pin.id,
-                                      dayId: todayDayId,
-                                    }),
+                          {(() => {
+                            const isClosed = pin.status === "closed" || pin.status === "voided";
+                            const isRevived = pin.status === "revived";
+                            const label = isRevived ? "Revived" : isClosed ? (pin.status === "voided" ? "Voided" : "Closed") : "Revive";
+                            const title = isClosed
+                              ? "Session is already closed — issue a new PIN instead of reviving."
+                              : isRevived
+                              ? "This PIN was already revived."
+                              : "Revive this PIN and reopen customer access for the session.";
+                            return (
+                              <button
+                                className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+                                disabled={isPending || busyId === pin.id || isRevived || isClosed}
+                                title={title}
+                                onClick={() => {
+                                  startTransition(async () => {
+                                    try {
+                                      setBusyId(pin.id);
+                                      if (!user) throw new Error("You must be signed in to revive a PIN.");
+                                      const token = await user.getIdToken();
+                                      const res = await fetch("/api/pins/revive", {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                          Authorization: `Bearer ${token}`,
+                                        },
+                                        body: JSON.stringify({
+                                          storeId,
+                                          sessionId: pin.sessionId,
+                                          pin: pin.id,
+                                          dayId: todayDayId,
+                                        }),
+                                      });
+                                      const data = await res.json();
+                                      if (!res.ok) throw new Error(data?.error || "Failed to revive PIN.");
+                                      router.push(`/print/session-pin?sessionId=${pin.sessionId}`);
+                                    } catch (error: any) {
+                                      console.error("Revive PIN failed:", error);
+                                      toast({ variant: "destructive", title: "Failed to revive PIN", description: error?.message });
+                                    } finally {
+                                      setBusyId(null);
+                                    }
                                   });
-                                  const data = await res.json();
-                                  if (!res.ok) throw new Error(data?.error || "Failed to revive PIN.");
-                                  router.push(`/print/session-pin/${pin.sessionId}`);
-                                } finally {
-                                  setBusyId(null);
-                                }
-                              });
-                            }}
-                          >
-                            {pin.status === "revived" ? "Revived" : "Revive"}
-                          </button>
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
@@ -602,7 +785,8 @@ export default function PinsClient() {
                 </div>
               )}
             </Card>
-          </div>
+            </TabsContent>
+          </Tabs>
         )}
       </div>
     </RoleGuard>

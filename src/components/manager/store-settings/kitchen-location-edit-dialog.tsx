@@ -16,6 +16,8 @@ const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters."),
   sortOrder: z.coerce.number().min(0),
   isActive: z.boolean().default(true),
+  slaMinutes: z.coerce.number().min(1, "At least 1 minute.").max(240),
+  printOnOutage: z.boolean().default(false),
 });
 type FormValues = z.infer<typeof formSchema>;
 
@@ -29,15 +31,15 @@ interface KitchenLocationEditDialogProps {
 export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: KitchenLocationEditDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", sortOrder: 0, isActive: true },
+    defaultValues: { name: "", sortOrder: 0, isActive: true, slaMinutes: 10, printOnOutage: false },
   });
 
   useEffect(() => {
     if (isOpen) {
       if (item) {
-        form.reset(item);
+        form.reset({ ...item, slaMinutes: item.slaMinutes ?? 10, printOnOutage: item.printOnOutage ?? false });
       } else {
-        form.reset({ name: "", sortOrder: 0, isActive: true });
+        form.reset({ name: "", sortOrder: 0, isActive: true, slaMinutes: 10, printOnOutage: false });
       }
     }
   }, [item, form, isOpen]);
@@ -64,9 +66,23 @@ export function KitchenLocationEditDialog({ isOpen, onClose, onSave, item }: Kit
                 <FormMessage />
               </FormItem>
             )} />
+            <FormField control={form.control} name="slaMinutes" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Serve-time SLA (minutes)</FormLabel>
+                <FormControl><Input type="number" min={1} max={240} {...field} /></FormControl>
+                <p className="text-xs text-muted-foreground">Tickets at this station turn red and flag as late once they pass this age on the KDS.</p>
+                <FormMessage />
+              </FormItem>
+            )} />
             <FormField control={form.control} name="isActive" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
                 <FormLabel>Active</FormLabel>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="printOnOutage" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <FormLabel>Print on Outage</FormLabel>
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />

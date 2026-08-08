@@ -1,7 +1,8 @@
 
 "use client";
 
-import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine } from "@/lib/types";
+import type { Discount, Charge, Receipt as ReceiptType, ModeOfPayment, Store, SessionBillLine, GlobalDiscount, GlobalCharge } from "@/lib/types";
+import { subscribeApplicableGlobalDiscounts, subscribeApplicableGlobalCharges, isDiscountDateActive } from "@/lib/collections/globalCollections";
 import * as React from "react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -16,7 +17,7 @@ import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon,
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, runTransaction, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -25,16 +26,19 @@ import type { ReceiptData } from "@/lib/types";
 import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager/store-settings/receipt-settings";
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
-import { toJsDate } from "@/lib/utils/date";
+import { toJsDate, formatDuration } from "@/lib/utils/date";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
-import ReasonModal from "@/components/shared/ReasonModal";
+import VoidReceiptModal, { type VoidConfirmResult } from "@/components/receipts/VoidReceiptModal";
+import ReRingLinkModal from "@/components/receipts/ReRingLinkModal";
+import { getDayIdFromTimestamp, dailyAnalyticsDocRef } from "@/lib/analytics/daily";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { usePrint } from "@/hooks/use-print";
 
@@ -45,6 +49,16 @@ function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean)
     return isSameDay(range.start, range.end)
         ? `Custom: ${fmtDate(range.start)}`
         : `Custom: ${fmtDate(range.start)} — ${fmtDate(range.end)}`;
+}
+
+// Dine-in (package) session duration = payment time − session start. "N/A" for
+// ala carte or when the session start wasn't captured. Excel export only.
+function sessionDurationLabel(r: ReceiptType): string {
+    if (r.sessionMode !== 'package_dinein') return 'N/A';
+    const startMs = (r.analytics?.sessionStartedAtClientMs ?? toJsDate(r.analytics?.sessionStartedAt)?.getTime()) || null;
+    const endMs = (r.createdAtClientMs ?? toJsDate(r.createdAt)?.getTime()) || null;
+    if (!startMs || !endMs || endMs <= startMs) return 'N/A';
+    return formatDuration(endMs - startMs);
 }
 
 type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
@@ -85,6 +99,9 @@ export default function ReceiptsPageContents() {
 
     const [voidOpen, setVoidOpen] = useState(false);
     const [voidTarget, setVoidTarget] = useState<ReceiptType | null>(null);
+
+    const [reRingOpen, setReRingOpen] = useState(false);
+    const [reRingTarget, setReRingTarget] = useState<ReceiptType | null>(null);
 
     // --- Pagination State ---
     const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -206,8 +223,10 @@ export default function ReceiptsPageContents() {
         return () => unsubPm();
     }, [activeStore?.id, appUser, isSigningOut]);
     
-    const [discounts, setDiscounts] = React.useState<Discount[]>([]);
-    const [charges, setCharges] = React.useState<Charge[]>([]);
+    const [storeDiscounts, setStoreDiscounts] = React.useState<Discount[]>([]);
+    const [storeCharges, setStoreCharges] = React.useState<Charge[]>([]);
+    const [globalDiscounts, setGlobalDiscounts] = React.useState<GlobalDiscount[]>([]);
+    const [globalCharges, setGlobalCharges] = React.useState<GlobalCharge[]>([]);
      useEffect(() => {
         if (!activeStore?.id) return;
         const handleError = (err: any) => {
@@ -216,19 +235,87 @@ export default function ReceiptsPageContents() {
         }
         const unsubDiscounts = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setDiscounts(snap.docs.map(d => ({id: d.id, ...d.data()}) as Discount)),
+            snap => setStoreDiscounts(
+              snap.docs.map(d => ({id: d.id, ...d.data()}) as Discount).filter(d => !d.adminSuspended)
+            ),
             handleError
         );
          const unsubCharges = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setCharges(snap.docs.map(d => ({id: d.id, ...d.data()}) as Charge)),
+            snap => setStoreCharges(
+              snap.docs.map(d => ({id: d.id, ...d.data()}) as Charge).filter(c => !c.adminSuspended)
+            ),
             handleError
+        );
+        const unsubGlobalDiscounts = subscribeApplicableGlobalDiscounts(
+            db,
+            activeStore.id,
+            (items) => setGlobalDiscounts(items.filter(g => g.isEnabled)),
+            handleError,
+        );
+        const unsubGlobalCharges = subscribeApplicableGlobalCharges(
+            db,
+            activeStore.id,
+            (items) => setGlobalCharges(items.filter(g => g.isEnabled)),
+            handleError,
         );
         return () => {
             unsubDiscounts();
             unsubCharges();
+            unsubGlobalDiscounts();
+            unsubGlobalCharges();
         };
     }, [activeStore?.id, appUser, isSigningOut]);
+
+    const discounts = useMemo<Discount[]>(() => {
+      const merged: Discount[] = [
+        ...storeDiscounts.map(d => ({ ...d, source: "store" as const })),
+        ...globalDiscounts.map(g => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          value: g.value,
+          scope: g.scope,
+          stackable: g.stackable,
+          isEnabled: g.isEnabled,
+          sortOrder: g.sortOrder,
+          isArchived: g.isArchived,
+          createdAt: g.createdAt,
+          updatedAt: g.updatedAt,
+          createdBy: g.createdBy,
+          updatedBy: g.updatedBy,
+          startDate: g.startDate,
+          endDate: g.endDate,
+          source: "global" as const,
+        })),
+      ];
+      merged.sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
+      return merged.filter(d => isDiscountDateActive(d));
+    }, [storeDiscounts, globalDiscounts]);
+
+    const charges = useMemo<Charge[]>(() => {
+      const merged: Charge[] = [
+        ...storeCharges.map(c => ({ ...c, source: "store" as const })),
+        ...globalCharges.map(g => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          value: g.value,
+          appliesTo: g.appliesTo,
+          scope: g.scope,
+          isEnabled: g.isEnabled,
+          sortOrder: g.sortOrder,
+          isArchived: g.isArchived,
+          createdAt: g.createdAt,
+          updatedAt: g.updatedAt,
+          createdBy: g.createdBy,
+          updatedBy: g.updatedBy,
+          source: "global" as const,
+        })),
+      ];
+      merged.sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
+      return merged;
+    }, [storeCharges, globalCharges]);
 
     const filteredReceipts = useMemo(() => {
         if (!debouncedSearchTerm) return receipts;
@@ -289,17 +376,28 @@ export default function ReceiptsPageContents() {
         };
         batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
     
-        // 3. Calculate and apply the analytics delta within the same atomic batch.
-        await applyAnalyticsDeltaV2(
-          db,
-          activeStore.id,
-          editingReceipt, // Pass the original receipt as the "before" state
-          updatedReceiptData as ReceiptType, // Pass the new data as the "after" state
-          { batch } // Join the existing batch
-        );
+        // 3. (analytics delta applied separately, server-first — see step 4)
     
-        // 4. Commit all operations atomically.
+        // 4. Commit the revision + edited receipt, then apply the edit analytics
+        //    delta server-first (server reads old=revision snapshot + new=receipt
+        //    doc, idempotent on analyticsEditVersion; client fallback applies
+        //    old->new locally).
         await batch.commit();
+
+        await applyReceiptDeltaServerFirst(
+          activeStore.id,
+          editingReceipt.id,
+          "edit",
+          async () => {
+            const rSnap = await getDoc(originalReceiptRef);
+            if (rSnap.exists() && Number((rSnap.data() as any)?.analyticsEditVersion || 0) >= nextVersion) return;
+            const ab = writeBatch(db);
+            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceiptData as ReceiptType, { batch: ab });
+            await ab.commit();
+            await updateDoc(originalReceiptRef, { analyticsEditVersion: nextVersion, analyticsEditAppliedAt: serverTimestamp() });
+          },
+          { revisionId },
+        );
 
         // 5. Update local state immediately after successful commit
         setReceipts(prev =>
@@ -391,37 +489,73 @@ export default function ReceiptsPageContents() {
     }, [selectedReceiptId, activeStore, toast]);
     
 
-    const handleVoidReceipt = async (receipt: ReceiptType, reason: string) => {
+    const handleVoidReceipt = async (receipt: ReceiptType, void_: VoidConfirmResult) => {
       if (!appUser || !activeStore) {
         throw new Error("User or store not available.");
       }
-    
+      const reason = void_.reason;
+
       if (receipt.status === "voided") {
         toast({ title: "Already voided", description: "This receipt was already voided." });
         return;
       }
-      
+
       try {
-        const batch = writeBatch(db);
         const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-      
-        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
-        
-        const applyId = uuidv4();
-      
-        batch.update(receiptRef, {
-          status: "voided",
-          voidedAt: serverTimestamp(),
-          voidedByUid: appUser.uid,
-          voidedByEmail: appUser.email,
-          voidReason: reason,
-          analyticsApplied: true,
-          analyticsAppliedAt: serverTimestamp(),
-          analyticsApplyId: applyId,
+
+        // 1. Commit the void (status + audit metadata + cash disposition) first.
+        //    Done in a transaction that re-reads the LIVE doc and aborts if the
+        //    receipt is already voided. This is the idempotency gate: the
+        //    in-memory `receipt.status` check above can be stale (second tab,
+        //    retry, concurrent trigger), and unconditionally writing
+        //    `analyticsReversed:false` here would otherwise re-arm the server
+        //    route's guard and reverse the sale a SECOND time — double-counting
+        //    the void in analytics. Only the transaction that actually flips
+        //    final -> voided proceeds to reverse analytics / log the void.
+        //    Cash disposition is written BEFORE the delta call so the server route
+        //    reads voidCashRetained off the fresh doc when accumulating it.
+        const alreadyVoided = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(receiptRef);
+          if (!snap.exists()) throw new Error("Receipt not found.");
+          if ((snap.data() as any)?.status === "voided") return true;
+          tx.update(receiptRef, {
+            status: "voided",
+            voidedAt: serverTimestamp(),
+            voidedByUid: appUser.uid,
+            voidedByEmail: appUser.email,
+            voidReason: reason,
+            voidCashPaid: void_.voidCashPaid,
+            voidCashRefunded: void_.voidCashRefunded,
+            voidCashRetained: void_.voidCashRetained,
+            voidCashDisposition: void_.voidCashDisposition,
+            analyticsReversed: false, // set true by the server/reconcile cron once reversed
+          });
+          return false;
         });
-      
-        await batch.commit();
-      
+
+        if (alreadyVoided) {
+          toast({ title: "Already voided", description: "This receipt was already voided." });
+          return;
+        }
+
+        // 2. Reverse the receipt's analytics contribution server-first; fall back
+        //    to the client delta on failure. `receipt` here is the in-memory,
+        //    still-`final` object, so its contribution reconstructs correctly even
+        //    though the doc is now voided. Idempotent on `analyticsReversed`.
+        await applyReceiptDeltaServerFirst(activeStore.id, receipt.id, "void", async () => {
+          const rSnap = await getDoc(receiptRef);
+          if (rSnap.exists() && (rSnap.data() as any)?.analyticsReversed === true) return;
+          const ab = writeBatch(db);
+          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, {
+            batch: ab,
+            ...(void_.voidCashRetained > 0
+              ? { dayExtraIncrements: { "payments.voidCashRetainedTotal": void_.voidCashRetained } }
+              : {}),
+          });
+          await ab.commit();
+          await updateDoc(receiptRef, { analyticsReversed: true, analyticsReversedAt: serverTimestamp() });
+        });
+
         await writeActivityLog({
           action: "RECEIPT_VOIDED",
           storeId: activeStore.id,
@@ -439,6 +573,52 @@ export default function ReceiptsPageContents() {
           // Re-throw the error so the caller can handle it (e.g., show a toast)
           throw error;
       }
+    };
+
+    // Link a voided receipt's retained cash to the receipt that re-rang it. The
+    // re-ring's normal sale now accounts for that cash, so we reverse the retained
+    // accrual out of analytics (server-first; idempotent on voidCashRetainedReversed)
+    // to stop expected cash being counted twice.
+    const handleLinkReRing = async (voided: ReceiptType, reRingReceiptId: string) => {
+      if (!appUser || !activeStore) throw new Error("User or store not available.");
+      const receiptRef = doc(db, "stores", activeStore.id, "receipts", voided.id);
+
+      await applyReceiptDeltaServerFirst(
+        activeStore.id,
+        voided.id,
+        "voidcash-reverse",
+        async () => {
+          // Client fallback: reverse the retained accrual + stamp flags.
+          const rSnap = await getDoc(receiptRef);
+          if (!rSnap.exists() || (rSnap.data() as any)?.voidCashRetainedReversed === true) return;
+          const retained = Number((rSnap.data() as any)?.voidCashRetained || 0);
+          if (retained > 0) {
+            const dayId = getDayIdFromTimestamp(voided.createdAtClientMs ?? null);
+            const ab = writeBatch(db);
+            ab.set(
+              dailyAnalyticsDocRef(db, activeStore.id, dayId),
+              { payments: { voidCashRetainedTotal: increment(-retained) }, meta: { updatedAt: serverTimestamp() } },
+              { merge: true },
+            );
+            await ab.commit();
+          }
+          await updateDoc(receiptRef, {
+            voidCashRetainedReversed: true,
+            reRingReceiptId,
+            reRingLinkedAt: serverTimestamp(),
+          });
+        },
+        { reRingReceiptId },
+      );
+
+      await writeActivityLog({
+        action: "RECEIPT_VOIDED",
+        storeId: activeStore.id,
+        sessionId: voided.sessionId,
+        user: appUser,
+        reason: `Re-ring linked → ${reRingReceiptId}; retained cash reversed`,
+        meta: { receiptId: voided.id, receiptNumber: voided.receiptNumber },
+      });
     };
 
     const handleExport = async () => {
@@ -474,6 +654,7 @@ export default function ReceiptsPageContents() {
                     "TIN": r.customerTin || 'N/A',
                     "Table No.": r.tableNumber || 'N/A',
                     "Package": r.lines?.find(l => l.type === 'package')?.itemName || 'Ala Carte',
+                    "Session Time": sessionDurationLabel(r),
                     "Subtotal": r.analytics?.subtotal ?? 0,
                     "Discount": r.analytics?.discountsTotal ?? 0,
                     "Charges": r.analytics?.chargesTotal ?? 0,
@@ -663,6 +844,19 @@ export default function ReceiptsPageContents() {
                                                                 {isProcessing === r.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <Ban className="h-4 w-4"/>}
                                                             </Button>
                                                         )}
+
+                                                        {r.status === "voided" && Number(r.voidCashRetained || 0) > 0 && !r.voidCashRetainedReversed && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="ml-2"
+                                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReRingTarget(r); setReRingOpen(true); }}
+                                                                type="button"
+                                                                title={`Link re-ring (₱${Number(r.voidCashRetained || 0).toFixed(2)} retained cash)`}
+                                                            >
+                                                                Re-ring
+                                                            </Button>
+                                                        )}
                                                     </TableCell>
                                                 )}
                                             </TableRow>
@@ -703,7 +897,7 @@ export default function ReceiptsPageContents() {
             </div>
             
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-                <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+                <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
                     <DialogHeader className="p-6 pb-0">
                         <DialogTitle>Receipt Template Settings</DialogTitle>
                         <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>
@@ -730,28 +924,52 @@ export default function ReceiptsPageContents() {
                 />
             )}
 
-            <ReasonModal
+            <VoidReceiptModal
               open={voidOpen}
+              receipt={voidTarget}
               onOpenChange={(o) => {
                 setVoidOpen(o);
                 if (!o) setVoidTarget(null);
               }}
-              title="Void Receipt"
-              description="Provide a reason. This will reverse analytics and keep the receipt for audit."
-              confirmLabel="Void Receipt"
-              placeholder="Reason..."
-              onConfirm={async (reason) => {
+              onConfirm={async (result) => {
                 if (!voidTarget) return;
                 setIsProcessing(voidTarget.id);
                 try {
-                  await handleVoidReceipt(voidTarget, reason);
-                  toast({ title: "Receipt Voided", description: "Receipt kept for audit; analytics reversed." });
-                  setReceipts(prev => prev.map(r => r.id === voidTarget!.id ? { ...r, status: 'voided', voidReason: reason } : r));
+                  await handleVoidReceipt(voidTarget, result);
+                  const retainedNote = result.voidCashRetained > 0
+                    ? ` ₱${result.voidCashRetained.toFixed(2)} cash retained — carried to remittance.`
+                    : "";
+                  toast({ title: "Receipt Voided", description: `Receipt kept for audit; analytics reversed.${retainedNote}` });
+                  setReceipts(prev => prev.map(r => r.id === voidTarget!.id ? { ...r, status: 'voided', voidReason: result.reason } : r));
                 } catch (error: any) {
                     toast({ variant: 'destructive', title: 'Void Failed', description: error.message });
                 } finally {
                   setIsProcessing(null);
                   setVoidTarget(null);
+                }
+              }}
+            />
+
+            <ReRingLinkModal
+              open={reRingOpen}
+              voided={reRingTarget}
+              candidates={receipts}
+              onOpenChange={(o) => {
+                setReRingOpen(o);
+                if (!o) setReRingTarget(null);
+              }}
+              onConfirm={async (reRingReceiptId) => {
+                if (!reRingTarget) return;
+                setIsProcessing(reRingTarget.id);
+                try {
+                  await handleLinkReRing(reRingTarget, reRingReceiptId);
+                  toast({ title: "Re-ring linked", description: "Retained cash reversed — no longer counted in expected remittance." });
+                  setReceipts(prev => prev.map(r => r.id === reRingTarget!.id ? { ...r, voidCashRetainedReversed: true, reRingReceiptId } : r));
+                } catch (error: any) {
+                  toast({ variant: 'destructive', title: 'Link Failed', description: error.message });
+                } finally {
+                  setIsProcessing(null);
+                  setReRingTarget(null);
                 }
               }}
             />

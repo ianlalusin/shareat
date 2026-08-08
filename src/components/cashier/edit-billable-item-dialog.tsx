@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { QuantityInput } from "./quantity-input";
 import { Minus, Plus, Loader2, RefreshCw } from "lucide-react";
 import { Separator } from "../ui/separator";
-import type { Discount, SessionBillLine, InventoryItem, LineAdjustment } from "@/lib/types";
+import type { Discount, Charge, SessionBillLine, InventoryItem, LineAdjustment } from "@/lib/types";
 import { Alert, AlertTitle, AlertDescription } from "../ui/alert";
 import { useAuthContext } from "@/context/auth-context";
 import { serverTimestamp, doc, getDoc } from "firebase/firestore";
@@ -36,23 +36,33 @@ const VOID_REASONS = {
 const formSchema = z.object({
   qtyOrdered: z.coerce.number().min(0, "Quantity must be non-negative."),
   unitPrice: z.coerce.number().min(0),
-  
+
   applyDiscount: z.boolean().default(false),
   discountId: z.string().optional(),
   discountType: z.enum(["fixed", "percent"]).nullable().optional(),
   discountValue: z.coerce.number().min(0).default(0),
   discountQty: z.coerce.number().min(0),
 
+  applyCharge: z.boolean().default(false),
+  chargeId: z.string().optional(),
+  chargeType: z.enum(["fixed", "percent"]).nullable().optional(),
+  chargeValue: z.coerce.number().min(0).default(0),
+  chargeQty: z.coerce.number().min(0),
+
   applyFree: z.boolean().default(false),
   freeQty: z.coerce.number().min(0),
-  
+
   applyVoid: z.boolean().default(false),
   voidQty: z.coerce.number().min(0),
   voidReason: z.string().optional(),
   voidNote: z.string().optional(),
+  note: z.string().optional(),
 }).refine(data => data.applyDiscount ? (data.discountId && data.discountType && data.discountValue > 0 && data.discountQty > 0) || (data.discountId === 'custom' && data.discountValue > 0 && data.discountQty > 0) : true, {
     message: "If discount is applied, you must select a valid preset or custom value and quantity.",
     path: ["applyDiscount"],
+}).refine(data => data.applyCharge ? (data.chargeId && data.chargeType && data.chargeValue > 0 && data.chargeQty > 0) || (data.chargeId === 'custom' && data.chargeValue > 0 && data.chargeQty > 0) : true, {
+    message: "If charge is applied, you must select a valid preset or custom value and quantity.",
+    path: ["applyCharge"],
 });
 
 
@@ -63,9 +73,12 @@ interface EditBillableItemDialogProps {
     onClose: () => void;
     line: SessionBillLine | null;
     discounts: Discount[];
+    charges?: Charge[];
     isLocked?: boolean;
-    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void;
-    onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void;
+    /** Bundle flat line: lock the qty at 1 (a bundle is one unit, not per-cover). */
+    lockQty?: boolean;
+    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void | Promise<void>;
+    onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void | Promise<void>;
     refundedQty?: number;
 }
 
@@ -75,29 +88,31 @@ function normalizeDiscountType(t: any): "fixed" | "percent" | null {
     return null;
 }
 
-function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true, allowDecimal = false }: { 
-    label: string, 
-    value: number, 
-    onChange: (val: number) => void, 
-    max: number, 
-    min?: number, 
-    description?: string, 
-    step?: number, 
+function QuantityStepper({ label, value, onChange, max, min = 0, description, step = 1, canDecrease = true, allowDecimal = false, disabled = false }: {
+    label: string,
+    value: number,
+    onChange: (val: number) => void,
+    max: number,
+    min?: number,
+    description?: string,
+    step?: number,
     canDecrease?: boolean,
     allowDecimal?: boolean,
+    disabled?: boolean,
 }) {
     return (
         <FormItem>
             <FormLabel>{label}</FormLabel>
             <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - step))} disabled={!canDecrease}><Minus/></Button>
-                <QuantityInput 
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.max(min, value - step))} disabled={!canDecrease || disabled}><Minus/></Button>
+                <QuantityInput
                     value={value}
                     onChange={onChange}
                     className="text-center"
                     allowDecimal={allowDecimal}
+                    disabled={disabled}
                 />
-                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + step))}><Plus/></Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => onChange(Math.min(max, value + step))} disabled={disabled}><Plus/></Button>
             </div>
             {description && <FormDescription className="text-xs">{description}</FormDescription>}
              <FormMessage />
@@ -105,12 +120,14 @@ function QuantityStepper({ label, value, onChange, max, min = 0, description, st
     );
 }
 
-export function EditBillableItemDialog({ 
-    isOpen, 
-    onClose, 
+export function EditBillableItemDialog({
+    isOpen,
+    onClose,
     line,
-    discounts, 
+    discounts,
+    charges = [],
     isLocked,
+    lockQty = false,
     onSave,
     onAddLineAdjustment,
   refundedQty = 0,
@@ -148,9 +165,17 @@ export function EditBillableItemDialog({
                 discountType: 'fixed',
                 discountValue: 0,
                 discountQty: 0,
-                
+
+                // ALWAYS reset charge fields to a clean state
+                applyCharge: false,
+                chargeId: 'custom',
+                chargeType: 'fixed',
+                chargeValue: 0,
+                chargeQty: 0,
+
                 voidReason: undefined,
                 voidNote: '',
+                note: line.note || '',
             });
             
             // Fetch current inventory item details
@@ -250,6 +275,28 @@ export function EditBillableItemDialog({
         trigger(["discountValue", "discountType"]);
     };
 
+    const handleChargeIdChange = (id: string) => {
+        setValue("chargeId", id);
+        if (id === 'custom') {
+            setValue('chargeValue', 0);
+            setValue('chargeType', 'fixed');
+        } else {
+            const selected = charges.find(c => c.id === id);
+            if (selected) {
+                setValue('chargeType', normalizeDiscountType(selected.type));
+                setValue('chargeValue', Number(selected.value) || 0);
+            }
+        }
+        trigger(["chargeValue", "chargeType"]);
+    };
+
+    const handleChargeQtyChange = (newValue: number) => {
+        const maxAllowed = getValues().qtyOrdered || line?.qtyOrdered || 0;
+        const clamped = Math.max(0, Math.min(newValue, maxAllowed));
+        setValue('chargeQty', clamped, { shouldValidate: true, shouldDirty: true });
+        setValue('applyCharge', clamped > 0);
+    };
+
     const handleSave = async (data: FormValues) => {
         if (!line || !appUser) return;
 
@@ -290,14 +337,16 @@ export function EditBillableItemDialog({
                 qtyOrdered: line.qtyOrdered,
                 unitPrice: line.unitPrice,
                 freeQty: line.freeQty,
-                voidedQty: line.voidedQty
+                voidedQty: line.voidedQty,
+                note: line.note ?? null,
             };
-    
+
             const after: Partial<SessionBillLine> = {
                 qtyOrdered: data.qtyOrdered,
                 unitPrice: data.unitPrice,
                 freeQty: data.applyFree ? data.freeQty : 0,
                 voidedQty: data.applyVoid ? data.voidQty : 0,
+                note: (data.note ?? "").trim() || null,
             };
             
             if (isPackage && isIncreasingQty) {
@@ -305,7 +354,7 @@ export function EditBillableItemDialog({
                 (after as any).qtyOverrideAt = new Date();
             }
 
-            onSave(line.id, before, after);
+            await onSave(line.id, before, after);
 
             // Part 2: Add new discount adjustment if applicable
             if (data.applyDiscount && data.discountQty > 0 && data.discountValue > 0) {
@@ -323,7 +372,25 @@ export function EditBillableItemDialog({
                     createdByUid: appUser.uid,
                     createdByName: appUser.displayName || appUser.name || undefined,
                 };
-                onAddLineAdjustment(line.id, adj);
+                await onAddLineAdjustment(line.id, adj);
+            }
+
+            // Part 3: Add new charge adjustment if applicable
+            if (data.applyCharge && data.chargeQty > 0 && data.chargeValue > 0) {
+                const selectedCharge = charges.find(c => c.id === data.chargeId);
+                const adj: LineAdjustment = {
+                    id: `adj_${Date.now() + 1}`,
+                    kind: "charge",
+                    note: selectedCharge?.name || "Custom Charge",
+                    type: data.chargeType!,
+                    value: data.chargeValue,
+                    qty: data.chargeQty,
+                    refId: data.chargeId !== 'custom' ? data.chargeId! : null,
+                    createdAtClientMs: Date.now(),
+                    createdByUid: appUser.uid,
+                    createdByName: appUser.displayName || appUser.name || undefined,
+                };
+                await onAddLineAdjustment(line.id, adj);
             }
 
             onClose();
@@ -348,7 +415,7 @@ export function EditBillableItemDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-md grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+            <DialogContent className="max-w-md grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
                 <DialogHeader className="p-6 pb-0">
                     <DialogTitle>Edit: {line.itemName}</DialogTitle>
                 </DialogHeader>
@@ -359,7 +426,7 @@ export function EditBillableItemDialog({
                                 <div className="grid grid-cols-2 gap-4">
                                      <FormField name="unitPrice" control={control} render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>{isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
+                                            <FormLabel>{lockQty ? 'Bundle Price' : isPackage ? 'Price Per Head' : 'Unit Price'}</FormLabel>
                                             <div className="flex items-center gap-2">
                                             <FormControl><Input type="number" step="0.01" {...field} readOnly/></FormControl>
                                             {showSyncPrice && (
@@ -369,15 +436,16 @@ export function EditBillableItemDialog({
                                         </FormItem>
                                     )} />
                                     <FormField name="qtyOrdered" control={control} render={({ field }) => (
-                                        <QuantityStepper 
-                                            label={isPackage ? "Total Covers" : "Total Quantity"} 
-                                            value={field.value} 
-                                            onChange={handleQtyOrderedChange} 
-                                            max={50} 
+                                        <QuantityStepper
+                                            label={lockQty ? "Bundle (flat)" : isPackage ? "Total Covers" : "Total Quantity"}
+                                            value={field.value}
+                                            onChange={handleQtyOrderedChange}
+                                            max={50}
                                             min={canDecreaseQty ? 0 : line.qtyOrdered}
                                             canDecrease={canDecreaseQty}
                                             allowDecimal={allowDecimal}
                                             step={allowDecimal ? 0.1 : 1}
+                                            disabled={lockQty}
                                         />
                                     )} />
                                 </div>
@@ -390,6 +458,13 @@ export function EditBillableItemDialog({
                                         </AlertDescription>
                                     )}
                                 </Alert>
+
+                                <FormField name="note" control={control} render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Special instructions</FormLabel>
+                                        <FormControl><Textarea rows={2} maxLength={140} placeholder="e.g. no onions, extra spicy" {...field} disabled={isLocked} /></FormControl>
+                                    </FormItem>
+                                )} />
 
                                 <Separator />
                                 {/* Discount Section */}
@@ -419,6 +494,34 @@ export function EditBillableItemDialog({
                                     )}
                                 </div>
                                 
+                                <Separator />
+                                {/* Charge Section */}
+                                <div className="space-y-2">
+                                    <FormField name="applyCharge" control={control} render={({ field }) => (
+                                        <FormItem className="flex items-center gap-2 space-y-0"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} disabled={isLocked}/></FormControl><FormLabel>Add Charge</FormLabel></FormItem>
+                                    )} />
+                                    {watchedValues.applyCharge && (
+                                        <div className="p-3 border rounded-md space-y-4">
+                                            <div className="grid grid-cols-2 gap-4 items-start">
+                                                <FormField name="chargeQty" control={control} render={({ field }) => (
+                                                    <QuantityStepper label="Apply to" value={field.value || 0} onChange={handleChargeQtyChange} max={watchedValues.qtyOrdered || line.qtyOrdered} description={`of ${watchedValues.qtyOrdered} total`}/>
+                                                )} />
+                                                <FormField name="chargeId" control={control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Preset</FormLabel><Select onValueChange={handleChargeIdChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select a preset..." /></SelectTrigger></FormControl><SelectContent><SelectItem value="custom">Custom</SelectItem>{charges.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></FormItem>
+                                                )} />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <FormField name="chargeType" control={control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value || ""} disabled={isLocked}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
+                                                )} />
+                                                <FormField name="chargeValue" control={control} render={({ field }) => (
+                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={watchedValues.chargeId !== 'custom'}/></FormControl><FormMessage/></FormItem>
+                                                )} />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <Separator />
                                 {/* Free Section */}
                                 <div className="space-y-2">

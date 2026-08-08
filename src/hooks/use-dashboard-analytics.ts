@@ -9,13 +9,16 @@ import { differenceInDays, addDays } from 'date-fns';
 import { startOfDay, endOfDay, isSameDay, fmtDate } from '@/lib/utils/date';
 
 export type DatePreset = "today" | "yesterday" | "week" | "month" | "last7" | "last30" | "lastMonth" | "ytd" | "custom";
-export type DashboardStats = { netSales: number; transactions: number; avgBasket: number; };
+// avgDineIn  = avg net per dine-in PACKAGE guest (covers w/ a headcount snapshot).
+// avgAlacarte = avg net per ala carte (non-package "walkIn") BILL — no headcount.
+// txDineIn / txAlacarte = transaction (session) count by mode; sum == transactions.
+export type DashboardStats = { netSales: number; transactions: number; avgDineIn: number; avgAlacarte: number; txDineIn: number; txAlacarte: number; };
 export type YtdTally = DashboardStats & { mop: Record<string, number> };
 export type TrendRow = { month: number, curGross: number, prevGross: number, curTx: number, prevTx: number };
 export type TopRefillRow = { name: string; qty: number };
 export type TopAddonRow = { name: string; qty: number; amount: number; categoryName: string; };
 
-const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgBasket: 0, mop: {} };
+const NULL_YTD_TALLY: YtdTally = { netSales: 0, transactions: 0, avgDineIn: 0, avgAlacarte: 0, txDineIn: 0, txAlacarte: 0, mop: {} };
 
 // --- Data Aggregation Helpers ---
 function aggregateAddonCategories(metrics: DailyMetric[]): { categoryName: string; qty: number; amount: number }[] {
@@ -48,14 +51,19 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
     const netSales = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.totalGross || 0), 0);
     const transactions = dailyMetrics.reduce((sum, metric) => sum + (metric.payments?.txCount || 0), 0);
     
-    const totalDineInSales = dailyMetrics.reduce((sum, metric) => {
-        const packageSales = Object.values(metric.sales?.packageSalesAmountByName || {}).reduce((pkgSum, amount) => pkgSum + amount, 0);
-        const addonSales = metric.sales?.dineInAddonSalesAmount || 0;
-        return sum + packageSales + addonSales;
-    }, 0);
+    const totalDineInSalesGross = dailyMetrics.reduce((sum, metric) => sum + (metric.sales?.dineInSalesGross || 0), 0);
+    const totalDineInDiscounts = dailyMetrics.reduce((sum, metric) => sum + (metric.sales?.dineInDiscountsTotal || 0), 0);
+    const totalDineInCharges = dailyMetrics.reduce((sum, metric) => sum + (metric.sales?.dineInChargesTotal || 0), 0);
+    const totalDineInNet = totalDineInSalesGross - totalDineInDiscounts - totalDineInCharges;
     const totalDineInGuests = dailyMetrics.reduce((sum, metric) => sum + (metric.guests?.guestCountFinalTotal || 0), 0);
-    const avgSpending = totalDineInGuests > 0 ? totalDineInSales / totalDineInGuests : 0;
-    
+    const avgDineIn = totalDineInGuests > 0 ? totalDineInNet / totalDineInGuests : 0; // per package dine-in guest
+    // Ala carte = the non-package "walkIn" mode. These sessions have no dine-in
+    // headcount, so the average is per BILL (net per transaction).
+    const walkInNet = dailyMetrics.reduce((sum, m) => sum + ((m.sales as any)?.netSalesByMode?.walkIn || 0), 0);
+    const walkInTx = dailyMetrics.reduce((sum, m) => sum + ((m.payments as any)?.txCountByMode?.walkIn || 0), 0);
+    const dineInTx = dailyMetrics.reduce((sum, m) => sum + ((m.payments as any)?.txCountByMode?.dineIn || 0), 0);
+    const avgAlacarte = walkInTx > 0 ? walkInNet / walkInTx : 0;
+
     const mop: Record<string, number> = {};
     dailyMetrics.forEach(metric => {
         const methods = metric.payments?.byMethod ?? {};
@@ -63,7 +71,7 @@ function aggregateDailies(dailyMetrics: DailyMetric[]): YtdTally {
             mop[method] = (mop[method] || 0) + amount;
         }
     });
-    return { netSales, transactions, avgBasket: avgSpending, mop };
+    return { netSales, transactions, avgDineIn, avgAlacarte, txDineIn: dineInTx, txAlacarte: walkInTx, mop };
 }
 
 function aggregateRefills(metrics: DailyMetric[], topN: number = 5): TopRefillRow[] {
@@ -238,11 +246,31 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
             
             // --- FALLBACK LOGIC ---
             if (differenceInDays(dateRange.end, dateRange.start) > MAX_DAYS_RANGE) {
-                 setDailyMetrics([]);
-                 setTopCategories([]);
-                 setTopRefills([]);
-                 setTopAddonItems([]);
-                 setHasTopAddonItems(false);
+                // Range too large for a daily-doc query (e.g. YTD). Aggregate the
+                // month rollup docs spanning the range instead of giving up — this
+                // computes from whatever months have data, so empty leading months
+                // (e.g. an empty January for YTD) are simply skipped.
+                const monthIds: string[] = [];
+                const cursor = new Date(dateRange.start.getFullYear(), dateRange.start.getMonth(), 1);
+                const stop = new Date(dateRange.end.getFullYear(), dateRange.end.getMonth(), 1);
+                while (cursor.getTime() <= stop.getTime()) {
+                    monthIds.push(`${cursor.getFullYear()}${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+                    cursor.setMonth(cursor.getMonth() + 1);
+                }
+
+                const monthSnaps = await Promise.all(
+                    monthIds.map((id) => getDoc(doc(db, "stores", storeId, "analyticsMonths", id)))
+                );
+                if (cancelled) return;
+
+                const metrics = monthSnaps.filter((s) => s.exists()).map((s) => s.data() as DailyMetric);
+                const aggregatedAddons = aggregateTopAddons(metrics);
+
+                setDailyMetrics(metrics);
+                setTopCategories(aggregateAddonCategories(metrics));
+                setTopRefills(aggregateRefills(metrics));
+                setTopAddonItems(aggregatedAddons);
+                setHasTopAddonItems(aggregatedAddons.length > 0);
             } else {
                 const tomorrow = addDays(dateRange.end, 1);
                 const q = query(
@@ -250,13 +278,13 @@ export function useDashboardAnalytics({ storeId, preset, customRange }: UseDashb
                     where("meta.dayStartMs", ">=", dateRange.start.getTime()),
                     where("meta.dayStartMs", "<", startOfDay(tomorrow).getTime())
                 );
-                
+
                 const snapshot = await getDocs(q);
                 if (cancelled) return;
 
                 const metrics = snapshot.docs.map((d) => d.data() as DailyMetric);
                 const aggregatedAddons = aggregateTopAddons(metrics);
-                
+
                 setDailyMetrics(metrics);
                 setTopCategories(aggregateAddonCategories(metrics));
                 setTopRefills(aggregateRefills(metrics));

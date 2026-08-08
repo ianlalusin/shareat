@@ -5,13 +5,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { db } from "@/lib/firebase/client";
-import { collection, doc, onSnapshot, query, where, orderBy, limit, getDocs, Timestamp, documentId } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { Loader, User, Clock, Package, Users, Utensils, CreditCard, Scissors, Gift, Tag, Ban, ArrowRightLeft, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AppUser, useAuthContext } from "@/context/auth-context";
 import { toJsDate } from "@/lib/utils/date";
+import { describeActivityLog } from "@/lib/logs/describe-log";
+import { actorLabel, collectLocalActorNames, resolveStaffNames, type ActorNameMap } from "@/lib/session-timeline/actors";
 
 interface SessionTimelineDrawerProps {
   open: boolean;
@@ -27,133 +28,33 @@ type TimelineEvent = {
   description: string;
   actorUid?: string;
   actorName?: string;
+  serverProfileName?: string | null;
   detail?: string;
 };
-
-// Hook to fetch user profiles for actors, now with chunking
-const useUserProfiles = (uids: string[]) => {
-    const [profiles, setProfiles] = useState<Record<string, AppUser>>({});
-
-    useEffect(() => {
-        if (uids.length === 0) return;
-
-        const profilesToFetch = uids.filter(uid => !profiles[uid]);
-        if (profilesToFetch.length === 0) return;
-
-        const staffRef = collection(db, "staff");
-
-        const fetchInChunks = async () => {
-            const idChunks: string[][] = [];
-            for (let i = 0; i < profilesToFetch.length; i += 10) {
-                idChunks.push(profilesToFetch.slice(i, i + 10));
-            }
-
-            const newProfiles: Record<string, AppUser> = {};
-            for (const chunk of idChunks) {
-                if (chunk.length > 0) {
-                    const q = query(staffRef, where(documentId(), "in", chunk));
-                    const snapshot = await getDocs(q);
-                    snapshot.forEach(doc => {
-                        newProfiles[doc.id] = doc.data() as AppUser;
-                    });
-                }
-            }
-            setProfiles(prev => ({ ...prev, ...newProfiles }));
-        };
-
-        fetchInChunks();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [uids.join(",")]);
-
-    return profiles;
-};
-
-// Map activity log action to a human-readable description
-function describeActivityLog(log: any): { description: string; detail?: string; type: string } | null {
-  const meta = log.meta ?? {};
-  const qty = log.qty ?? meta.qty;
-  const itemName = meta.itemName ?? "";
-
-  switch (log.action) {
-    case "SESSION_STARTED":
-      return null; // Shown from session document data with richer context
-    case "SESSION_VOIDED":
-      return { type: "void", description: `Session voided`, detail: log.reason || meta.reason || undefined };
-    case "VOID_TICKETS":
-      return { type: "void", description: `Voided ${qty ? qty + "x " : ""}${itemName}`, detail: log.reason || undefined };
-    case "UNVOID":
-      return { type: "adjustment", description: `Unvoided ${qty ? qty + "x " : ""}${itemName}` };
-    case "MARK_FREE":
-      return { type: "free", description: `Marked ${qty ? qty + "x " : ""}${itemName} as free`, detail: meta.amount ? `₱${Number(meta.amount).toFixed(2)} value` : undefined };
-    case "UNMARK_FREE":
-      return { type: "adjustment", description: `Removed free from ${qty ? qty + "x " : ""}${itemName}` };
-    case "DISCOUNT_APPLIED":
-      return { type: "discount", description: `Discount applied${itemName ? ` to ${itemName}` : ""}`, detail: meta.discountName || meta.adjustmentName || undefined };
-    case "DISCOUNT_REMOVED":
-      return { type: "discount", description: `Discount removed${itemName ? ` from ${itemName}` : ""}`, detail: log.note || undefined };
-    case "DISCOUNT_EDITED":
-      return { type: "discount", description: `Discount edited`, detail: log.note || undefined };
-    case "PACKAGE_QTY_OVERRIDE_SET":
-      return { type: "adjustment", description: `Package qty manually set to ${meta.afterQty ?? "?"}`, detail: meta.beforeQty != null ? `Was ${meta.beforeQty}` : undefined };
-    case "PACKAGE_QTY_RESYNC_APPROVED_CHANGE":
-      return { type: "adjustment", description: `Package qty auto-synced to ${meta.afterQty ?? "?"}`, detail: meta.beforeQty != null ? `Was ${meta.beforeQty} (guest count approved)` : undefined };
-    case "PAYMENT_COMPLETED":
-      return { type: "payment", description: `Payment completed${meta.paymentTotal ? ` — ₱${Number(meta.paymentTotal).toFixed(2)}` : ""}`, detail: meta.receiptNumber ? `Receipt: ${meta.receiptNumber}` : undefined };
-    case "RECEIPT_EDITED":
-      return { type: "billing", description: "Receipt edited after close", detail: log.note || undefined };
-    case "RECEIPT_VOIDED":
-      return { type: "void", description: "Receipt voided", detail: log.reason || undefined };
-    case "PRICE_OVERRIDE":
-      return { type: "adjustment", description: `Price override on ${itemName}` };
-    case "ADDON_ADDED":
-      return { type: "kitchen", description: `Addon added: ${itemName}${qty ? ` (${qty}x)` : ""}` };
-    case "REFILL_ADDED":
-      return { type: "kitchen", description: `Refill ordered: ${itemName}${qty ? ` (${qty}x)` : ""}` };
-    case "BILL_DISCOUNT_APPLIED":
-      return { type: "discount", description: `Bill discount applied`, detail: meta.discountName || log.note || undefined };
-    case "BILL_DISCOUNT_REMOVED":
-      return { type: "discount", description: `Bill discount removed` };
-    case "CUSTOM_CHARGE_ADDED":
-      return { type: "adjustment", description: `Custom charge added`, detail: log.note || undefined };
-    case "CUSTOM_CHARGE_REMOVED":
-      return { type: "adjustment", description: `Custom charge removed`, detail: log.note || undefined };
-    case "GUEST_COUNT_REQUESTED":
-      return { type: "change_request", description: `Guest count change requested → ${meta.newQty ?? "?"}`, detail: meta.beforeQty != null ? `Was ${meta.beforeQty}` : undefined };
-    case "GUEST_COUNT_APPROVED":
-      return { type: "change_approval", description: `Guest count change approved → ${meta.afterQty ?? "?"}` };
-    case "GUEST_COUNT_REJECTED":
-      return { type: "change_rejection", description: `Guest count change rejected` };
-    case "PACKAGE_CHANGE_REQUESTED":
-      return { type: "change_request", description: `Package change requested`, detail: meta.itemName || log.note || undefined };
-    case "PACKAGE_CHANGE_APPROVED":
-      return { type: "change_approval", description: `Package changed`, detail: meta.itemName || log.note || undefined };
-    case "PACKAGE_CHANGE_REJECTED":
-      return { type: "change_rejection", description: `Package change rejected` };
-    case "TICKET_SERVED":
-      return { type: "kitchen", description: `${itemName} served` };
-    case "TICKET_CANCELLED":
-      return { type: "void", description: `${itemName} cancelled in kitchen`, detail: log.reason || meta.reason || undefined };
-    case "TICKET_BATCH_SERVED":
-      return { type: "kitchen", description: `${qty ? qty + "x " : ""}${itemName} served` };
-    case "TICKET_REMAINING_CANCELLED":
-      return { type: "void", description: `Remaining ${itemName} cancelled`, detail: log.reason || meta.reason || undefined };
-    case "SESSION_VERIFIED":
-      return { type: "session", description: `Session verified — ${meta.finalCount ?? meta.serverCount ?? "?"} guests` };
-    default:
-      return { type: "adjustment", description: log.action?.replace(/_/g, " ") || "Unknown action", detail: log.note || undefined };
-  }
-}
 
 export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }: SessionTimelineDrawerProps) {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  // Names carried by the events themselves (activity logs, serve stamps) —
+  // free, and enough for most actors. See lib/session-timeline/actors.
+  const [localNames, setLocalNames] = useState<ActorNameMap>(() => new Map());
+  const [staffNames, setStaffNames] = useState<ActorNameMap>(() => new Map());
 
   const actorUids = useMemo(() => {
     return [...new Set(events.map(e => e.actorUid).filter(Boolean) as string[])];
   }, [events]);
 
-  const userProfiles = useUserProfiles(actorUids);
+  // Anything the events could not name themselves gets one chunked staff lookup,
+  // shared process-wide so reopening the drawer costs nothing.
+  useEffect(() => {
+    const missing = actorUids.filter((uid) => !localNames.has(uid));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    resolveStaffNames(missing)
+      .then((resolved) => { if (!cancelled && resolved.size) setStaffNames((prev) => new Map([...prev, ...resolved])); })
+      .catch(() => {/* tier 3 renders a shortened uid */});
+    return () => { cancelled = true; };
+  }, [actorUids, localNames]);
 
   useEffect(() => {
     if (!open) return;
@@ -293,8 +194,11 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
                     id: `${ticket.id}-serve-${i}`,
                     timestamp: toJsDate(entry.servedAt)!,
                     type: 'kitchen',
-                    description: `Served ${entry.qtyServed ?? "?"}x ${ticket.itemName}`,
+                    // `qty`, not `qtyServed` — that is the field handleServeBatch
+                    // writes, and reading the wrong one rendered "Served ?x".
+                    description: `Served ${entry.qty ?? "?"}x ${ticket.itemName}`,
                     actorUid: entry.servedByUid,
+                    serverProfileName: entry.servedByProfileName ?? null,
                   });
                 }
               });
@@ -304,17 +208,20 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         // 4. Activity Logs — voids, discounts, free, adjustments
         activityLogsData.forEach(log => {
             const result = describeActivityLog(log);
-            if (!result) return; // skip duplicates (SESSION_STARTED, PAYMENT_COMPLETED)
+            // The session-document walk above already rendered these, with more
+            // context than the log carries.
+            if (result.redundantWithSessionDoc) return;
             const ts = toJsDate(log.createdAt);
             if (!ts) return;
             allEvents.push({
                 id: log.id,
                 timestamp: ts,
                 type: result.type,
-                description: result.description,
+                description: result.title,
                 detail: result.detail,
                 actorUid: log.actorUid || log.user?.uid,
                 actorName: log.actorName || log.user?.name,
+                serverProfileName: log.serverProfileName ?? null,
             });
         });
 
@@ -338,6 +245,11 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
         const validEvents = allEvents.filter(event => event !== null && event.timestamp instanceof Date) as TimelineEvent[];
         validEvents.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
         setEvents(validEvents);
+        setLocalNames(collectLocalActorNames({
+          session: sessionData as any,
+          tickets: ticketsData as any,
+          activityLogs: activityLogsData as any,
+        }));
         setLoading(false);
     };
 
@@ -475,11 +387,20 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
                       <p className="text-xs text-muted-foreground mt-0.5">{event.detail}</p>
                     )}
 
-                    {(event.actorUid || event.actorName) && (
+                    {(() => {
+                      if (!event.actorUid && !event.actorName && !event.serverProfileName) return null;
+                      const actor = actorLabel(
+                        event.actorUid,
+                        [localNames, staffNames],
+                        event.serverProfileName || event.actorName
+                      );
+                      return (
                         <div className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                            <User size={10} /> {event.actorName || userProfiles[event.actorUid!]?.name || event.actorUid?.substring(0,6)}
+                            <User size={10} />
+                            <span title={actor.resolved ? undefined : actor.uid ?? undefined}>{actor.name}</span>
                         </div>
-                    )}
+                      );
+                    })()}
                 </div>
               ))}
               {events.length === 0 && (

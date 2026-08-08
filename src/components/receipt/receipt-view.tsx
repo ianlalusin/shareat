@@ -37,7 +37,10 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
 
     const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
 
-    const activeLines = useMemo(() => (lines || []).filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0), [lines]);
+    const activeLines = useMemo(() => (lines || [])
+        .filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0)
+        // Pin the package/bundle line to the top (dine-in); stable for the rest.
+        .sort((a, b) => (a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1)), [lines]);
 
     const freeItems = useMemo(() => {
         const map = new Map<string, { qty: number }>();
@@ -78,7 +81,10 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
     } = analytics;
 
     const paymentsFromAnalytics = Object.entries(mop).map(([methodId, amount]) => ({ methodId, amount: amount as number }));
-    const vatableSales = grandTotal - taxAmount;
+    // Prefer the VAT split persisted on the receipt; historical receipts predate
+    // these fields, so fall back to the old derivation (no exempt portion).
+    const vatExemptSales = (analytics as any)?.vatExemptSales ?? 0;
+    const vatableSales = (analytics as any)?.vatableSales ?? (grandTotal - taxAmount - vatExemptSales);
 
     const receiptStyles: React.CSSProperties = {
         fontFamily: settings?.fontFamily || undefined,
@@ -143,8 +149,9 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                 </div>
                 {activeLines.map(line => {
                     const billableQty = line.qtyOrdered - (line.voidedQty || 0);
-                    const lineTotal = billableQty * line.unitPrice;
-                    
+                    const modTotal = Number((line as any).modifiersTotal || 0);
+                    const lineTotal = billableQty * (line.unitPrice + modTotal);
+
                     const hasDiscount = (line.discountValue ?? 0) > 0 && line.discountQty > 0;
                     
                     let lineDiscountAmount = 0;
@@ -172,6 +179,16 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                                   <div className="whitespace-normal break-words leading-tight">
                                     {line.itemName}
                                   </div>
+                                  {(line as any).modifiersText && (
+                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">
+                                      — {(line as any).modifiersText}
+                                    </div>
+                                  )}
+                                  {(line as any).note && (
+                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">
+                                      Note: {(line as any).note}
+                                    </div>
+                                  )}
                                 </div>
                                 <span className="text-right whitespace-nowrap">
                                   {lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -199,12 +216,12 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                 )}
              </section>
              
-             {(taxAmount > 0) && (
+             {(taxAmount > 0 || vatExemptSales > 0) && (
                  <>
                     <hr className="border-dashed border-black my-2" />
                     <section className="space-y-px mb-2 receipt-section">
                          <ReceiptRow label="VATable Sales" value={vatableSales} isCurrency />
-                         <ReceiptRow label="VAT-Exempt Sales" value={0} isCurrency />
+                         <ReceiptRow label="VAT-Exempt Sales" value={vatExemptSales} isCurrency />
                          <ReceiptRow label={`VAT (${store?.taxRatePct || 12}%)`} value={taxAmount} isCurrency />
                     </section>
                 </>

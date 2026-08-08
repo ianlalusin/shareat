@@ -37,7 +37,7 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
         setDisplayValue(e.target.value);
     };
 
-    const handleKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleKeyUp = () => {
         const numVal = parseFloat(displayValue);
         if (!isNaN(numVal)) {
             onChange(numVal);

@@ -6,26 +6,32 @@ import { useState, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Check, Percent, Tag, Trash2, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Separator } from "../ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Check, Trash2, X } from "lucide-react";
 import type { Discount, Charge, Adjustment } from "@/lib/types";
 import { type AppUser } from "@/context/auth-context";
+import { useToast } from "@/hooks/use-toast";
 
 interface BillAdjustmentsProps {
   appUser: AppUser | null;
-  adjustments: Adjustment[];
   billDiscount: Discount | null;
   charges: Charge[];
   discounts: Discount[];
-  onAddAdjustment: (charge: Charge) => void;
-  onAddCustomAdjustment: (note: string, amount: number) => void;
-  onRemoveAdjustment: (id: string) => void;
-  onSetBillDiscount: (discount: Discount | null) => void;
+  onAddAdjustment: (charge: Charge) => void | Promise<void>;
+  onAddCustomAdjustment: (note: string, amount: number) => void | Promise<void>;
+  onSetBillDiscount: (discount: Discount | null) => void | Promise<void>;
   isLocked?: boolean;
+  /**
+   * Shared "a customAdjustments/billDiscount write is in flight" lock owned by
+   * the parent (e.g. session-detail-view's updateSessionBillingState). Disables
+   * every control here in addition to this component's own local isSaving, so
+   * an add-charge/discount write can't race a remove in BillAppliedAdjustments
+   * (or vice versa) against the same stale customAdjustments closure.
+   */
+  busy?: boolean;
+  /** Popover side; defaults to "top" for the sticky-footer placement. */
+  side?: "top" | "bottom" | "left" | "right";
 }
-
-type EditorMode = 'discount' | 'charge' | null;
 
 function CurrencyInput({ value, onChange, disabled }: { value: number, onChange: (val: number) => void, disabled?: boolean }) {
     const [displayValue, setDisplayValue] = useState(value.toString());
@@ -61,11 +67,11 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
             onChange(numVal);
         }
     }
-    
+
     return (
-        <Input 
+        <Input
             id={`currency-input-${value}`}
-            type="number" 
+            type="number"
             placeholder="Value"
             value={displayValue}
             onChange={handleChange}
@@ -78,41 +84,35 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
     )
 }
 
-const EditorPanel = ({
-    title,
-    children,
-    onClose,
-}: {
-    title: string;
-    children: React.ReactNode;
-    onClose: () => void;
-}) => (
-    <div className="p-3 border rounded-lg bg-background/50 space-y-3 relative">
-         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={onClose}><X size={16} /></Button>
-        <p className="text-sm font-medium">{title}</p>
-        {children}
-    </div>
-);
-
 function normalizeDiscountType(t: any): "fixed" | "percent" {
     if (t === "percentage" || t === "percent") return "percent";
     return "fixed";
 }
 
-
+/**
+ * Renders the two bill-action buttons (Bill Discount, Add Charge) as a
+ * compact inline group. Each button opens its editor in a Popover so this
+ * can be dropped into a sticky footer action row next to the Pay button.
+ * All billing handlers/behavior are unchanged from the previous inline
+ * (mode-toggled) editor — only the presentation moved from an inline panel
+ * to a popover.
+ */
 export function BillAdjustments({
   appUser,
-  adjustments,
   billDiscount,
   charges,
   discounts,
   onAddAdjustment,
   onAddCustomAdjustment,
-  onRemoveAdjustment,
   onSetBillDiscount,
   isLocked = false,
+  busy = false,
+  side = "top",
 }: BillAdjustmentsProps) {
-  const [mode, setMode] = useState<EditorMode>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [chargeOpen, setChargeOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const { toast } = useToast();
 
   // State for the discount editor
   const [isCustomDiscount, setIsCustomDiscount] = useState(true);
@@ -156,7 +156,18 @@ export function BillAdjustments({
     }
   }
 
-  const handleApplyDiscount = () => {
+  const runBillingMutation = async (action: () => void | Promise<void>) => {
+    setIsSaving(true);
+    try {
+      await action();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Billing update failed", description: err?.message ?? "Could not update the bill." });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleApplyDiscount = async () => {
     let discountToApply: Discount;
     if (isCustomDiscount) {
          discountToApply = {
@@ -176,42 +187,44 @@ export function BillAdjustments({
             value: Number(selected.value) || 0,
         };
     }
-    onSetBillDiscount(discountToApply);
-    setMode(null);
+    await runBillingMutation(async () => {
+      await onSetBillDiscount(discountToApply);
+      setDiscountOpen(false);
+    });
   };
-  
-  const handleClearDiscount = () => {
-    onSetBillDiscount(null);
-    setMode(null);
+
+  const handleClearDiscount = async () => {
+    await runBillingMutation(async () => {
+      await onSetBillDiscount(null);
+      setDiscountOpen(false);
+    });
   }
 
-  const handleChargeSelect = (id: string) => {
+  const handleChargeSelect = async (id: string) => {
     if (id === 'other') {
         setShowCustomCharge(true);
     } else {
         setShowCustomCharge(false);
         const selected = charges.find(c => c.id === id);
         if (selected) {
-            onAddAdjustment(selected);
+            // Note: selecting a preset charge intentionally does NOT close the
+            // popover (matches prior inline-panel behavior), so the cashier can
+            // add multiple charges in a row without reopening the editor.
+            await runBillingMutation(() => onAddAdjustment(selected));
         }
     }
   }
 
-  const handleApplyCustomCharge = () => {
-    onAddCustomAdjustment(customChargeNote, customChargeAmount);
-    setCustomChargeNote("");
-    setCustomChargeAmount(0);
-    setShowCustomCharge(false);
-    setMode(null);
+  const handleApplyCustomCharge = async () => {
+    await runBillingMutation(async () => {
+      await onAddCustomAdjustment(customChargeNote, customChargeAmount);
+      setCustomChargeNote("");
+      setCustomChargeAmount(0);
+      setShowCustomCharge(false);
+      setChargeOpen(false);
+    });
   };
 
-  const handleModeChange = (newMode: EditorMode) => {
-    setMode(prevMode => (prevMode === newMode ? null : newMode));
-    if (newMode !== 'charge') {
-        setShowCustomCharge(false);
-    }
-  };
-  
   const canSeeDiscountButton = useMemo(() => {
     if (!appUser) return false;
     if (appUser.isPlatformAdmin) return true;
@@ -220,66 +233,79 @@ export function BillAdjustments({
   }, [appUser]);
 
   return (
-    <div className="p-3 border-t bg-background space-y-2">
-        <div className={cn("grid gap-2", canSeeDiscountButton ? "grid-cols-2" : "grid-cols-1")}>
-            {canSeeDiscountButton && (
-                <Button variant={mode === 'discount' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('discount')}>Bill Discount</Button>
-            )}
-            <Button variant={mode === 'charge' ? 'destructive' : 'outline'} size="sm" onClick={() => handleModeChange('charge')}>Add Charge</Button>
-        </div>
-        
-        {/* --- ADJUSTMENTS DISPLAY --- */}
-        {adjustments && adjustments.length > 0 && (
-             <div className="text-sm pt-2 space-y-1">
-                {adjustments.map(adj => (
-                    <div key={adj.id} className="flex justify-between items-center">
-                        <span className="text-muted-foreground">{adj.note}</span>
-                         <div className="flex items-center gap-2">
-                            <span>+ ₱{adj.amount.toFixed(2)}</span>
-                            {!isLocked && <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => onRemoveAdjustment(adj.id)}><Trash2 size={12} /></Button>}
-                        </div>
+    <div className="flex items-center gap-2">
+        {canSeeDiscountButton && (
+            <Popover
+                open={discountOpen}
+                onOpenChange={(open) => {
+                    setDiscountOpen(open);
+                    // Popovers are mutually exclusive: opening one closes the other.
+                    if (open) setChargeOpen(false);
+                }}
+            >
+                <PopoverTrigger asChild>
+                    <Button type="button" variant={discountOpen ? 'destructive' : 'outline'} size="sm" disabled={isSaving || isLocked || busy}>
+                        Bill Discount
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" side={side} className="w-80 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">Bill Discount</p>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDiscountOpen(false)}><X size={16} /></Button>
                     </div>
-                ))}
-            </div>
-        )}
-
-        {mode === 'discount' && (
-            <EditorPanel title="Bill Discount" onClose={() => setMode(null)}>
-                <Select onValueChange={handleDiscountSelect} disabled={isLocked} value={selectedDiscountId}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="Select discount..." /></SelectTrigger>
-                    <SelectContent>
-                        {discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                        <SelectItem value="custom">Others (Custom)</SelectItem>
-                    </SelectContent>
-                </Select>
-                 <div className="flex items-center gap-1">
-                    <Select 
-                        value={tempDiscountType}
-                        onValueChange={(type: 'percent' | 'fixed') => setTempDiscountType(type)}
-                        disabled={isLocked || !isCustomDiscount}
-                    >
-                        <SelectTrigger className="h-9 w-16"><SelectValue /></SelectTrigger>
+                    <Select onValueChange={handleDiscountSelect} disabled={isLocked || isSaving || busy} value={selectedDiscountId}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="Select discount..." /></SelectTrigger>
                         <SelectContent>
-                            <SelectItem value="percent">%</SelectItem>
-                            <SelectItem value="fixed">₱</SelectItem>
+                            {discounts.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                            <SelectItem value="custom">Others (Custom)</SelectItem>
                         </SelectContent>
                     </Select>
-                    <CurrencyInput
-                        value={tempDiscountValue}
-                        onChange={setTempDiscountValue}
-                        disabled={isLocked || !isCustomDiscount}
-                    />
-                </div>
-                 <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked}><Trash2 size={16} /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked}><Check size={16} /></Button>
-                </div>
-            </EditorPanel>
+                    <div className="flex items-center gap-1">
+                        <Select
+                            value={tempDiscountType}
+                            onValueChange={(type: 'percent' | 'fixed') => setTempDiscountType(type)}
+                            disabled={isLocked || isSaving || busy || !isCustomDiscount}
+                        >
+                            <SelectTrigger className="h-9 w-16"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="percent">%</SelectItem>
+                                <SelectItem value="fixed">₱</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <CurrencyInput
+                            value={tempDiscountValue}
+                            onChange={setTempDiscountValue}
+                            disabled={isLocked || isSaving || busy || !isCustomDiscount}
+                        />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked || isSaving || busy}><Trash2 size={16} /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked || isSaving || busy}><Check size={16} /></Button>
+                    </div>
+                </PopoverContent>
+            </Popover>
         )}
-        
-        {mode === 'charge' && (
-             <EditorPanel title="Add Charge" onClose={() => setMode(null)}>
-                <Select onValueChange={handleChargeSelect} disabled={isLocked}>
+
+        <Popover
+            open={chargeOpen}
+            onOpenChange={(open) => {
+                setChargeOpen(open);
+                if (!open) setShowCustomCharge(false);
+                // Popovers are mutually exclusive: opening one closes the other.
+                if (open) setDiscountOpen(false);
+            }}
+        >
+            <PopoverTrigger asChild>
+                <Button type="button" variant={chargeOpen ? 'destructive' : 'outline'} size="sm" disabled={isSaving || isLocked || busy}>
+                    Add Charge
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" side={side} className="w-80 space-y-3">
+                <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Add Charge</p>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setChargeOpen(false)}><X size={16} /></Button>
+                </div>
+                <Select onValueChange={(value) => void handleChargeSelect(value)} disabled={isLocked || isSaving || busy}>
                     <SelectTrigger className="h-9"><SelectValue placeholder="Select a charge to add..." /></SelectTrigger>
                     <SelectContent>
                         {charges.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.type === 'fixed' ? `₱${c.value}` : `${c.value}%`})</SelectItem>)}
@@ -288,21 +314,79 @@ export function BillAdjustments({
                 </Select>
                 {showCustomCharge && (
                     <div className="space-y-2 pt-2 border-t">
-                        <Input 
+                        <Input
                             placeholder="Charge Note (e.g., Spill Fee)"
                             value={customChargeNote}
                             onChange={(e) => setCustomChargeNote(e.target.value)}
                             className="h-9"
+                            disabled={isSaving || busy}
                         />
-                        <CurrencyInput 
+                        <CurrencyInput
                             value={customChargeAmount}
                             onChange={setCustomChargeAmount}
+                            disabled={isSaving || busy}
                         />
-                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={!customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
+                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={isSaving || busy || !customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
                     </div>
                 )}
-             </EditorPanel>
-        )}
+            </PopoverContent>
+        </Popover>
+    </div>
+  );
+}
+
+/**
+ * Compact list of currently-applied bill-level adjustments (custom charges /
+ * custom-added charges) with a remove action. Split out of BillAdjustments so
+ * it can be placed in the scrolling bill-summary column while the action
+ * buttons live in the sticky footer. Same remove handler/behavior as before;
+ * only the location moved.
+ */
+export function BillAppliedAdjustments({
+  adjustments,
+  onRemoveAdjustment,
+  isLocked = false,
+  busy = false,
+}: {
+  adjustments: Adjustment[];
+  onRemoveAdjustment: (id: string) => void | Promise<void>;
+  isLocked?: boolean;
+  /**
+   * Shared "a customAdjustments/billDiscount write is in flight" lock owned by
+   * the parent (mirrors the same prop on BillAdjustments). Disables the
+   * remove buttons here in addition to this component's own local isSaving,
+   * so a remove can't race an add-charge/discount write in BillAdjustments
+   * against the same stale customAdjustments closure.
+   */
+  busy?: boolean;
+}) {
+  const [isSaving, setIsSaving] = useState(false);
+  const { toast } = useToast();
+
+  if (!adjustments || adjustments.length === 0) return null;
+
+  const handleRemove = async (id: string) => {
+    setIsSaving(true);
+    try {
+      await onRemoveAdjustment(id);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Billing update failed", description: err?.message ?? "Could not update the bill." });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="px-3 py-2 text-sm space-y-1">
+        {adjustments.map(adj => (
+            <div key={adj.id} className="flex justify-between items-center">
+                <span className="text-muted-foreground">{adj.note}</span>
+                 <div className="flex items-center gap-2">
+                    <span>+ {adj.type === 'percent' ? `${adj.amount}%` : `₱${adj.amount.toFixed(2)}`}</span>
+                    {!isLocked && <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleRemove(adj.id)} disabled={isSaving || busy}><Trash2 size={12} /></Button>}
+                </div>
+            </div>
+        ))}
     </div>
   );
 }

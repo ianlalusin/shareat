@@ -11,12 +11,13 @@
  *   });
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
+import QRCode from 'qrcode';
 import {
   isNativeBluetoothAvailable,
   getLastPrinterAddress,
@@ -92,7 +93,14 @@ export function usePrint({
           ? await getReceiptSettings(db, storeId)
           : receiptData.settings;
         const paperWidth: 58 | 80 = liveSettings.paperWidth === '58mm' ? 58 : 80;
-        const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth);
+        // A thermal printer only has built-in ROM fonts, so the CSS fontFamily
+        // can't apply on paper (it stays a screen/PDF concern). Map the numeric
+        // fontSize to the three sizes the printer can actually do: small = Font
+        // B, normal = Font A, large = Font A double-height.
+        const fontSizeVal = liveSettings.fontSize ?? 12;
+        const fontMode: 'small' | 'normal' | 'large' =
+          fontSizeVal <= 10 ? 'small' : fontSizeVal >= 14 ? 'large' : 'normal';
+        const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth, fontMode);
         await printViaNativeBluetooth({
           target: 'receipt',
           text,
@@ -101,6 +109,8 @@ export function usePrint({
           beep: true,
           encoding: 'CP437',
           showLogo: liveSettings.showLogo ?? false,
+          logoWidthPct: liveSettings.logoWidthPct,
+          font: fontMode,
           storeId,
         });
         await writeAudit();
@@ -131,6 +141,14 @@ export interface UsePinPrintOptions {
   customerName?: string | null;
   storeName?: string;
   storeId?: string | null;
+  joinUrl?: string | null;
+  /**
+   * Paper width from the on-screen selector — the single source of truth for the
+   * slip layout. Passed in so the print exactly matches what the cashier sees and
+   * selected, and so the hot path needs no Firestore read (fast on native). Defaults
+   * to 80mm when not provided.
+   */
+  paperSize?: "58mm" | "80mm";
 }
 
 export interface UsePinPrintReturn {
@@ -143,12 +161,19 @@ export function usePinPrint({
   customerName,
   storeName,
   storeId,
+  joinUrl,
+  paperSize,
 }: UsePinPrintOptions): UsePinPrintReturn {
   const [isPrintingPin, setIsPrintingPin] = useState(false);
+  // Ref mirrors the in-flight flag so the re-entry guard doesn't have to live
+  // inside the useCallback deps — keeps `printPin`'s identity stable across
+  // print start/finish, which auto-print effects in callers depend on.
+  const isPrintingPinRef = useRef(false);
   const { toast } = useToast();
 
   const printPin = useCallback(async () => {
-    if (!pin || isPrintingPin) return;
+    if (!pin || isPrintingPinRef.current) return;
+    isPrintingPinRef.current = true;
     setIsPrintingPin(true);
 
     try {
@@ -162,14 +187,44 @@ export function usePinPrint({
           });
           return;
         }
-        const liveSettings = storeId
-          ? await getReceiptSettings(db, storeId)
-          : null;
-        const paperWidth: 58 | 80 = liveSettings?.paperWidth === '58mm' ? 58 : 80;
+        // Paper width comes straight from the on-screen selector (the value the cashier
+        // sees). No settings/Firestore read here — that keeps the slip layout in lockstep
+        // with the selector AND removes the network round-trip that made native printing lag.
+        const paperWidth: 58 | 80 = paperSize === '58mm' ? 58 : 80;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
+
+        // Render the QR as a PNG bitmap client-side and let the native plugin
+        // print it via the raster path. That sidesteps printer-firmware QR
+        // command quirks (this printer ignores center-alignment for GS QR,
+        // so the QR clipped against the left margin) and lets us pick the
+        // physical size + density precisely. scale = dots per QR module.
+        // scale 4 → ~25mm-wide compact QR with sharp edges, easy to scan.
+        const qrText = joinUrl || 'https://customer.shareat.net';
+        // Compact QR: scale 4 = 4 printer dots per module (~25mm), which prints and
+        // scans reliably. A larger QR means a much bigger raster that is actually MORE
+        // prone to mid-print distortion, so we keep it small. The print head is a fixed
+        // 203dpi — there is no higher-DPI mode to sharpen a same-size QR in software;
+        // a genuinely smaller+crisper QR would require shortening the join URL. The
+        // banding in the native raster path is what removes the mid-image distortion.
+        const qrDataUrl = await QRCode.toDataURL(qrText, {
+          errorCorrectionLevel: 'M',
+          margin: 1,
+          scale: 4,
+        });
+        const qrImageBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-        await ThermalPrinter.printPinSlip({ top, bottom, qrData: 'https://customer.shareat.net', qrSize: 8, encoding: 'CP437' });
-        await ThermalPrinter.disconnectBluetoothPrinter();
+        try {
+          await ThermalPrinter.printPinSlip({
+            top,
+            bottom,
+            qrImageBase64,
+            paperWidthMm: paperWidth,
+            encoding: 'CP437',
+          });
+        } finally {
+          try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
+        }
         toast({ title: 'PIN Printed', description: 'PIN slip sent to thermal printer.' });
       } else {
         window.print();
@@ -177,9 +232,10 @@ export function usePinPrint({
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Print Failed', description: e?.message ?? 'Unknown error' });
     } finally {
+      isPrintingPinRef.current = false;
       setIsPrintingPin(false);
     }
-  }, [pin, isPrintingPin, storeId, customerName, storeName, toast]);
+  }, [pin, storeId, customerName, storeName, toast, joinUrl, paperSize]);
 
   return { printPin, isPrintingPin };
 }

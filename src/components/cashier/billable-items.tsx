@@ -37,23 +37,39 @@ function BillableLineRow({
 
     const netQty = line.qtyOrdered - line.voidedQty;
     const unitPrice = line.unitPrice ?? 0;
+    const modTotal = Number((line as any).modifiersTotal ?? 0);
+    const effectiveUnit = unitPrice + modTotal;
+    const modifiersText = (line as any).modifiersText as string | undefined;
+    // The bundle overflow line is system-managed (driven by guest count) — it
+    // must not be hand-edited or voided, or it would drift from the headcount.
+    const isSystemManaged = line.id.startsWith('bundleextra_');
 
     return (
         <div className="flex flex-col border-b last:border-b-0">
             <div className="flex items-center gap-4 py-3 px-4">
                 <div className="flex-1">
                     <p className="font-medium">{netQty > 1 && `${netQty}x `}{line.itemName}</p>
+                    {modifiersText && (
+                      <p className="text-xs text-muted-foreground italic pl-2">— {modifiersText}</p>
+                    )}
+                    {(line as any).note && (
+                      <p className="text-xs text-amber-700 italic pl-2">📝 {(line as any).note}</p>
+                    )}
                      <div className="text-xs text-muted-foreground">
-                        <p>{netQty} x ₱{unitPrice.toFixed(2)} each = ₱{(netQty * unitPrice).toFixed(2)}</p>
+                        <p>{netQty} x ₱{effectiveUnit.toFixed(2)} each = ₱{(netQty * effectiveUnit).toFixed(2)}</p>
                     </div>
                     {totalDiscountQty > 0 && <Badge variant="outline" className="mt-1 border-blue-500 text-blue-600">{totalDiscountQty} discounted</Badge>}
                     {totalFreeQty > 0 && <Badge variant="outline" className="mt-1 border-green-500 text-green-600">{totalFreeQty} free</Badge>}
                 </div>
                 {!isLocked && (
                     <div className="flex items-center gap-2">
-                       <Button variant="outline" size="sm" onClick={() => onEdit(line)}>
-                            <Edit className="mr-2"/> Edit
-                        </Button>
+                       {isSystemManaged ? (
+                            <Badge variant="outline" className="text-muted-foreground font-normal">Auto · from guests</Badge>
+                       ) : (
+                            <Button variant="outline" size="sm" onClick={() => onEdit(line)}>
+                                <Edit className="mr-2"/> Edit
+                            </Button>
+                       )}
                     </div>
                 )}
             </div>
@@ -74,8 +90,12 @@ export function BillableItems({
   const { appUser } = useAuthContext();
   
   const { activeLines, voidedLines } = useMemo(() => {
-    const active = lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0);
-    const voided = lines.filter(line => line.voidedQty > 0);
+    // Keep the package/bundle line pinned to the top (dine-in sessions). Stable
+    // sort preserves the createdAt order of everything else.
+    const packageFirst = (a: SessionBillLine, b: SessionBillLine) =>
+      (a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1);
+    const active = lines.filter(line => (line.qtyOrdered - line.voidedQty) > 0).sort(packageFirst);
+    const voided = lines.filter(line => line.voidedQty > 0).sort(packageFirst);
     return { activeLines: active, voidedLines: voided };
   }, [lines]);
 

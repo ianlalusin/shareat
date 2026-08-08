@@ -7,14 +7,13 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCards } from "@/components/dashboard/StatCards";
-import { PaymentMix } from "@/components/dashboard/PaymentMix";
 import { PaymentConvertModal } from "@/components/dashboard/PaymentConvertModal";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2, AlertTriangle, Printer, ArrowRightLeft } from "lucide-react";
 import { useAuthContext } from "@/context/auth-context";
 import { PrintSalesReportDialog } from "@/components/dashboard/PrintSalesReportDialog";
 import { TopCategoryCard } from "@/components/dashboard/top-category-card";
 import { AvgRefillsCard } from "@/components/dashboard/avg-refills-card";
-import { AvgServingTimeCard } from "@/components/dashboard/avg-serving-time-card";
 import { PeakHoursCard } from "@/components/dashboard/peak-hours-card";
 import { PackageCountCheckCard } from "@/components/dashboard/package-count-check-card";
 import { Button } from "@/components/ui/button";
@@ -26,16 +25,16 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
-import { DiscountsChargesCard } from "@/components/dashboard/discounts-charges-card";
 import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
-import { ForecastAccuracyCard } from "@/components/dashboard/ForecastAccuracyCard";
-import { TodayForecastCard } from "@/components/dashboard/TodayForecastCard";
+import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccuracyTrendCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
-
+import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { getAuth } from "firebase/auth";
 
 import { isSameDay, fmtDate } from "@/lib/utils/date";
 function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean) {
@@ -65,10 +64,44 @@ export default function DashboardPageClient() {
     const [customRange, setCustomRange] = useState<{ start: Date; end: Date } | null>(null);
 
     const { isModalOpen, closeModal } = useWeatherLogger();
+    const { toast } = useToast();
+    const [isRefreshingForecast, setIsRefreshingForecast] = useState(false);
+    const [forecastRefreshKey, setForecastRefreshKey] = useState(0);
+
+    const isAdmin = appUser?.isPlatformAdmin || appUser?.role === "admin";
+    // Visibility-only flag for manager/admin-only dashboard content. Do NOT use
+    // <RoleGuard> for inline content: RoleGuard *redirects* disallowed roles to
+    // their role-home, so wrapping the warning alert in it bounced cashiers to
+    // /cashier the moment a non-"today" preset produced a warning. A plain flag
+    // just hides the content and keeps the cashier on the dashboard.
+    const canSeeManagerContent = isAdmin || appUser?.role === "manager";
+
+    const handleRefreshForecast = async () => {
+        if (!activeStore?.id) return;
+        setIsRefreshingForecast(true);
+        try {
+            const idToken = await getAuth().currentUser?.getIdToken();
+            if (!idToken) throw new Error("Not authenticated.");
+            const res = await fetch("/api/admin/refresh-forecast", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+                body: JSON.stringify({ storeId: activeStore.id }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Refresh failed.");
+            toast({ title: "Forecast refreshed", description: `${data.forecastsWritten ?? 0} days updated.` });
+            setForecastRefreshKey((k) => k + 1);
+        } catch (err: any) {
+            toast({ title: "Forecast refresh failed", description: err.message, variant: "destructive" });
+        } finally {
+            setIsRefreshingForecast(false);
+        }
+    };
 
     const {
         isLoading,
         dateRangeLabel,
+        dateRange,
         stats,
         activeSessions,
         paymentMix,
@@ -84,12 +117,17 @@ export default function DashboardPageClient() {
         customRange,
     });
     
-    const { 
-        accuracy, 
-        todaysProjectedSales, 
-        isLoading: isForecastLoading 
-    } = useForecastAnalytics(activeStore?.id, activeStore?.address);
-    
+    const {
+        accuracy,
+        todaysProjectedSales,
+        todaysConfidence,
+        actualSalesToday,
+        isLoading: isForecastLoading
+    } = useForecastAnalytics(activeStore?.id, activeStore ?? undefined);
+
+    const canConvert = appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin;
+    const paymentEntries = Object.entries(paymentMix ?? {}).sort(([, a], [, b]) => (b as number) - (a as number));
+
     const handleCalendarChange = (range: { start: Date; end: Date }, preset: string | null) => {
         const presetMap: Record<string, DatePreset> = {
           today: "today", 
@@ -150,72 +188,118 @@ export default function DashboardPageClient() {
             </PageHeader>
             <div className="grid gap-6">
                 
-                {warnings && warnings.length > 0 && (
-                    <RoleGuard allow={['admin', 'manager']}>
-                        <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>Data Integrity Warning</AlertTitle>
-                            <AlertDescription>
-                                <ul className="list-disc pl-5">
-                                    {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
-                                </ul>
-                            </AlertDescription>
-                        </Alert>
-                    </RoleGuard>
+                {canSeeManagerContent && warnings && warnings.length > 0 && (
+                    <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Data Integrity Warning</AlertTitle>
+                        <AlertDescription>
+                            <ul className="list-disc pl-5">
+                                {warnings.map((warning, i) => <li key={i}>{warning}</li>)}
+                            </ul>
+                        </AlertDescription>
+                    </Alert>
                 )}
 
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                    <StatCards stats={stats} activeSessions={activeSessions} isLoading={isLoading} />
-                </div>
-                
-                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                    <div className="lg:col-span-2 space-y-6">
-                      <WeeklySalesChart storeId={activeStore.id} />
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <ForecastAccuracyCard accuracy={accuracy} isLoading={isForecastLoading} />
-                        <TodayForecastCard projectedSales={todaysProjectedSales} isLoading={isForecastLoading} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-start">
-                        <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                        <ItemAdjustmentsCard dailyMetrics={dailyMetrics} />
-                      </div>
-                    </div>
-                    <div className="space-y-6">
-                      <Card>
-                          <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-                              <CardTitle className="text-base">Payment Mix</CardTitle>
-                              {(appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier" || appUser?.isPlatformAdmin) && (
-                                  <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7"
-                                      onClick={() => setConvertModalOpen(true)}
-                                  >
-                                      <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
-                                      Convert
-                                  </Button>
-                              )}
-                          </CardHeader>
-                          <CardContent><PaymentMix data={paymentMix} isLoading={isLoading} /></CardContent>
-                      </Card>
-                      <DiscountsChargesCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                      <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    </div>
+                {/* Group 1 — top stat cards (equal height) */}
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 items-stretch">
+                    <StatCards
+                        stats={stats}
+                        activeSessions={activeSessions}
+                        dailyMetrics={dailyMetrics}
+                        isLoading={isLoading}
+                        transactionsHref={canSeeManagerContent ? "/admin/daily-session-timeline" : undefined}
+                    />
                 </div>
 
+                {/* Payment Mix — compact full-width row between groups 1 and 2.
+                    Single inline line on md+, falls back to the regular stacked
+                    card on mobile. */}
+                <Card>
+                    <CardContent className="p-3 md:py-2.5">
+                        {isLoading ? (
+                            <Skeleton className="h-6 w-full" />
+                        ) : (
+                            <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                                <div className="flex items-center justify-between gap-2 md:shrink-0">
+                                    <span className="text-sm font-semibold">Payment Mix</span>
+                                    {canConvert && (
+                                        <Button variant="outline" size="sm" className="h-7 md:hidden" onClick={() => setConvertModalOpen(true)}>
+                                            <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                                            Convert
+                                        </Button>
+                                    )}
+                                </div>
+                                {paymentEntries.length === 0 ? (
+                                    <span className="text-sm text-muted-foreground">No payments recorded in this range.</span>
+                                ) : (
+                                    <div className="flex flex-1 flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-x-4">
+                                        {paymentEntries.map(([method, amount]) => (
+                                            <div key={method} className="flex items-center justify-between gap-2 md:justify-start md:border-l md:pl-4 md:first:border-l-0 md:first:pl-0">
+                                                <span className="text-sm capitalize text-muted-foreground">{method}</span>
+                                                <span className="text-sm font-medium tabular-nums">₱{(amount as number).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {canConvert && (
+                                    <Button variant="outline" size="sm" className="hidden h-7 md:ml-auto md:inline-flex md:shrink-0" onClick={() => setConvertModalOpen(true)}>
+                                        <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
+                                        Convert
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Group 2 — sales chart + (AI) forecast card. The forecast card
+                    is hidden when this store's AI master switch is off. */}
+                <div className={`grid grid-cols-1 ${activeStore.aiEnabled === true ? "lg:grid-cols-2" : ""} gap-6 items-stretch`}>
+                    <WeeklySalesChart storeId={activeStore.id} refreshKey={forecastRefreshKey} />
+                    {activeStore.aiEnabled === true && (
+                    <ForecastAccuracyTrendCard
+                        storeId={activeStore.id}
+                        projectedSales={todaysProjectedSales}
+                        actualSalesToday={actualSalesToday}
+                        confidence={todaysConfidence}
+                        isForecastLoading={isForecastLoading}
+                        isAdmin={isAdmin}
+                        onRefresh={handleRefreshForecast}
+                        isRefreshing={isRefreshingForecast}
+                    />
+                    )}
+                </div>
+
+                {/* Group 3 — operational checks */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                    <PackageCountCheckCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                    <ItemAdjustmentsCard
+                        dailyMetrics={dailyMetrics}
+                        // Opens the timeline on the range's last day with Day
+                        // Review already expanded — that panel is where these
+                        // adjustments are broken down per session and per staff.
+                        href={canSeeManagerContent
+                            ? `/admin/daily-session-timeline?date=${format(dateRange.end, "yyyy-MM-dd")}&review=1`
+                            : undefined}
+                    />
+                    <PeakHoursCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
+                </div>
+
+                {/* Group 4 — remaining breakdown cards (Top Add-ons + Top Refills
+                    keep their position; Package Count Check stays in group 3 where
+                    it has room to grow tall). */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                    <TopCategoryCard 
+                    <TopCategoryCard
                         categorySales={topCategories}
                         topAddonItems={topAddonItems}
                         hasTopAddonItems={hasTopAddonItems}
                         dailyMetrics={dailyMetrics}
-                        isLoading={isLoading} 
+                        isLoading={isLoading}
                     />
-                    <AvgServingTimeCard dailyMetrics={dailyMetrics} isLoading={isLoading} />
-                    <TopRefillsCard 
-                        dailyMetrics={dailyMetrics} 
-                        isLoading={isLoading} 
-                        topRefills={topRefills} 
+                    <TopRefillsCard
+                        dailyMetrics={dailyMetrics}
+                        isLoading={isLoading}
+                        topRefills={topRefills}
                     />
                 </div>
             </div>
@@ -239,7 +323,10 @@ export default function DashboardPageClient() {
                     open={convertModalOpen}
                     onOpenChange={setConvertModalOpen}
                     storeId={activeStore.id}
-                    knownMethods={Object.keys(paymentMix || {})}
+                    rangeStart={dateRange.start}
+                    rangeEnd={dateRange.end}
+                    rangeLabel={dateRangeLabel}
+                    isToday={datePreset === "today"}
                 />
             )}
         </RoleGuard>

@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
+import { auth } from "@/lib/firebase/client";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Loader } from "lucide-react";
@@ -17,9 +18,15 @@ import { AddonsPOSModal } from "@/components/shared/AddonsPOSModal";
 import type { StorePackage, MenuSchedule, KitchenTicket, PendingSession } from "@/lib/types";
 import { RefillPOSModal } from "@/components/server/RefillPOSModal";
 import { writeActivityLog } from "@/components/cashier/activity-log";
+import { reconcileBundleLines } from "@/components/cashier/firestore";
 import { toJsDate } from "@/lib/utils/date";
 import { PendingVerificationCard } from "@/components/server/PendingVerificationCard"; // New import
 import { ActiveSessionsGrid } from "@/components/server/ActiveSessionsGrid"; // New import
+import { useLocalProfile } from "@/context/local-profile-context";
+import { AssistanceAlerts } from "@/components/kitchen/AssistanceAlerts";
+import { useIdleTimer } from "@/hooks/useIdleTimer";
+import { formatElapsedShort } from "@/components/server/SessionCard";
+import { VerifyAverageCard } from "@/components/server/VerifyAverageCard";
 
 type GCC = PendingSession["guestCountChange"];
 
@@ -36,6 +43,16 @@ export function ServerPageClient() {
   const { appUser } = useAuthContext();
   const { activeStore, loading: storeLoading } = useStoreContext();
   const { toast } = useToast();
+  const { currentProfile, signOut, isReady: profileReady } = useLocalProfile();
+
+  // Idle auto sign-out (30 minutes). Any click/key/scroll resets the timer.
+  const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
+  useEffect(() => {
+    if (isIdle && currentProfile) {
+      signOut();
+      toast({ title: "Signed out", description: "Inactive for 30 minutes." });
+    }
+  }, [isIdle, currentProfile, signOut, toast]);
 
   const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
   const [activeSessions, setActiveSessions] = useState<PendingSession[]>([]);
@@ -135,10 +152,16 @@ export function ServerPageClient() {
   
   const handleVerify = async (session: PendingSession, serverCount: number) => {
     if (!activeStore || !appUser || !session.tableId) return;
-    
+
+    const isBundle = !!session.packageSnapshot?.isBundle;
     const cashierInitial = session.guestCountCashierInitial ?? 0;
+    // Never capped by the package: a bundle's `bundleMaxCap` is the headcount its
+    // flat price covers, not a seating limit. Guests beyond it are billed on the
+    // Extra Pax line, reconciled by reconcileBundleLines below.
     const finalCount = Math.max(cashierInitial, serverCount);
-    
+    const startedMs = (session.startedAtClientMs ?? toJsDate(session.startedAt)?.getTime()) ?? null;
+    const verifyDurationMs = startedMs != null ? Math.max(0, Date.now() - startedMs) : null;
+
     const batch = writeBatch(db);
     const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', session.id);
     
@@ -148,16 +171,23 @@ export function ServerPageClient() {
       guestCountVerifyLocked: true,
       status: "active",
       verifiedAt: serverTimestamp(),
+      verifyDurationMs,
       verifiedByUid: appUser.uid,
+      verifiedByServerProfileId: currentProfile?.profileId ?? null,
+      verifiedByServerProfileName: currentProfile?.name ?? null,
+      billingRevision: increment(1),
       updatedAt: serverTimestamp(),
     });
 
-    // Also update the quantity on the package billable line item
-    const packageLineRef = doc(db, `stores/${activeStore.id}/sessions/${session.id}/sessionBillLines`, `package_${session.packageOfferingId}`);
-    batch.update(packageLineRef, {
-        qtyOrdered: finalCount,
-        updatedAt: serverTimestamp(),
-    });
+    // Also update the quantity on the package billable line item — but only for
+    // per-head packages. Bundle lines stay at qty 1 (flat price).
+    if (!isBundle) {
+      const packageLineRef = doc(db, `stores/${activeStore.id}/sessions/${session.id}/sessionBillLines`, `package_${session.packageOfferingId}`);
+      batch.update(packageLineRef, {
+          qtyOrdered: finalCount,
+          updatedAt: serverTimestamp(),
+      });
+    }
     
     // Update session projection in the NEW location
     const sessionProjectionRef = doc(db, `stores/${activeStore.id}/activeSessions`, session.id);
@@ -169,7 +199,29 @@ export function ServerPageClient() {
 
     try {
       await batch.commit();
-      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount: serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount }, note: `Verified with ${serverCount} guests (final: ${finalCount})`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber } });
+      // Bundle: keep the flat line at qty 1 and the Extra Pax overflow line in
+      // step with the verified headcount immediately (no bill-view dependency).
+      if (isBundle) await reconcileBundleLines(activeStore.id, session.id, appUser);
+
+      // Fire-and-forget: analytics writes are server-only (M-1 lockdown) so the
+      // batch above cannot include them. Send them through the server endpoint.
+      if (verifyDurationMs != null) {
+        auth.currentUser?.getIdToken().then((token) => {
+          fetch("/api/analytics/verify-confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              storeId: activeStore.id,
+              verifyDurationMs,
+              profileId: currentProfile?.profileId ?? null,
+              profileName: currentProfile?.name ?? null,
+            }),
+          }).catch(() => {/* non-fatal */});
+        }).catch(() => {/* non-fatal */});
+      }
+
+      const durationStr = verifyDurationMs != null ? formatElapsedShort(verifyDurationMs) : "unknown";
+      writeActivityLog({ action: "SESSION_VERIFIED", storeId: activeStore.id, sessionId: session.id, user: appUser, meta: { serverCount, finalCount, beforeQty: cashierInitial, afterQty: finalCount, verifyDurationMs } as any, note: `Verified ${finalCount} guests after ${durationStr}`, sessionContext: { sessionStatus: "active", sessionStartedAt: session.startedAt, sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName, tableNumber: session.tableNumber, tableDisplayName: session.tableDisplayName ?? null }, serverProfile: currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null });
       toast({ title: 'Session Verified' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Verification Failed', description: e.message });
@@ -199,9 +251,24 @@ export function ServerPageClient() {
       onAddAddon: handleOpenAddonDialog,
   };
 
+  if (!profileReady || storeLoading) {
+    return (
+      <RoleGuard allow={["admin", "manager", "server"]}>
+        <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Loader className="h-5 w-5 animate-spin" />
+        </div>
+      </RoleGuard>
+    );
+  }
+
   return (
     <RoleGuard allow={["admin", "manager", "server"]}>
-      <PageHeader title="Server Station" description="Verify guest sessions and track items for serving." />
+      <PageHeader title="Server Station" description="Verify guest sessions and track items for serving.">
+        {/* Store-level stat — show whenever a store is selected, including for
+            admins who bypassed the local profile sign-in. */}
+        {activeStore && <VerifyAverageCard storeId={activeStore.id} />}
+      </PageHeader>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2">
             <ActiveSessionsGrid
@@ -210,7 +277,7 @@ export function ServerPageClient() {
             />
         </div>
         <div className="lg:col-span-1 space-y-6">
-           <PendingVerificationCard 
+           <PendingVerificationCard
                 sessions={pendingSessions}
                 {...sharedProps}
            />
@@ -232,6 +299,7 @@ export function ServerPageClient() {
                 storeId={activeStore.id}
                 storePackages={storePackages}
                 schedules={schedules}
+                serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
          {isAddonDialogOpen && sessionForRequestWithStore && activeStore && (
@@ -241,6 +309,7 @@ export function ServerPageClient() {
                 storeId={activeStore.id}
                 session={sessionForRequestWithStore}
                 sessionIsLocked={sessionForRequest?.status === 'closed' || sessionForRequest?.isPaid}
+                serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
         {isRefillDialogOpen && sessionForRequestWithStore && activeStore && (
@@ -250,8 +319,10 @@ export function ServerPageClient() {
                 storeId={activeStore.id}
                 session={sessionForRequestWithStore}
                 sessionIsLocked={sessionForRequest?.status === 'closed' || sessionForRequest?.isPaid}
+                serverProfile={currentProfile ? { id: currentProfile.profileId, name: currentProfile.name } : null}
             />
         )}
+        {activeStore?.id && <AssistanceAlerts storeId={activeStore.id} />}
     </RoleGuard>
   );
 }

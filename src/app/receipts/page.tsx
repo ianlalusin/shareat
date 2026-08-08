@@ -25,19 +25,22 @@ import { ReceiptSettings as ReceiptTemplateSettings } from "@/components/manager
 import { EditReceiptDialog } from "@/components/receipts/EditReceiptDialog";
 import { RefundReceiptDialog } from "@/components/receipts/RefundReceiptDialog";
 import { useAuthContext } from "@/context/auth-context";
-import { toJsDate } from "@/lib/utils/date";
+import { toJsDate, formatDuration } from "@/lib/utils/date";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import CompactCalendar from "@/components/ui/CompactCalendar";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
 import type { ReceiptData } from "@/lib/types";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { usePrint } from "@/hooks/use-print";
+import { subscribeApplicableGlobalDiscounts, subscribeApplicableGlobalCharges, isDiscountDateActive } from "@/lib/collections/globalCollections";
+import type { GlobalDiscount, GlobalCharge } from "@/lib/types";
 
 
 import { startOfDay, endOfDay, isSameDay, fmtDate } from "@/lib/utils/date";
@@ -46,6 +49,16 @@ function customBtnLabel(range: {start: Date; end: Date} | null, active: boolean)
     return isSameDay(range.start, range.end)
         ? `Custom: ${fmtDate(range.start)}`
         : `Custom: ${fmtDate(range.start)} — ${fmtDate(range.end)}`;
+}
+
+// Dine-in (package) session duration = payment time − session start. "N/A" for
+// ala carte or when the session start wasn't captured. Excel export only.
+function sessionDurationLabel(r: ReceiptType): string {
+    if (r.sessionMode !== 'package_dinein') return 'N/A';
+    const startMs = (r.analytics?.sessionStartedAtClientMs ?? toJsDate(r.analytics?.sessionStartedAt)?.getTime()) || null;
+    const endMs = (r.createdAtClientMs ?? toJsDate(r.createdAt)?.getTime()) || null;
+    if (!startMs || !endMs || endMs <= startMs) return 'N/A';
+    return formatDuration(endMs - startMs);
 }
 
 type DatePreset = "today" | "yesterday" | "week" | "month" | "custom";
@@ -208,29 +221,104 @@ export default function ReceiptsPage() {
         return () => unsubPm();
     }, [activeStore?.id, appUser, isSigningOut]);
     
-    const [discounts, setDiscounts] = React.useState<Discount[]>([]);
-    const [charges, setCharges] = React.useState<Charge[]>([]);
+    const [storeDiscounts, setStoreDiscounts] = React.useState<Discount[]>([]);
+    const [storeCharges, setStoreCharges] = React.useState<Charge[]>([]);
+    const [globalDiscounts, setGlobalDiscounts] = React.useState<GlobalDiscount[]>([]);
+    const [globalCharges, setGlobalCharges] = React.useState<GlobalCharge[]>([]);
      useEffect(() => {
         if (!activeStore?.id) return;
         const handleError = (err: any) => {
             if(isSigningOut || !appUser) return;
             console.error("Collections listener error:", err);
         }
+        // Store-scoped: include enabled + not-archived; also include entries the admin hasn't suspended.
         const unsubDiscounts = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeDiscounts"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setDiscounts(snap.docs.map(d => ({id: d.id, ...d.data()}) as Discount)),
+            snap => setStoreDiscounts(
+              snap.docs
+                .map(d => ({id: d.id, ...d.data()}) as Discount)
+                .filter(d => !d.adminSuspended)
+            ),
             handleError
         );
          const unsubCharges = onSnapshot(
             query(collection(db, "stores", activeStore.id, "storeCharges"), where("isArchived", "==", false), where("isEnabled", "==", true)),
-            snap => setCharges(snap.docs.map(d => ({id: d.id, ...d.data()}) as Charge)),
+            snap => setStoreCharges(
+              snap.docs
+                .map(d => ({id: d.id, ...d.data()}) as Charge)
+                .filter(c => !c.adminSuspended)
+            ),
             handleError
+        );
+        const unsubGlobalDiscounts = subscribeApplicableGlobalDiscounts(
+            db,
+            activeStore.id,
+            (items) => setGlobalDiscounts(items.filter(g => g.isEnabled)),
+            handleError,
+        );
+        const unsubGlobalCharges = subscribeApplicableGlobalCharges(
+            db,
+            activeStore.id,
+            (items) => setGlobalCharges(items.filter(g => g.isEnabled)),
+            handleError,
         );
         return () => {
             unsubDiscounts();
             unsubCharges();
+            unsubGlobalDiscounts();
+            unsubGlobalCharges();
         };
     }, [activeStore?.id, appUser, isSigningOut]);
+
+    const discounts = useMemo<Discount[]>(() => {
+      const merged: Discount[] = [
+        ...storeDiscounts.map(d => ({ ...d, source: "store" as const })),
+        ...globalDiscounts.map(g => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          value: g.value,
+          scope: g.scope,
+          stackable: g.stackable,
+          isEnabled: g.isEnabled,
+          sortOrder: g.sortOrder,
+          isArchived: g.isArchived,
+          createdAt: g.createdAt,
+          updatedAt: g.updatedAt,
+          createdBy: g.createdBy,
+          updatedBy: g.updatedBy,
+          startDate: g.startDate,
+          endDate: g.endDate,
+          source: "global" as const,
+        })),
+      ];
+      merged.sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
+      return merged.filter(d => isDiscountDateActive(d));
+    }, [storeDiscounts, globalDiscounts]);
+
+    const charges = useMemo<Charge[]>(() => {
+      const merged: Charge[] = [
+        ...storeCharges.map(c => ({ ...c, source: "store" as const })),
+        ...globalCharges.map(g => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          value: g.value,
+          appliesTo: g.appliesTo,
+          scope: g.scope,
+          isEnabled: g.isEnabled,
+          sortOrder: g.sortOrder,
+          isArchived: g.isArchived,
+          createdAt: g.createdAt,
+          updatedAt: g.updatedAt,
+          createdBy: g.createdBy,
+          updatedBy: g.updatedBy,
+          source: "global" as const,
+        })),
+      ];
+      merged.sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
+      return merged;
+    }, [storeCharges, globalCharges]);
 
     const filteredReceipts = useMemo(() => {
         if (!debouncedSearchTerm) return receipts;
@@ -291,17 +379,28 @@ export default function ReceiptsPage() {
         };
         batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
     
-        // 3. Calculate and apply the analytics delta within the same atomic batch.
-        await applyAnalyticsDeltaV2(
-          db,
-          activeStore.id,
-          editingReceipt, // Pass the original receipt as the "before" state
-          updatedReceiptData as ReceiptType, // Pass the new data as the "after" state
-          { batch } // Join the existing batch
-        );
+        // 3. (analytics delta applied separately, server-first — see step 4)
     
-        // 4. Commit all operations atomically.
+        // 4. Commit the revision + edited receipt, then apply the edit analytics
+        //    delta server-first (server reads old=revision snapshot + new=receipt
+        //    doc, idempotent on analyticsEditVersion; client fallback applies
+        //    old->new locally).
         await batch.commit();
+
+        await applyReceiptDeltaServerFirst(
+          activeStore.id,
+          editingReceipt.id,
+          "edit",
+          async () => {
+            const rSnap = await getDoc(originalReceiptRef);
+            if (rSnap.exists() && Number((rSnap.data() as any)?.analyticsEditVersion || 0) >= nextVersion) return;
+            const ab = writeBatch(db);
+            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceiptData as ReceiptType, { batch: ab });
+            await ab.commit();
+            await updateDoc(originalReceiptRef, { analyticsEditVersion: nextVersion, analyticsEditAppliedAt: serverTimestamp() });
+          },
+          { revisionId },
+        );
 
         // 5. Update local state immediately after successful commit
         setReceipts(prev =>
@@ -406,26 +505,33 @@ export default function ReceiptsPage() {
       }
       
       try {
-        const batch = writeBatch(db);
         const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-      
-        await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch });
-        
-        const applyId = uuidv4();
-      
-        batch.update(receiptRef, {
+
+        // 1. Commit the void (status + audit metadata) first. The analytics
+        //    reversal is applied separately, server-first, so the analytics
+        //    collections can be locked down to server writes only.
+        await updateDoc(receiptRef, {
           status: "voided",
           voidedAt: serverTimestamp(),
           voidedByUid: appUser.uid,
           voidedByEmail: appUser.email,
           voidReason: reason,
-          analyticsApplied: true,
-          analyticsAppliedAt: serverTimestamp(),
-          analyticsApplyId: applyId,
+          analyticsReversed: false, // set true by the server/reconcile cron once reversed
         });
-      
-        await batch.commit();
-      
+
+        // 2. Reverse the receipt's analytics contribution server-first; fall back
+        //    to the client delta on failure. `receipt` here is the in-memory,
+        //    still-`final` object, so its contribution reconstructs correctly even
+        //    though the doc is now voided. Idempotent on `analyticsReversed`.
+        await applyReceiptDeltaServerFirst(activeStore.id, receipt.id, "void", async () => {
+          const rSnap = await getDoc(receiptRef);
+          if (rSnap.exists() && (rSnap.data() as any)?.analyticsReversed === true) return;
+          const ab = writeBatch(db);
+          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch: ab });
+          await ab.commit();
+          await updateDoc(receiptRef, { analyticsReversed: true, analyticsReversedAt: serverTimestamp() });
+        });
+
         await writeActivityLog({
           action: "RECEIPT_VOIDED",
           storeId: activeStore.id,
@@ -478,6 +584,7 @@ export default function ReceiptsPage() {
                     "TIN": r.customerTin || 'N/A',
                     "Table No.": r.tableNumber || 'N/A',
                     "Package": r.lines?.find(l => l.type === 'package')?.itemName || 'Ala Carte',
+                    "Session Time": sessionDurationLabel(r),
                     "Subtotal": r.analytics?.subtotal ?? 0,
                     "Discount": r.analytics?.discountsTotal ?? 0,
                     "Charges": r.analytics?.chargesTotal ?? 0,
@@ -580,7 +687,11 @@ export default function ReceiptsPage() {
                             {isExporting ? <Loader2 className="mr-2 animate-spin"/> : <Download className="mr-2" />}
                             Export
                         </Button>
-                        <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
+                        {/* receiptSettings is manager/admin-only at the rules layer;
+                            without this gate a cashier gets a silent permission-denied. */}
+                        {(appUser?.role === 'admin' || appUser?.role === 'manager') && (
+                            <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
+                        )}
                     </div>
                 </PageHeader>
                 
@@ -718,7 +829,7 @@ export default function ReceiptsPage() {
             </div>
             
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-                <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+                <DialogContent className="max-w-4xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
                     <DialogHeader className="p-6 pb-0">
                         <DialogTitle>Receipt Template Settings</DialogTitle>
                         <DialogDescription>Manage the look and feel of your printed receipts for {activeStore.name}. Changes are saved automatically.</DialogDescription>

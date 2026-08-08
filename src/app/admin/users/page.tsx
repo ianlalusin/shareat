@@ -16,6 +16,7 @@ import { useStoreContext } from "@/context/store-context";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { UserDetailsModal, type StoreOption } from "@/components/admin/user-details-modal";
+import { TempPasswordDialog } from "@/components/admin/temp-password-dialog";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
@@ -25,6 +26,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { PlusCircle } from "lucide-react";
+import { ServerProfilesManagerCard } from "@/components/manager/ServerProfilesManagerCard";
+import { CreateServerProfileModal } from "@/components/server/CreateServerProfileModal";
 
 const roles: UserRole[] = ['admin', 'manager', 'cashier', 'kitchen', 'server'];
 type AssignableRole = Exclude<UserRole, "pending">;
@@ -32,14 +38,20 @@ type AssignableRole = Exclude<UserRole, "pending">;
 export default function UserManagementPage() {
     const router = useRouter();
     const { appUser, isSigningOut } = useAuthContext();
-    const { stores: availableStores, loading: storesLoading } = useStoreContext();
+    const { stores: availableStores, activeStore, loading: storesLoading } = useStoreContext();
     const { toast } = useToast();
+    const [localStoreId, setLocalStoreId] = useState<string>("");
+    const [createLocalOpen, setCreateLocalOpen] = useState(false);
     const [pendingUsers, setPendingUsers] = useState<AppUser[]>([]);
     const [activeUsers, setActiveUsers] = useState<AppUser[]>([]);
     const [deactivatedUsers, setDeactivatedUsers] = useState<AppUser[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(true);
     const [isProcessing, setIsProcessing] = useState<Record<string, boolean>>({});
     const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
+    // Held only while the show-once dialog is open, then cleared.
+    const [tempPasswordFor, setTempPasswordFor] = useState<
+        { password: string; name: string | null; email: string | null } | null
+    >(null);
     const { confirm, Dialog } = useConfirmDialog();
     
     const [selectedRoles, setSelectedRoles] = useState<Record<string, AssignableRole>>({});
@@ -324,6 +336,51 @@ export default function UserManagementPage() {
         }
     }
 
+    async function handleResetPassword(user: AppUser) {
+        if (!appUser?.isPlatformAdmin) return;
+
+        const confirmed = await confirm({
+            title: `Reset the password for ${user.name || user.email}?`,
+            description:
+                "A temporary password is generated and shown once. Their current password stops working immediately and every device they are signed in on is signed out. They must set a new password at their next sign-in.",
+            confirmText: "Yes, reset it",
+            destructive: true,
+        });
+        if (!confirmed) return;
+
+        setIsProcessing(prev => ({ ...prev, [user.uid]: true }));
+        try {
+            const current = auth.currentUser;
+            if (!current) throw new Error("Not signed in.");
+            const idToken = await current.getIdToken();
+
+            const res = await fetch("/api/admin/users/reset-password", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ uid: user.uid }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) throw new Error(json?.error || `Reset failed (${res.status})`);
+
+            // Held in state only long enough to display; cleared when the
+            // dialog closes. Never logged.
+            setTempPasswordFor({
+                password: json.tempPassword,
+                name: user.name ?? null,
+                email: user.email ?? null,
+            });
+            setSelectedUser(null);
+        } catch (error: any) {
+            toast({
+                variant: "destructive",
+                title: "Reset Failed",
+                description: error.message || "Could not reset the password.",
+            });
+        } finally {
+            setIsProcessing(prev => ({ ...prev, [user.uid]: false }));
+        }
+    }
+
     const handleRoleSelect = (uid: string, role: AssignableRole) => {
         setSelectedRoles(prev => ({...prev, [uid]: role}));
     };
@@ -338,9 +395,11 @@ export default function UserManagementPage() {
         });
     };
 
+    const effectiveLocalStore = localStoreId || activeStore?.id || availableStores[0]?.id || "";
+
     return (
         <RoleGuard allow={["admin"]}>
-            <PageHeader title="Staff Management" description="Manage staff roles, permissions, and verify new staff accounts.">
+            <PageHeader title="User Management" description="Manage app user accounts and device-local user profiles.">
                 <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={() => router.back()}>
                         <ArrowLeft className="mr-2 h-4 w-4" /> Back
@@ -351,7 +410,18 @@ export default function UserManagementPage() {
                     </Button>
                 </div>
             </PageHeader>
-             <div className="grid gap-6">
+
+            <Tabs defaultValue="app" className="mt-2">
+              <TabsList className="mb-4">
+                <TabsTrigger value="app">App Users</TabsTrigger>
+                <TabsTrigger value="local">Local Users</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="app">
+             {/* grid-cols-1 -> minmax(0,1fr) columns + min-w-0 children so the cards
+                 stay within the viewport on mobile and the wide tables scroll inside
+                 their own overflow-auto wrapper instead of widening the whole page. */}
+             <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0">
                 <Card>
                     <CardHeader>
                         <CardTitle>Pending User Approvals</CardTitle>
@@ -521,6 +591,53 @@ export default function UserManagementPage() {
                     </CardContent>
                 </Card>
             </div>
+              </TabsContent>
+
+              <TabsContent value="local">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" /> Local User Accounts</CardTitle>
+                    <CardDescription>
+                      Device-local identities (cashier, server, kitchen) used on shared tablets. Pick a store to manage its
+                      local users — add one for staff, reset a passcode, or delete an account.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Store</Label>
+                        <Select value={effectiveLocalStore} onValueChange={setLocalStoreId}>
+                          <SelectTrigger className="w-[240px]"><SelectValue placeholder="Select a store" /></SelectTrigger>
+                          <SelectContent>
+                            {availableStores.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button onClick={() => setCreateLocalOpen(true)} disabled={!effectiveLocalStore}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> New Local User
+                      </Button>
+                    </div>
+
+                    {effectiveLocalStore ? (
+                      <ServerProfilesManagerCard storeId={effectiveLocalStore} allowDelete />
+                    ) : (
+                      <p className="text-sm text-muted-foreground py-6 text-center">Select a store to manage its local users.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
+
+            {effectiveLocalStore && (
+              <CreateServerProfileModal
+                open={createLocalOpen}
+                onOpenChange={setCreateLocalOpen}
+                storeId={effectiveLocalStore}
+                onCreated={(_, name) => { setCreateLocalOpen(false); toast({ title: "Local user created", description: name }); }}
+              />
+            )}
 
             {selectedUser && appUser && (
                 <UserDetailsModal
@@ -554,9 +671,18 @@ export default function UserManagementPage() {
                     }}
                     onDelete={handleDeleteUser}
                     onUpdate={handleUpdateUserDetails}
+                    onResetPassword={handleResetPassword}
                     isProcessing={isProcessing[selectedUser.uid]}
                 />
             )}
+
+            <TempPasswordDialog
+                isOpen={!!tempPasswordFor}
+                onClose={() => setTempPasswordFor(null)}
+                tempPassword={tempPasswordFor?.password ?? null}
+                userName={tempPasswordFor?.name}
+                userEmail={tempPasswordFor?.email}
+            />
             {Dialog}
         </RoleGuard>
     );

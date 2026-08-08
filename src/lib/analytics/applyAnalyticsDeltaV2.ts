@@ -9,7 +9,6 @@ import {
   serverTimestamp,
   doc,
 } from 'firebase/firestore';
-import { toast } from '@/hooks/use-toast';
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, LineAdjustment } from '@/lib/types';
 import {
   dailyAnalyticsDocRef,
@@ -21,8 +20,8 @@ import {
   getClosedSessionsContribution,
   getKitchenTicketContribution,
   getItemAdjustmentContribution,
+  getDayOfWeekContribution,
 } from './daily';
-import { rebuildDailyAnalyticsFromReceipts } from './backfill';
 import { toJsDate } from '@/lib/utils/date';
 
 type ContributionSet = {
@@ -33,6 +32,7 @@ type ContributionSet = {
   refill: ReturnType<typeof getRefillContribution>;
   closed: ReturnType<typeof getClosedSessionsContribution>;
   itemAdj: ReturnType<typeof getItemAdjustmentContribution>;
+  dow: ReturnType<typeof getDayOfWeekContribution>;
 };
 
 // --- Date Helpers for Presets ---
@@ -104,15 +104,33 @@ function getContributions(receipt: Receipt | null): ContributionSet {
     refill: getRefillContribution(receipt),
     closed: getClosedSessionsContribution(receipt),
     itemAdj: getItemAdjustmentContribution(receipt),
+    dow: getDayOfWeekContribution(receipt),
   };
 }
 
+/**
+ * Zero out the parts of a contribution set that don't belong to the given day.
+ *
+ * Most families bucket by the PAYMENT day. Peak-hour and day-of-week bucket by the
+ * ARRIVAL day (session start) so their hour/dow key agrees with the day doc they land
+ * in — a party arriving 11:30 PM Sat and paying 12:30 AM Sun is Saturday 11 PM traffic,
+ * not Sunday 11 PM traffic. Gating per family lets one receipt contribute arrival data
+ * to one day and payment data to the next. Mirrors delta-core.pickDayContribution.
+ */
 function pickDayContribution(contrib: ContributionSet, dayId: string): ContributionSet {
-    const nullContrib = getContributions(null);
-    if (contrib.payment.dayId !== dayId) {
-        return nullContrib;
-    }
-    return contrib;
+    const nil = getContributions(null);
+    const paymentDay = contrib.payment.dayId === dayId;
+    return {
+        payment: paymentDay ? contrib.payment : nil.payment,
+        guest: paymentDay ? contrib.guest : nil.guest,
+        sales: paymentDay ? contrib.sales : nil.sales,
+        refill: paymentDay ? contrib.refill : nil.refill,
+        closed: paymentDay ? contrib.closed : nil.closed,
+        itemAdj: paymentDay ? contrib.itemAdj : nil.itemAdj,
+        // Arrival-day families:
+        peak: contrib.peak.dayId === dayId ? contrib.peak : nil.peak,
+        dow: contrib.dow.dayId === dayId ? contrib.dow : nil.dow,
+    };
 }
 
 function safeKey(s: string) {
@@ -151,7 +169,7 @@ export async function applyAnalyticsDeltaV2(
   storeId: string,
   oldReceipt: Receipt | null,
   newReceipt: Receipt | null,
-  opts?: { tx?: Transaction; batch?: WriteBatch }
+  opts?: { tx?: Transaction; batch?: WriteBatch; dayExtraIncrements?: Record<string, number> }
 ) {
   const w: Writer | null =
     opts?.tx ? { kind: "tx", tx: opts.tx } :
@@ -163,9 +181,14 @@ export async function applyAnalyticsDeltaV2(
   const oldContrib = getContributions(oldReceipt);
   const newContrib = getContributions(newReceipt);
 
+  // Payment days plus arrival days (peak-hour / DOW bucket by session start, which
+  // falls on the previous day whenever a session crosses midnight).
   const affectedDayIds = new Set<string>();
-  if (oldContrib.payment.dayId) affectedDayIds.add(oldContrib.payment.dayId);
-  if (newContrib.payment.dayId) affectedDayIds.add(newContrib.payment.dayId);
+  for (const c of [oldContrib, newContrib]) {
+    if (c.payment.dayId) affectedDayIds.add(c.payment.dayId);
+    if (c.peak.dayId) affectedDayIds.add(c.peak.dayId);
+    if (c.dow.dayId) affectedDayIds.add(c.dow.dayId);
+  }
   if (affectedDayIds.size === 0) {
     console.warn("[applyAnalyticsDeltaV2] No valid dayId found. Skipping.");
     return;
@@ -175,9 +198,12 @@ export async function applyAnalyticsDeltaV2(
     const dayOld = pickDayContribution(oldContrib, dayId);
     const dayNew = pickDayContribution(newContrib, dayId);
 
-    const dayStartMs = dayNew.payment.dayStartMs > 0 
-      ? dayNew.payment.dayStartMs 
-      : (dayOld.payment.dayStartMs > 0 ? dayOld.payment.dayStartMs : 0);
+    // An arrival-only day (session crossed midnight) has no payment contribution, so
+    // fall through to the peak/dow day start rather than writing dayStartMs: 0.
+    const dayStartMs = [
+      dayNew.payment.dayStartMs, dayNew.peak.dayStartMs, dayNew.dow.dayStartMs,
+      dayOld.payment.dayStartMs, dayOld.peak.dayStartMs, dayOld.dow.dayStartMs,
+    ].find(ms => ms > 0) ?? 0;
 
     const dayRef = dailyAnalyticsDocRef(db, storeId, dayId);
     const monthId = dayId.slice(0, 6);
@@ -247,8 +273,14 @@ export async function applyAnalyticsDeltaV2(
     // --- Sales Delta ---
     const salesDelta = {
         dineInAddonSalesAmount: (dayNew.sales.dineInAddonSalesAmount || 0) - (dayOld.sales.dineInAddonSalesAmount || 0),
+        dineInSalesGross: (dayNew.sales.dineInSalesGross || 0) - (dayOld.sales.dineInSalesGross || 0),
+        dineInDiscountsTotal: (dayNew.sales.dineInDiscountsTotal || 0) - (dayOld.sales.dineInDiscountsTotal || 0),
+        dineInChargesTotal: (dayNew.sales.dineInChargesTotal || 0) - (dayOld.sales.dineInChargesTotal || 0),
     };
     if (salesDelta.dineInAddonSalesAmount !== 0) payload['sales.dineInAddonSalesAmount'] = increment(salesDelta.dineInAddonSalesAmount);
+    if (salesDelta.dineInSalesGross !== 0) payload['sales.dineInSalesGross'] = increment(salesDelta.dineInSalesGross);
+    if (salesDelta.dineInDiscountsTotal !== 0) payload['sales.dineInDiscountsTotal'] = increment(salesDelta.dineInDiscountsTotal);
+    if (salesDelta.dineInChargesTotal !== 0) payload['sales.dineInChargesTotal'] = increment(salesDelta.dineInChargesTotal);
 
     const allSalesPkgNames = new Set([
       ...Object.keys(dayOld.sales.packageSalesAmountByName || {}),
@@ -309,10 +341,97 @@ export async function applyAnalyticsDeltaV2(
         const amountDelta = dayNew.peak.amount - dayOld.peak.amount;
         if(amountDelta !== 0) payload[`sales.salesAmountByHour.${dayNew.peak.hourKey}`] = increment(amountDelta);
     }
-    
+
+    // --- Peak Hour by Mode Delta ---
+    // Bucket key: `${mode}.${hourKey}`. Subtract old bucket, add new bucket. Net out when buckets are equal.
+    {
+      const oldKey = (dayOld.peak.mode && dayOld.peak.hourKey && dayOld.peak.count > 0)
+        ? `${dayOld.peak.mode}.${dayOld.peak.hourKey}` : null;
+      const newKey = (dayNew.peak.mode && dayNew.peak.hourKey && dayNew.peak.count > 0)
+        ? `${dayNew.peak.mode}.${dayNew.peak.hourKey}` : null;
+      const amtBuckets: Record<string, number> = {};
+      const cntBuckets: Record<string, number> = {};
+      if (oldKey) {
+        amtBuckets[oldKey] = (amtBuckets[oldKey] || 0) - dayOld.peak.amount;
+        cntBuckets[oldKey] = (cntBuckets[oldKey] || 0) - dayOld.peak.count;
+      }
+      if (newKey) {
+        amtBuckets[newKey] = (amtBuckets[newKey] || 0) + dayNew.peak.amount;
+        cntBuckets[newKey] = (cntBuckets[newKey] || 0) + dayNew.peak.count;
+      }
+      for (const [k, v] of Object.entries(amtBuckets)) {
+        if (v !== 0) payload[`sales.salesAmountByHourByMode.${k}`] = increment(v);
+      }
+      for (const [k, v] of Object.entries(cntBuckets)) {
+        if (v !== 0) payload[`sales.sessionCountByHourByMode.${k}`] = increment(v);
+      }
+    }
+
+    // --- Sales by Mode Totals Delta (gross + net) ---
+    for (const m of ["dineIn", "walkIn"] as const) {
+      const grossDelta = (dayNew.sales.salesGrossByMode?.[m] || 0) - (dayOld.sales.salesGrossByMode?.[m] || 0);
+      const netDelta = (dayNew.sales.netSalesByMode?.[m] || 0) - (dayOld.sales.netSalesByMode?.[m] || 0);
+      if (grossDelta !== 0) payload[`sales.salesAmountByMode.${m}`] = increment(grossDelta);
+      if (netDelta !== 0) payload[`sales.netSalesByMode.${m}`] = increment(netDelta);
+    }
+
+    // --- Day-of-Week Delta ---
+    {
+      const oldKey = dayOld.dow.dowKey && dayOld.dow.count > 0 ? dayOld.dow.dowKey : null;
+      const newKey = dayNew.dow.dowKey && dayNew.dow.count > 0 ? dayNew.dow.dowKey : null;
+      const amtBuckets: Record<string, number> = {};
+      const cntBuckets: Record<string, number> = {};
+      if (oldKey) {
+        amtBuckets[oldKey] = (amtBuckets[oldKey] || 0) - dayOld.dow.amount;
+        cntBuckets[oldKey] = (cntBuckets[oldKey] || 0) - dayOld.dow.count;
+      }
+      if (newKey) {
+        amtBuckets[newKey] = (amtBuckets[newKey] || 0) + dayNew.dow.amount;
+        cntBuckets[newKey] = (cntBuckets[newKey] || 0) + dayNew.dow.count;
+      }
+      for (const [k, v] of Object.entries(amtBuckets)) {
+        if (v !== 0) payload[`sales.salesAmountByDow.${k}`] = increment(v);
+      }
+      for (const [k, v] of Object.entries(cntBuckets)) {
+        if (v !== 0) payload[`sales.sessionCountByDow.${k}`] = increment(v);
+      }
+    }
+
     // --- Closed Sessions Delta ---
     if (dayNew.closed.closedCount !== dayOld.closed.closedCount) payload['sessions.closedCount'] = increment(dayNew.closed.closedCount - dayOld.closed.closedCount);
     if (dayNew.closed.totalPaid !== dayOld.closed.totalPaid) payload['sessions.totalPaid'] = increment(dayNew.closed.totalPaid - dayOld.closed.totalPaid);
+
+    // --- Closed Sessions by Mode Delta ---
+    {
+      const oldKey = dayOld.closed.mode && dayOld.closed.closedCount > 0 ? dayOld.closed.mode : null;
+      const newKey = dayNew.closed.mode && dayNew.closed.closedCount > 0 ? dayNew.closed.mode : null;
+      const buckets: Record<string, number> = {};
+      if (oldKey) buckets[oldKey] = (buckets[oldKey] || 0) - dayOld.closed.closedCount;
+      if (newKey) buckets[newKey] = (buckets[newKey] || 0) + dayNew.closed.closedCount;
+      for (const [k, v] of Object.entries(buckets)) {
+        if (v !== 0) payload[`sessions.closedCountByMode.${k}`] = increment(v);
+      }
+    }
+
+    // --- Dine-in Session Duration Delta ---
+    {
+      const durDelta = dayNew.closed.dineInDurationMs - dayOld.closed.dineInDurationMs;
+      const cntDelta = dayNew.closed.dineInDurationCount - dayOld.closed.dineInDurationCount;
+      if (durDelta !== 0) payload['sessions.dineInDurationMsSum'] = increment(durDelta);
+      if (cntDelta !== 0) payload['sessions.dineInDurationCount'] = increment(cntDelta);
+    }
+
+    // --- Payments TxCount by Mode Delta ---
+    {
+      const oldKey = dayOld.payment.mode && dayOld.payment.txCount > 0 ? dayOld.payment.mode : null;
+      const newKey = dayNew.payment.mode && dayNew.payment.txCount > 0 ? dayNew.payment.mode : null;
+      const buckets: Record<string, number> = {};
+      if (oldKey) buckets[oldKey] = (buckets[oldKey] || 0) - dayOld.payment.txCount;
+      if (newKey) buckets[newKey] = (buckets[newKey] || 0) + dayNew.payment.txCount;
+      for (const [k, v] of Object.entries(buckets)) {
+        if (v !== 0) payload[`payments.txCountByMode.${k}`] = increment(v);
+      }
+    }
 
     // --- Item Adjustment Delta ---
     const adjOld = dayOld.itemAdj;
@@ -345,7 +464,15 @@ export async function applyAnalyticsDeltaV2(
     });
     
     // --- Apply final updates to rollup docs ---
-    writerUpdate(w, dayRef, payload);
+    // Day-only extras (e.g. payments.voidCashRetainedTotal) apply to the day doc
+    // only — retained void cash is a daily-remittance concept, not a month/year
+    // rollup metric. Mirrors applyAnalyticsDeltaServer.
+    const dayPayload = opts?.dayExtraIncrements
+      ? { ...payload, ...Object.fromEntries(
+            Object.entries(opts.dayExtraIncrements).map(([k, v]) => [k, increment(v)]),
+          ) }
+      : payload;
+    writerUpdate(w, dayRef, dayPayload);
     writerUpdate(w, monthRef, payload);
     writerUpdate(w, yearRef, payload);
 
@@ -356,37 +483,10 @@ export async function applyAnalyticsDeltaV2(
     }
   }
 
-  // If the caller is not providing a transaction or batch, we create our own and commit it.
-  if (!opts?.tx && !opts?.batch) {
-       try {
-          // This path is not currently used by the app, but could be for a standalone script.
-          const batch = db ? (await import("firebase/firestore")).writeBatch(db) : null;
-          if (batch) {
-             // Re-run with the created batch
-             await applyAnalyticsDeltaV2(db, storeId, oldReceipt, newReceipt, { batch });
-             await batch.commit();
-          } else {
-             throw new Error("Firestore instance not available for standalone batch.");
-          }
-       } catch (error) {
-            console.error("Failed to apply analytics delta:", error);
-            toast({
-                variant: "destructive",
-                title: 'Analytics Update Failed',
-                description: 'Attempting to rebuild daily analytics. The dashboard may be out of sync temporarily.',
-            });
-            // Fallback: Rebuild analytics for the affected days
-            const dates = Array.from(affectedDayIds).map(id => new Date(`${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}`));
-            if (dates.length > 0) {
-                const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-                const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-                rebuildDailyAnalyticsFromReceipts(db, storeId, minDate, maxDate, (msg) => console.log(`[Analytics Fallback]: ${msg}`)).catch(e => {
-                    console.error("Analytics fallback rebuild also failed:", e);
-                    toast({ variant: 'destructive', title: 'Critical Analytics Failure', description: 'Please contact support.' });
-                });
-            }
-       }
-   }
+  // NOTE: callers always pass a `tx` or `batch` (payment / refund / void / edit
+  // paths). The former standalone-commit branch (which fell back to a client-side
+  // rebuild) was removed when the analytics rollup collections became server-only
+  // writes — the server endpoints + reconcile cron own that path now.
 }
 
     

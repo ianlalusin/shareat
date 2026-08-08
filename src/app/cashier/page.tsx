@@ -1,11 +1,13 @@
-
 "use client";
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useSearchParams } from "next/navigation";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Loader2 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import { useToast } from "@/hooks/use-toast";
+import { useLocalProfile } from "@/context/local-profile-context";
+import { useIdleTimer } from "@/hooks/useIdleTimer";
 
 const SessionDetailView = dynamic(
   () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
@@ -23,10 +25,20 @@ const SessionListView = dynamic(
   }
 );
 
-
 function CashierPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get('sessionId') ?? null;
+  const { toast } = useToast();
+  const { currentProfile, signOut } = useLocalProfile();
+
+  // Idle auto sign-out (30 minutes), mirroring the server station.
+  const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
+  useEffect(() => {
+    if (isIdle && currentProfile) {
+      signOut();
+      toast({ title: "Signed out", description: "Inactive for 30 minutes." });
+    }
+  }, [isIdle, currentProfile, signOut, toast]);
 
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
@@ -34,7 +46,6 @@ function CashierPageContent() {
     </RoleGuard>
   );
 }
-
 
 export default function CashierPage() {
   return (

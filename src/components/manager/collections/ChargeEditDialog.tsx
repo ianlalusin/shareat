@@ -11,6 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Charge } from "@/lib/types";
 
 const formSchema = z.object({
@@ -18,6 +19,9 @@ const formSchema = z.object({
   type: z.enum(["fixed", "percent"]),
   value: z.coerce.number().min(0, "Value cannot be negative."),
   appliesTo: z.enum(["subtotal", "total"]).default("subtotal"),
+  scope: z.array(z.enum(["item", "bill"])).refine(v => v.length > 0, {
+    message: "Select at least one scope (Item or Bill).",
+  }),
   sortOrder: z.coerce.number().int().default(1000),
   isEnabled: z.boolean().default(true),
 }).refine(data => !(data.type === 'percent' && data.value > 100), {
@@ -45,6 +49,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
       type: "fixed",
       value: 0,
       appliesTo: "subtotal",
+      scope: ["bill"],
       sortOrder: 1000,
       isEnabled: true,
     },
@@ -52,13 +57,28 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
 
   useEffect(() => {
     if (item) {
-      form.reset(item);
+      const raw = item.scope;
+      const normalizedScope = (Array.isArray(raw)
+        ? raw
+        : typeof raw === "string"
+          ? [raw]
+          : ["bill"]) as ("item" | "bill")[];
+      form.reset({
+        name: item.name,
+        type: item.type,
+        value: item.value,
+        appliesTo: item.appliesTo,
+        scope: normalizedScope.length > 0 ? normalizedScope : ["bill"],
+        sortOrder: item.sortOrder,
+        isEnabled: item.isEnabled,
+      });
     } else {
       form.reset({
         name: "",
         type: "fixed",
         value: 0,
         appliesTo: "subtotal",
+        scope: ["bill"],
         sortOrder: 1000,
         isEnabled: true,
       });
@@ -130,7 +150,7 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
             <div className="grid grid-cols-2 gap-4">
                <FormField control={form.control} name="appliesTo" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Applies To</FormLabel>
+                  <FormLabel>Applies To (bill-level)</FormLabel>
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
@@ -148,7 +168,46 @@ export function ChargeEditDialog({ isOpen, onClose, onSave, item }: ChargeEditDi
                   </FormItem>
                 )} />
             </div>
-            
+
+            <FormField control={form.control} name="scope" render={() => (
+              <FormItem>
+                <FormLabel>Scope</FormLabel>
+                <div className="grid grid-cols-2 gap-4 rounded-lg border p-4">
+                  <FormField control={form.control} name="scope" render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value?.includes("item")}
+                          onCheckedChange={(checked) =>
+                            checked
+                              ? field.onChange([...(field.value || []), "item"])
+                              : field.onChange(field.value?.filter((v) => v !== "item"))
+                          }
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal">Item (per-line)</FormLabel>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="scope" render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value?.includes("bill")}
+                          onCheckedChange={(checked) =>
+                            checked
+                              ? field.onChange([...(field.value || []), "bill"])
+                              : field.onChange(field.value?.filter((v) => v !== "bill"))
+                          }
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal">Bill (whole order)</FormLabel>
+                    </FormItem>
+                  )} />
+                </div>
+                <FormMessage />
+              </FormItem>
+            )} />
+
             <FormField control={form.control} name="isEnabled" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
                 <FormLabel>Enabled</FormLabel>

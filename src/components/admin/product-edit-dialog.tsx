@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -29,6 +29,7 @@ import { getDisplayName } from "@/lib/products/variants";
 import { useConfirmDialog } from "../global/confirm-dialog";
 import { serverTimestamp } from "firebase/firestore";
 import { ImageBoundary } from "@/components/shared/ImageBoundary";
+import { OptionGroupEditDialog } from "@/components/admin/option-groups/OptionGroupEditDialog";
 
 type AddonCategory = {
     id: string;
@@ -40,10 +41,13 @@ const formSchema = z.object({
   name: z.string().min(2, "Product name must be at least 2 characters."),
   hasVariants: z.boolean().default(false),
   variant: z.string().optional(),
+  description: z.string().optional(),
   subCategory: z.string().optional(),
   uom: z.string().optional(),
   barcode: z.string().optional(),
   isActive: z.boolean().default(true),
+  showOnStorefront: z.boolean().default(false),
+  optionGroupIds: z.array(z.string()).optional(),
 });
 
 export type ProductFormValues = z.infer<typeof formSchema> & {
@@ -113,9 +117,15 @@ interface ProductEditDialogProps {
   onSave: (data: ProductFormValues) => void;
   product: Product | null;
   isSubmitting: boolean;
+  /**
+   * Called after an in-dialog variant add/edit/delete that could change the
+   * public storefront — i.e. when the parent family is shown on the storefront.
+   * The page uses it to schedule a debounced storefront republish.
+   */
+  onStorefrontMayChange?: () => void;
 }
 
-export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitting }: ProductEditDialogProps) {
+export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitting, onStorefrontMayChange }: ProductEditDialogProps) {
   const [addonCategories, setAddonCategories] = useState<AddonCategory[]>([]);
   const [subCategoryInput, setSubCategoryInput] = useState("");
   const { toast } = useToast();
@@ -127,10 +137,16 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [variants, setVariants] = useState<Product[]>([]);
   const [editingVariant, setEditingVariant] = useState<Product | null>(null);
   const [showVariantForm, setShowVariantForm] = useState(false);
+
+  // Option groups available to attach to this product. Loaded once when the
+  // dialog opens; the picker UI is a chip list inside the form.
+  const [availableOptionGroups, setAvailableOptionGroups] = useState<Array<{
+    id: string; name: string; selectionMode: "single" | "multi"; values: any[];
+  }>>([]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", hasVariants: false, variant: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, },
+    defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, showOnStorefront: false, optionGroupIds: [], },
   });
   const hasVariants = useWatch({ control: form.control, name: 'hasVariants'});
   
@@ -146,10 +162,13 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         name: product?.name || "",
         hasVariants: isGroup,
         variant: product?.variant || "",
+        description: (product as any)?.description || "",
         subCategory: product?.subCategory || "",
         uom: product ? normalizeUom(product.uom) : 'pcs',
         barcode: product?.barcode || "",
         isActive: product?.isActive ?? true,
+        showOnStorefront: (product as any)?.showOnStorefront ?? false,
+        optionGroupIds: (product as any)?.optionGroupIds || [],
       });
       setSubCategoryInput(product?.subCategory || "");
       setImageUrl(product?.imageUrl || null);
@@ -174,6 +193,36 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     });
     return () => unsubAddonCategories();
   }, []);
+
+  // Load reusable option groups. Read-only fetch via the admin endpoint so this
+  // works regardless of Firestore-client rules. Reusable so we can refresh after
+  // creating a new group inline.
+  const loadOptionGroups = useCallback(async () => {
+    try {
+      const { getAuth } = await import("firebase/auth");
+      const user = getAuth().currentUser;
+      if (!user) return;
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/admin/option-groups", {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json?.ok) {
+        setAvailableOptionGroups(
+          (json.groups || []).filter((g: any) => g.isActive !== false && g.isArchived !== true)
+        );
+      }
+    } catch {
+      // silent — section just shows empty state
+    }
+  }, []);
+
+  // Inline "create option group" dialog state.
+  const [newOptionGroupOpen, setNewOptionGroupOpen] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) void loadOptionGroups();
+  }, [isOpen, loadOptionGroups]);
 
   const handleImageSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -222,6 +271,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     
     await batch.commit();
     toast({ title: editingVariant ? "Variant Updated" : "Variant Added" });
+    // A variant change affects the storefront only if the family is shown there.
+    if ((product as any)?.showOnStorefront) onStorefrontMayChange?.();
     setShowVariantForm(false);
     setEditingVariant(null);
   }
@@ -230,6 +281,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     if (await confirm({title: "Delete Variant?", description: "This cannot be undone.", destructive: true})) {
         await deleteDoc(doc(db, 'products', variant.id));
         toast({title: 'Variant Deleted'});
+        if ((product as any)?.showOnStorefront) onStorefrontMayChange?.();
     }
   }
 
@@ -241,7 +293,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90vh]">
+        <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh]">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle>{product ? "Edit Product" : "Create New Product"}</DialogTitle>
             <DialogDescription>{product ? "Update the details of this product." : "Fill in the details to create a new global product."}</DialogDescription>
@@ -263,8 +315,22 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                       </div>
                   </div>
 
-                  <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Product Name</FormLabel><FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl><FormMessage /></FormItem> )}/>
-                  <FormField control={form.control} name="variant" render={({ field }) => ( <FormItem><FormLabel>Description / Variant Notes</FormLabel><FormControl><Textarea placeholder="Describe the product..." {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                  <FormField control={form.control} name="name" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Product Name</FormLabel>
+                      <FormControl><Input placeholder="e.g., Coca-cola" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
+
+                  <FormField control={form.control} name="description" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl><Textarea placeholder="Short description shown to customers on the website (e.g. “Crispy seaweed rice rolls with veggies”)" rows={3} {...field} /></FormControl>
+                      <FormDescription className="text-xs">Shown to customers on the online store. Keep it appetizing — not internal notes.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}/>
 
                   <FormItem>
                     <FormLabel>Sub-Category</FormLabel>
@@ -274,15 +340,25 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                   </FormItem>
 
                   <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active</FormLabel><FormDescription className="text-xs">Inactive products cannot be used in recipes or menus.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
-                  
+
+                  <FormField control={form.control} name="showOnStorefront" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Show on online store</FormLabel><FormDescription className="text-xs">Purchasable on the public SharEat website. Uses the storefront store&apos;s price; needs an active inventory record there. Saving publishes the change to the website automatically.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+
                   <Separator />
-                  
-                  <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types).</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
-                  
+
+                  <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types). Each variant is its own SKU with its own barcode and inventory.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+
                   {hasVariants ? (
-                      <div className="space-y-4">
-                          <h4 className="font-semibold text-lg">Variants</h4>
+                      // Family / group mode. The umbrella doesn't have its own variant
+                      // label / UOM / barcode — those live on each child variant.
+                      <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                          <div>
+                              <h4 className="font-semibold">Variants</h4>
+                              <p className="text-xs text-muted-foreground">Each row below is a sellable SKU. The variant label is what appears in the parens (e.g., <code className="text-[11px]">Kimpab (Signature)</code>).</p>
+                          </div>
                           <div className="space-y-2">
+                            {variants.length === 0 && (
+                              <p className="text-sm text-muted-foreground">No variants yet. Add one below to begin.</p>
+                            )}
                             {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
                           </div>
                           {showVariantForm ? (
@@ -292,11 +368,104 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                           )}
                       </div>
                   ) : (
-                      <div className="grid grid-cols-2 gap-4">
-                          <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
-                          <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                      // Single SKU mode. Single-axis variant label + UOM + barcode all
+                      // belong to this product itself.
+                      <div className="space-y-4">
+                          <FormField control={form.control} name="variant" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Variant Label</FormLabel>
+                              <FormControl><Input placeholder='Optional. e.g., "Signature", "500ml"' {...field} /></FormControl>
+                              <FormDescription className="text-xs">Appended to the product name in lists, e.g. <code className="text-[11px]">Kimpab (Signature)</code>. Leave blank if this product has no variant axis.</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}/>
+                          <div className="grid grid-cols-2 gap-4">
+                              <FormField control={form.control} name="uom" render={({ field }) => ( <FormItem><FormLabel>UOM</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{UOM_OPTIONS.map(opt => ( <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem> ))}</SelectContent></Select><FormMessage /></FormItem> )}/>
+                              <FormField control={form.control} name="barcode" render={({ field }) => ( <FormItem><FormLabel>Barcode</FormLabel><FormControl><Input placeholder="Optional" {...field} /></FormControl><FormMessage /></FormItem> )}/>
+                          </div>
                       </div>
                   )}
+
+                  <Separator />
+
+                  <FormField
+                    control={form.control}
+                    name="optionGroupIds"
+                    render={({ field }) => {
+                      const attached: string[] = Array.isArray(field.value) ? field.value : [];
+                      const attachedSet = new Set(attached);
+                      const unattached = availableOptionGroups.filter((g) => !attachedSet.has(g.id));
+                      return (
+                        <FormItem>
+                          <div className="flex items-center justify-between gap-2">
+                            <FormLabel>Option Groups (Modifiers)</FormLabel>
+                            <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => setNewOptionGroupOpen(true)}>+ New group</Button>
+                          </div>
+                          <FormDescription className="text-xs">
+                            Reusable modifier groups applied at order time. When this product is added to a bill the cashier (and customer) will be prompted to pick from each attached group. For families, attach at the family parent — variants inherit automatically.
+                          </FormDescription>
+                          <div className="grid gap-2 mt-2">
+                            {attached.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No option groups attached.</p>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {attached.map((id, i) => {
+                                  const g = availableOptionGroups.find((x) => x.id === id);
+                                  const move = (dir: -1 | 1) => {
+                                    const next = [...attached];
+                                    const t = i + dir;
+                                    if (t < 0 || t >= next.length) return;
+                                    [next[i], next[t]] = [next[t], next[i]];
+                                    field.onChange(next);
+                                  };
+                                  return (
+                                    <div key={id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium truncate">{g?.name ?? `(missing: ${id})`}</div>
+                                        {g && (
+                                          <div className="text-[11px] text-muted-foreground">
+                                            {g.selectionMode === "single" ? "Single-select" : "Multi-select"} · {(g.values || []).filter((v: any) => v.isActive).length} values
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-0.5 shrink-0">
+                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(-1)} disabled={i === 0} aria-label="Move up">↑</Button>
+                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(1)} disabled={i === attached.length - 1} aria-label="Move down">↓</Button>
+                                        <Button type="button" variant="ghost" size="sm" onClick={() => field.onChange(attached.filter((x) => x !== id))}>Remove</Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {unattached.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Attach:</div>
+                                <div className="flex flex-wrap gap-1">
+                                  {unattached.map((g) => (
+                                    <Badge
+                                      key={g.id}
+                                      variant="outline"
+                                      className="cursor-pointer hover:bg-muted/40 text-[11px]"
+                                      onClick={() => field.onChange([...attached, g.id])}
+                                    >
+                                      + {g.name}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {availableOptionGroups.length === 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                No option groups yet. Click <span className="font-medium">+ New group</span> to create one.
+                              </p>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
                 </form>
               </Form>
             </div>
@@ -307,6 +476,21 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Inline "create option group" — reuses the admin dialog; auto-attaches on save. */}
+      <OptionGroupEditDialog
+        open={newOptionGroupOpen}
+        onOpenChange={setNewOptionGroupOpen}
+        group={null}
+        onSaved={async (savedId) => {
+          await loadOptionGroups();
+          if (savedId) {
+            const cur = (form.getValues("optionGroupIds") as string[]) || [];
+            if (!cur.includes(savedId)) form.setValue("optionGroupIds", [...cur, savedId], { shouldDirty: true });
+          }
+          setNewOptionGroupOpen(false);
+        }}
+      />
     </>
   );
 }

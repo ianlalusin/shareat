@@ -6,18 +6,20 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Bluetooth, RefreshCw, Usb, Check } from "lucide-react";
+import { Printer, Bluetooth, RefreshCw, Usb, Check, ChefHat } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ThermalPrinter, { type BluetoothDevice } from "@/lib/printing/thermalPrinter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Capacitor } from '@capacitor/core';
 import { getLastPrinterAddress, setLastPrinterAddress, printViaNativeBluetooth, printViaWebUSB } from "@/lib/printing/printHub";
+import { getKitchenPrinterAddress, setKitchenPrinterAddress, printKitchenText } from "@/lib/printing/kitchenPrinter";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const [devices, setDevices] = useState<BluetoothDevice[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
+  const [kitchenAddress, setKitchenAddressState] = useState<string | null>(null);
   const [paperWidth, setPaperWidth] = useState<"58" | "80">("80");
   const [isNative, setIsNative] = useState(false);
   const [hasWebUSB, setHasWebUSB] = useState(false);
@@ -29,6 +31,8 @@ export default function SettingsPage() {
     setHasWebUSB(typeof navigator !== 'undefined' && 'usb' in (navigator as any));
     const stored = getLastPrinterAddress();
     if (stored) setConnectedAddress(stored);
+    const storedKitchen = getKitchenPrinterAddress();
+    if (storedKitchen) setKitchenAddressState(storedKitchen);
     if (native) refreshDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -55,6 +59,32 @@ export default function SettingsPage() {
       toast({ title: 'Bluetooth Connected', description: 'Printer is ready.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Connection Failed', description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConnectKitchen = async (address: string) => {
+    setIsLoading(true);
+    try {
+      await ThermalPrinter.connectBluetoothPrinter({ address });
+      setKitchenPrinterAddress(address);
+      setKitchenAddressState(address);
+      toast({ title: 'Kitchen Printer Connected', description: 'Printer is ready.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Connection Failed', description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleTestPrintKitchen = async () => {
+    setIsLoading(true);
+    try {
+      await printKitchenText("*** KITCHEN TEST ***\n\n\n", 80);
+      toast({ title: 'Test Sent', description: 'Check your kitchen printer output.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
     } finally {
       setIsLoading(false);
     }
@@ -151,6 +181,55 @@ export default function SettingsPage() {
                     <Printer className="mr-2 h-4 w-4" /> Print Test
                   </Button>
                 </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ChefHat className="h-5 w-5" /> Kitchen Printer
+            </CardTitle>
+            <CardDescription>
+              {isNative
+                ? 'Select the Bluetooth thermal printer used to back up kitchen tickets during an internet outage.'
+                : 'Only available in the Android APK build.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {kitchenAddress && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Check className="h-4 w-4 text-green-500" />
+                Saved: <Badge variant="secondary">{kitchenAddress}</Badge>
+              </div>
+            )}
+            {isNative && (
+              <>
+                <div className="flex gap-2">
+                  <Select
+                    value={kitchenAddress ?? ''}
+                    onValueChange={handleConnectKitchen}
+                    disabled={isLoading || devices.length === 0}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder={devices.length === 0 ? 'No devices found' : 'Select printer'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.map(d => (
+                        <SelectItem key={d.address} value={d.address}>
+                          {d.name} ({d.address})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" onClick={refreshDevices} disabled={isLoading}>
+                    <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+                <Button onClick={handleTestPrintKitchen} disabled={isLoading || !kitchenAddress}>
+                  <Printer className="mr-2 h-4 w-4" /> Test Print
+                </Button>
               </>
             )}
           </CardContent>

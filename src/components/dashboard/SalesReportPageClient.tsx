@@ -17,7 +17,12 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
 import { RoleGuard } from "@/components/guards/RoleGuard";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -26,9 +31,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Printer, ArrowLeft } from "lucide-react";
+import { Loader2, Printer, ArrowLeft, CalendarIcon } from "lucide-react";
 import { format, parse, startOfMonth, endOfMonth, addDays } from "date-fns";
-import { startOfDay } from "@/lib/utils/date";
+import { startOfDay, formatDuration } from "@/lib/utils/date";
 
 import type { DailyMetric, ModeOfPayment } from "@/lib/types";
 import {
@@ -109,6 +114,61 @@ function aggregateMetrics(metrics: DailyMetric[]) {
   };
 }
 
+// Average kitchen serving time + average server confirmation time, overall and
+// per local user — read straight from the analytics rollups (no per-doc scan).
+function aggregateServiceTimes(metrics: DailyMetric[]) {
+  let kSumType = 0, kCntType = 0, sConfMs = 0, sConfCnt = 0;
+  const kByUser: Record<string, { ms: number; count: number }> = {};
+  const sByUser: Record<string, { ms: number; count: number }> = {};
+  const staffNames: Record<string, string> = {};
+
+  for (const m of metrics) {
+    const kt = m.kitchen?.durationMsSumByType ?? {};
+    for (const t in kt) kSumType += kt[t] || 0;
+    const ktc = m.kitchen?.durationCountByType ?? {};
+    for (const t in ktc) kCntType += ktc[t] || 0;
+
+    const ku = m.kitchen?.servingMsSumByUser ?? {};
+    const kuc = m.kitchen?.servingCountByUser ?? {};
+    for (const u in ku) (kByUser[u] ??= { ms: 0, count: 0 }).ms += ku[u] || 0;
+    for (const u in kuc) (kByUser[u] ??= { ms: 0, count: 0 }).count += kuc[u] || 0;
+
+    sConfMs += (m as any).server?.confirmMsSum ?? 0;
+    sConfCnt += (m as any).server?.confirmCount ?? 0;
+    const su = (m as any).server?.confirmMsSumByUser ?? {};
+    const suc = (m as any).server?.confirmCountByUser ?? {};
+    for (const u in su) (sByUser[u] ??= { ms: 0, count: 0 }).ms += su[u] || 0;
+    for (const u in suc) (sByUser[u] ??= { ms: 0, count: 0 }).count += suc[u] || 0;
+
+    Object.assign(staffNames, (m as any).staffNames ?? {});
+  }
+
+  const toRows = (rec: Record<string, { ms: number; count: number }>) =>
+    Object.entries(rec)
+      .filter(([, v]) => v.count > 0)
+      .map(([id, v]) => {
+        // Resolve a usable label. `staffNames[id] ?? id` is unsafe — `??` keeps
+        // an empty-string name (so it renders blank), and the id itself can be
+        // blank/whitespace for a session confirmed without a server profile or a
+        // legacy profile doc with no name. Trim both and fall back id→nothing.
+        const named = typeof staffNames[id] === "string" ? staffNames[id].trim() : "";
+        const name = named || (typeof id === "string" ? id.trim() : "");
+        return { name, avgMs: v.ms / v.count, count: v.count };
+      })
+      // Drop identity-less buckets (no name AND no id). Their time still counts
+      // in the overall average (computed from the totals above, not this
+      // per-user map) — we just don't render an unlabeled row.
+      .filter((r) => r.name !== "")
+      .sort((a, b) => b.count - a.count);
+
+  return {
+    kitchenServingAvgMs: kCntType > 0 ? kSumType / kCntType : 0,
+    kitchenServingByUser: toRows(kByUser),
+    serverConfirmAvgMs: sConfCnt > 0 ? sConfMs / sConfCnt : 0,
+    serverConfirmByUser: toRows(sByUser),
+  };
+}
+
 function classifyRemittance(
   byMethod: Record<string, number>,
   mopList: ModeOfPayment[]
@@ -133,6 +193,21 @@ function classifyRemittance(
   return { cashRemitted, onlineRemitted };
 }
 
+const peso = (n: number) =>
+  `₱${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function Row({ label, value, sub, strong, muted }: { label: string; value: string; sub?: string; strong?: boolean; muted?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <div className={`text-sm ${muted ? "text-muted-foreground" : ""}`}>
+        {label}
+        {sub && <span className="ml-1 text-xs text-muted-foreground">{sub}</span>}
+      </div>
+      <div className={`tabular-nums ${strong ? "text-base font-semibold" : "text-sm"}`}>{value}</div>
+    </div>
+  );
+}
+
 export default function SalesReportPageClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -142,20 +217,39 @@ export default function SalesReportPageClient() {
   const { settings: receiptSettings, isLoading: settingsLoading } = useReceiptSettings(storeId);
   const { toast } = useToast();
 
-  const reportType = (searchParams?.get("type") ?? "daily") as "daily" | "monthly";
-  const dateParam = searchParams?.get("date");
-  const monthParam = searchParams?.get("month");
-  const widthParam = searchParams?.get("width");
-
-  const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">(
-    widthParam === "58mm" ? "58mm" : widthParam === "80mm" ? "80mm" : "80mm"
+  // Seed from URL params (so the dashboard "Print Sales Report" deep-link still works),
+  // then drive everything from in-page controls.
+  const [reportType, setReportType] = useState<"daily" | "monthly">(
+    searchParams?.get("type") === "monthly" ? "monthly" : "daily"
   );
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const d = searchParams?.get("date");
+    return d ? parse(d, "yyyy-MM-dd", new Date()) : new Date();
+  });
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    searchParams?.get("month") ?? format(new Date(), "yyyy-MM")
+  );
+  const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">(
+    searchParams?.get("width") === "58mm" ? "58mm" : "80mm"
+  );
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
   const [dailyMetrics, setDailyMetrics] = useState<DailyMetric[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Fetch ModeOfPayment list
+  const monthOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      options.push({ value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") });
+    }
+    return options;
+  }, []);
+
+  // Fetch ModeOfPayment list (for cash vs online remittance classification).
   useEffect(() => {
     if (!storeId) return;
     const mopRef = collection(db, "stores", storeId, "storeModesOfPayment");
@@ -166,7 +260,7 @@ export default function SalesReportPageClient() {
     return () => unsub();
   }, [storeId]);
 
-  // Fetch DailyMetric data
+  // Fetch DailyMetric data for the selected day / month.
   useEffect(() => {
     if (!storeId) return;
     let cancelled = false;
@@ -175,17 +269,15 @@ export default function SalesReportPageClient() {
     async function fetchData() {
       if (!storeId) return;
 
-      if (reportType === "daily" && dateParam) {
-        // Single day: fetch analytics/{YYYYMMDD}
-        const dayId = dateParam.replace(/-/g, "");
+      if (reportType === "daily") {
+        const dayId = format(selectedDate, "yyyyMMdd");
         const docRef = doc(db, "stores", storeId, "analytics", dayId);
         const snap = await getDoc(docRef);
         if (!cancelled) {
           setDailyMetrics(snap.exists() ? [snap.data() as DailyMetric] : []);
         }
-      } else if (reportType === "monthly" && monthParam) {
-        // Month range: query analytics where dayStartMs in month
-        const monthDate = parse(monthParam, "yyyy-MM", new Date());
+      } else {
+        const monthDate = parse(selectedMonth, "yyyy-MM", new Date());
         const monthStart = startOfMonth(monthDate);
         const monthEnd = addDays(endOfMonth(monthDate), 1);
         const q = query(
@@ -205,21 +297,19 @@ export default function SalesReportPageClient() {
     });
 
     return () => { cancelled = true; };
-  }, [storeId, reportType, dateParam, monthParam]);
+  }, [storeId, reportType, selectedDate, selectedMonth]);
 
-  // Build report data
   const reportData = useMemo<SalesReportData | null>(() => {
-    if (!activeStore || isLoading) return null;
+    if (!activeStore) return null;
 
     const agg = aggregateMetrics(dailyMetrics);
+    const svc = aggregateServiceTimes(dailyMetrics);
     const { cashRemitted, onlineRemitted } = classifyRemittance(agg.byMethod, paymentMethods);
 
-    let dateLabel = "";
-    if (reportType === "daily" && dateParam) {
-      dateLabel = format(parse(dateParam, "yyyy-MM-dd", new Date()), "MMMM d, yyyy");
-    } else if (reportType === "monthly" && monthParam) {
-      dateLabel = format(parse(monthParam, "yyyy-MM", new Date()), "MMMM yyyy");
-    }
+    const dateLabel =
+      reportType === "daily"
+        ? format(selectedDate, "MMMM d, yyyy")
+        : format(parse(selectedMonth, "yyyy-MM", new Date()), "MMMM yyyy");
 
     return {
       storeName: receiptSettings?.businessName ?? activeStore.name ?? "",
@@ -230,10 +320,11 @@ export default function SalesReportPageClient() {
       generatedAt: new Date(),
       generatedBy: appUser?.displayName ?? appUser?.email ?? undefined,
       ...agg,
+      ...svc,
       cashRemitted,
       onlineRemitted,
     };
-  }, [activeStore, dailyMetrics, paymentMethods, isLoading, reportType, dateParam, monthParam, receiptSettings, appUser]);
+  }, [activeStore, dailyMetrics, paymentMethods, reportType, selectedDate, selectedMonth, receiptSettings, appUser]);
 
   const formattedText = useMemo(() => {
     if (!reportData) return "";
@@ -266,7 +357,7 @@ export default function SalesReportPageClient() {
           cut: true,
           beep: true,
           encoding: "CP437",
-          showLogo: liveSettings?.showLogo ?? false,
+          showLogo: false, // sales report never prints the store logo (receipts still do)
           storeId,
         });
         toast({ title: "Printed", description: "Sales report sent to thermal printer." });
@@ -287,78 +378,211 @@ export default function SalesReportPageClient() {
     }
   }, [reportData, isPrinting, storeId, paperWidth, toast]);
 
-  if (isLoading || settingsLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="animate-spin h-10 w-10" />
-      </div>
-    );
-  }
+  const agg = reportData;
+  const sortedMethods = useMemo(
+    () => (agg ? Object.entries(agg.byMethod).sort(([, a], [, b]) => b - a) : []),
+    [agg]
+  );
+  const sortedAddons = useMemo(
+    () => (agg ? Object.entries(agg.addonSalesByItem).sort(([, a], [, b]) => b.amount - a.amount) : []),
+    [agg]
+  );
+  const hasData = !!agg && agg.txCount > 0;
 
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
-      <div className="flex flex-col items-center py-8 min-h-screen print:py-0 print:items-start print:block">
-        {/* Controls (hidden when printing) */}
-        <div className="w-full max-w-lg mb-4 space-y-4 no-print px-4">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/dashboard")}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
+      <PageHeader title="Sales Report" description="Daily and monthly sales summary for printing and cash-up.">
+        <Button variant="outline" size="sm" onClick={() => router.back()}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+        </Button>
+      </PageHeader>
+
+      {/* Controls */}
+      <Card className="mb-4 no-print">
+        <CardContent className="p-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="space-y-1.5">
+              <Label>Report Type</Label>
+              <div className="flex gap-2">
+                <Button variant={reportType === "daily" ? "default" : "outline"} size="sm" onClick={() => setReportType("daily")}>Daily</Button>
+                <Button variant={reportType === "monthly" ? "default" : "outline"} size="sm" onClick={() => setReportType("monthly")}>Monthly</Button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{reportType === "daily" ? "Date" : "Month"}</Label>
+              {reportType === "daily" ? (
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-[200px] justify-start text-left font-normal h-9">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {format(selectedDate, "MMMM d, yyyy")}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => { if (date) { setSelectedDate(date); setCalendarOpen(false); } }}
+                      disabled={(date) => date > new Date()}
+                    />
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                  <SelectTrigger className="w-[200px] h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="space-y-1.5">
+              <Label>Paper</Label>
               <Select value={paperWidth} onValueChange={(v) => setPaperWidth(v as "58mm" | "80mm")}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="w-[130px] h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="58mm">58mm Thermal</SelectItem>
                   <SelectItem value="80mm">80mm Thermal</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={handlePrint} disabled={!reportData || isPrinting}>
-                {isPrinting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Printer className="mr-2 h-4 w-4" />
-                )}
-                Print
-              </Button>
             </div>
+            <Button onClick={handlePrint} disabled={!hasData || isPrinting}>
+              {isPrinting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+              Print
+            </Button>
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* Report Preview */}
-        <div
-          id="receipt-print-root"
-          data-paper={paperWidth}
-          className="w-full flex justify-center px-4"
-        >
-          <div
-            id="print-receipt-area"
+      {/* Readable on-screen report */}
+      <div className="no-print max-w-3xl">
+        {isLoading || settingsLoading ? (
+          <div className="flex justify-center py-16"><Loader2 className="animate-spin h-8 w-8 text-muted-foreground" /></div>
+        ) : !hasData || !agg ? (
+          <Card>
+            <CardContent className="py-16 text-center text-muted-foreground">
+              No sales recorded for {agg?.dateLabel ?? "this period"}.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2 text-sm text-muted-foreground">
+              {agg.storeName} · {agg.reportType === "daily" ? "Daily" : "Monthly"} report — <span className="font-medium text-foreground">{agg.dateLabel}</span>
+            </div>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-base">Total Sales</CardTitle></CardHeader>
+              <CardContent className="pt-0">
+                <Row label="Gross Sales" value={peso(agg.totalGross)} strong />
+                <Row label="Transactions" value={agg.txCount.toLocaleString("en-US")} />
+                <Row label="Avg / Transaction" value={peso(agg.txCount > 0 ? agg.totalGross / agg.txCount : 0)} muted />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-base">Remittance</CardTitle></CardHeader>
+              <CardContent className="pt-0">
+                <Row label="Cash" value={peso(agg.cashRemitted)} />
+                <Row label="Online / Non-cash" value={peso(agg.onlineRemitted)} />
+                <div className="border-t mt-1 pt-1"><Row label="Total Collected" value={peso(agg.cashRemitted + agg.onlineRemitted)} strong /></div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-base">Mode of Payment</CardTitle></CardHeader>
+              <CardContent className="pt-0">
+                {sortedMethods.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">No payments.</p>
+                ) : (
+                  <>
+                    {sortedMethods.map(([method, amount]) => (
+                      <Row key={method} label={method} value={peso(amount)} />
+                    ))}
+                    <div className="border-t mt-1 pt-1"><Row label="Total" value={peso(agg.totalGross)} strong /></div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-base">Discounts, Charges & Adjustments</CardTitle></CardHeader>
+              <CardContent className="pt-0">
+                <Row label="Discounts" value={agg.discountsTotal > 0 ? `(${peso(agg.discountsTotal)})` : peso(0)} />
+                <Row label="Charges" value={agg.chargesTotal > 0 ? `+${peso(agg.chargesTotal)}` : peso(0)} />
+                <div className="border-t mt-1 pt-1">
+                  <Row label="Discounted items" value={peso(agg.discountedAmount)} sub={`${agg.discountedQty} pcs`} />
+                  <Row label="Voided items" value={peso(agg.voidedAmount)} sub={`${agg.voidedQty} pcs`} />
+                  <Row label="Free items" value={peso(agg.freeAmount)} sub={`${agg.freeQty} pcs`} />
+                  <Row label="Refunds" value={peso(agg.refundTotal)} sub={`${agg.refundCount} txn`} />
+                </div>
+              </CardContent>
+            </Card>
+
+            {sortedAddons.length > 0 && (
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-2"><CardTitle className="text-base">Items Sold Breakdown</CardTitle></CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground border-b pb-1 mb-1">
+                    <span>Item</span>
+                    <span className="flex gap-8"><span className="w-12 text-right">Qty</span><span className="w-24 text-right">Amount</span></span>
+                  </div>
+                  {sortedAddons.map(([name, info]) => (
+                    <div key={name} className="flex items-center justify-between py-1 text-sm">
+                      <span className="truncate pr-2">{name}</span>
+                      <span className="flex gap-8 tabular-nums">
+                        <span className="w-12 text-right">{info.qty.toLocaleString("en-US")}</span>
+                        <span className="w-24 text-right">{peso(info.amount)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {((agg.kitchenServingByUser ?? []).length > 0 || (agg.kitchenServingAvgMs ?? 0) > 0 || (agg.serverConfirmByUser ?? []).length > 0 || (agg.serverConfirmAvgMs ?? 0) > 0) && (
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-2"><CardTitle className="text-base">Service Times</CardTitle></CardHeader>
+                <CardContent className="pt-0 grid gap-6 sm:grid-cols-2">
+                  <div>
+                    <Row label="Avg serving (kitchen)" value={formatDuration(agg.kitchenServingAvgMs ?? 0)} strong />
+                    {(agg.kitchenServingByUser ?? []).map((u) => (
+                      <Row key={u.name} label={u.name} value={formatDuration(u.avgMs)} sub={`${u.count} items`} muted />
+                    ))}
+                  </div>
+                  <div>
+                    <Row label="Avg confirm (server)" value={formatDuration(agg.serverConfirmAvgMs ?? 0)} strong />
+                    {(agg.serverConfirmByUser ?? []).map((u) => (
+                      <Row key={u.name} label={u.name} value={formatDuration(u.avgMs)} sub={`${u.count} sess`} muted />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Thermal print preview — hidden on screen, printed by window.print() (see @media print in globals.css). */}
+      <div id="receipt-print-root" data-paper={paperWidth} className="hidden">
+        <div id="print-receipt-area" style={{ background: "#fff", padding: "12px 8px", width: "fit-content" }}>
+          <pre
             style={{
-              background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: "6px",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-              padding: "12px 8px",
-              width: "fit-content",
+              fontFamily: "'Courier New', Courier, monospace",
+              fontSize: paperWidth === "58mm" ? "10px" : "11px",
+              lineHeight: 1.5,
+              whiteSpace: "pre",
+              margin: 0,
+              padding: 0,
+              background: "transparent",
+              color: "#000",
             }}
           >
-            <pre
-              style={{
-                fontFamily: "'Courier New', Courier, monospace",
-                fontSize: paperWidth === "58mm" ? "10px" : "11px",
-                lineHeight: 1.5,
-                whiteSpace: "pre",
-                margin: 0,
-                padding: 0,
-                background: "transparent",
-                color: "#000",
-              }}
-            >
-              {formattedText}
-            </pre>
-          </div>
+            {formattedText}
+          </pre>
         </div>
       </div>
     </RoleGuard>

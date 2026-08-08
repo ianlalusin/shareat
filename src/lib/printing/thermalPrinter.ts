@@ -13,7 +13,22 @@ export interface ThermalPrinterPlugin {
   disconnectBluetoothPrinter(): Promise<void>;
   forgetPrinter(): Promise<void>;
   printQRCode(options: { data: string; size?: number }): Promise<void>;
-  printPinSlip(options: { top: string; bottom: string; qrData?: string; qrSize?: number; encoding?: string }): Promise<void>;
+  printPinSlip(options: {
+    top: string;
+    bottom: string;
+    qrData?: string;
+    qrSize?: number;
+    encoding?: string;
+    /**
+     * Optional pre-rendered QR as base64-encoded PNG (no data: prefix).
+     * When provided, the plugin renders the QR via raster image (centered
+     * at the bitmap level, sidesteps printer firmware QR alignment bugs)
+     * and ignores qrData/qrSize.
+     */
+    qrImageBase64?: string;
+    /** Required when qrImageBase64 is set, so the plugin centers correctly. */
+    paperWidthMm?: 58 | 80;
+  }): Promise<void>;
   printReceipt(options: {
     text: string;
     widthMm: 58 | 80;
@@ -21,11 +36,15 @@ export interface ThermalPrinterPlugin {
     beep?: boolean;
     encoding?: string;
     skipInit?: boolean;
+    /** Thermal font: small=Font B, normal=Font A, large=Font A double-height. */
+    font?: 'small' | 'normal' | 'large';
   }): Promise<void>;
   printImage(options: {
     base64: string;
     widthMm?: 58 | 80;
     align?: 'left' | 'center' | 'right';
+    /** Logo width as a % of paper width (20-100). Omit to use the default. */
+    widthPct?: number;
   }): Promise<void>;
 }
 

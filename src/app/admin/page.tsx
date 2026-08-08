@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardList, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer } from "lucide-react";
+import { UserCog, Package, Store, Globe, Archive, UtensilsCrossed, Sparkles, Box, SlidersHorizontal, ClipboardCheck, LineChart, Wallet, Receipt, Wrench, DatabaseZap, ShieldCheck, Printer, BarChart3, Smartphone, Settings2, MessageCircle, Gift, ShoppingBag, History } from "lucide-react";
 import { AppUser, useAuthContext } from "@/context/auth-context";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import dynamic from 'next/dynamic';
 
 const adminTools = [
-    { title: "Staff Management", description: "Manage staff roles, permissions, and verify accounts.", href: "/admin/users", icon: UserCog },
+    { title: "User Management", description: "Manage app users and device-local user accounts.", href: "/admin/users", icon: UserCog },
     { title: "Store Management", description: "Create, edit, or deactivate store locations.", href: "/admin/stores", icon: Store },
+    { title: "Universal Collections", description: "Manage platform-wide discounts, charges, and store overrides.", href: "/admin/collections", icon: Globe },
+    { title: "Loyalty Rewards", description: "Rewards members redeem Sharelebrator points for.", href: "/admin/loyalty-rewards", icon: Gift },
+    { title: "Product Requests", description: "Review manager applications for new catalog products.", href: "/admin/product-requests", icon: ClipboardCheck },
 ]
 
 const menuTools = [
@@ -18,15 +21,21 @@ const menuTools = [
     { title: "Flavors", description: "Manage available flavor options.", href: "/admin/menu/flavors", icon: Sparkles },
     { title: "Refills", description: "Define and manage refillable items.", href: "/admin/menu/refills", icon: UtensilsCrossed },
     { title: "Packages", description: "Create and manage product packages.", href: "/admin/menu/packages", icon: Box },
+    { title: "Option Groups", description: "Reusable modifiers (Cheese, Size, etc.) that attach to products at order time.", href: "/admin/menu/option-groups", icon: Settings2 },
 ]
 
 const managerTools = [
     { title: "Store Settings", description: "Manage add-ons, packages, and prices.", href: "/manager/store-settings", icon: SlidersHorizontal },
     { title: "Collections", description: "Manage payments, charges, and discounts.", href: "/manager/collections", icon: Wallet },
     { title: "Inventory Management", description: "Manage stock levels and reorder points.", href: "/manager/inventory", icon: Archive },
+    { title: "Product Requests", description: "Apply to add a new product or add-on to the global catalog.", href: "/manager/product-requests", icon: ClipboardCheck },
+    { title: "Customer App Catalog", description: "Manage customer menu items and link each to a POS product.", href: "/admin/customer-catalog", icon: Smartphone },
+    { title: "Online Orders", description: "Accept and fulfill orders placed on the public website storefront.", href: "/admin/online-orders", icon: ShoppingBag },
+    { title: "Menu Option Availability", description: "Turn add-on options (dips, extras, upgrades) on or off for your store.", href: "/admin/menu/option-groups", icon: Settings2 },
     { title: "Receipts & History", description: "Browse, reprint, or edit past transactions.", href: "/receipts", icon: Receipt },
-    { title: "Activity Logs", description: "View audit trails for all store activities.", href: "/logs", icon: ClipboardList },
-    { title: "Sales Reports", description: "Analyze sales data and trends.", href: "/dashboard", icon: LineChart },
+    { title: "Sales Reports", description: "Daily & monthly sales summary for printing and cash-up.", href: "/sales-report", icon: LineChart },
+    { title: "Daily Session Timeline", description: "Every closed session for one day — expand any row for its full event sequence, plus the day's voids, comps and staff adjustments.", href: "/admin/daily-session-timeline", icon: History },
+    { title: "AI Daily Insights", description: "AI analysis of yesterday's sales, operations, and movement.", href: "/admin/insights", icon: Sparkles },
     { title: "Printer Setup", description: "Configure Bluetooth thermal printers.", href: "/admin/tools/printer-test", icon: Printer },
     { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },
 ]
@@ -34,6 +43,11 @@ const managerTools = [
 const dataTools = [
     { title: "Reconciliation Tool", description: "Verify analytics data against receipts.", href: "/admin/reconcile", icon: ShieldCheck },
     { title: "Analytics Backfill", description: "Rebuild daily analytics from receipts.", href: "/admin/backfill", icon: DatabaseZap },
+]
+
+const analysisTools = [
+    { title: "Data Analysis", description: "360° historical performance, comparisons, and trends.", href: "/admin/data-analysis", icon: BarChart3 },
+    { title: "Customer Requests", description: "All requests sent from the floor, with response times.", href: "/admin/customer-requests", icon: MessageCircle },
 ]
 
 function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
@@ -118,6 +132,20 @@ export default function AdminPage() {
                             ))}
                         </CardContent>
                      </Card>
+                )}
+
+                {(appUser?.isPlatformAdmin || appUser?.role === 'manager') && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2"><BarChart3 /> Analysis</CardTitle>
+                            <CardDescription>Historical, comparative, and 360° performance insights for the active store.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {analysisTools.map(tool => (
+                                <ToolCard key={tool.title} {...tool} />
+                            ))}
+                        </CardContent>
+                    </Card>
                 )}
             </div>
         </RoleGuard>

@@ -29,6 +29,19 @@ export default function CollectionsPage() {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState("payments");
 
+    // Lazy-mount panels: each one opens its own onSnapshot listeners; we don't
+    // pay for tabs the manager never visits.
+    const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(["payments"]));
+    const handleTabChange = (value: string) => {
+        setActiveTab(value);
+        setMountedTabs((prev) => {
+            if (prev.has(value)) return prev;
+            const next = new Set(prev);
+            next.add(value);
+            return next;
+        });
+    };
+
     if (loading) {
         return <div className="flex items-center justify-center h-full"><Loader className="animate-spin" /></div>
     }
@@ -51,9 +64,9 @@ export default function CollectionsPage() {
                     <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
             </PageHeader>
-            <Tabs defaultValue={activeTab} value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs defaultValue={activeTab} value={activeTab} onValueChange={handleTabChange} className="w-full">
                 {isMobile ? (
-                    <Select value={activeTab} onValueChange={setActiveTab}>
+                    <Select value={activeTab} onValueChange={handleTabChange}>
                         <SelectTrigger>
                             <SelectValue placeholder="Select a setting..." />
                         </SelectTrigger>
@@ -72,13 +85,13 @@ export default function CollectionsPage() {
                 )}
 
                 <TabsContent value="payments">
-                   <ModesOfPaymentSettings store={activeStore} />
+                   {mountedTabs.has("payments") && <ModesOfPaymentSettings store={activeStore} />}
                 </TabsContent>
                 <TabsContent value="charges">
-                   <ChargesSettings store={activeStore} />
+                   {mountedTabs.has("charges") && <ChargesSettings store={activeStore} />}
                 </TabsContent>
                  <TabsContent value="discounts">
-                     <DiscountsSettings store={activeStore} />
+                     {mountedTabs.has("discounts") && <DiscountsSettings store={activeStore} />}
                  </TabsContent>
             </Tabs>
         </RoleGuard>

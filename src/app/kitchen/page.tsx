@@ -9,9 +9,11 @@ import {
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
+import { DEFAULT_SLA_MINUTES } from "@/components/kitchen/kds-item-card";
 import { HistoryView } from "@/components/kitchen/history-view";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
+import { useLocalProfile } from "@/context/local-profile-context";
 import { db } from "@/lib/firebase/client";
 import { Loader, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +27,8 @@ import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
 import { applyKdsTicketDelta } from "@/lib/analytics/applyKdsTicketDelta";
+import { applyKdsDeltaServerFirst } from "@/lib/analytics/applyKdsDeltaServerFirst";
+import { computeKdsTargets } from "@/lib/analytics/kdsTargets";
 import { cn } from "@/lib/utils";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { SyncKdsTicketsTool } from "@/components/kitchen/SyncKdsTicketsTool";
@@ -35,6 +39,7 @@ export type KitchenStation = {
     key: string;
     sortOrder?: number;
     isActive?: boolean;
+    slaMinutes?: number;
 };
 
 type Session = {
@@ -42,6 +47,7 @@ type Session = {
     initialFlavorIds?: string[];
     customerName?: string | null;
     tableNumber?: string | null;
+    tableDisplayName?: string | null;
     sessionMode?: 'package_dinein' | 'alacarte';
     guestCountFinal?: number | null;
     guestCountCashierInitial?: number;
@@ -87,46 +93,53 @@ function getStartMs(input: any): number | null {
 import { formatDuration } from "@/lib/utils/date";
 import { KdsFlashOverlay } from "@/components/kitchen/kds-flash-overlay";
 import { writeActivityLog } from "@/components/cashier/activity-log";
-
-function requestNotifyPermission() {
-  try {
-    if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "default") {
-      void Notification.requestPermission().catch(() => {});
-    }
-  } catch {}
-}
-
-function notifyNewTicket(opts: { title: string; body?: string }) {
-  try {
-    if (typeof window === "undefined") return;
-    if (!("Notification" in window)) return;
-    if (Notification.permission !== "granted") return;
-
-    // Foreground notification (PWA). Background requires Push; this is best-effort.
-    new Notification(opts.title, {
-      body: opts.body || "",
-      silent: false,
-    });
-  } catch {}
-}
+import {
+  fireKitchenAlert,
+  primeKitchenAudio,
+  requestKitchenAlertPermission,
+} from "@/lib/notifications/kitchenAlert";
+import { AssistanceAlerts } from "@/components/kitchen/AssistanceAlerts";
 
 export default function KitchenPage() {
   const { appUser, isSigningOut } = useAuthContext();
   const { activeStore } = useStoreContext();
+  const { currentProfile } = useLocalProfile();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const processedStoresRef = useRef(new Set<string>());
 
   const [stations, setStations] = useState<KitchenStation[]>([]);
-  const [stationDoc, setStationDoc] = useState<RtKdsStationDoc | null>(null);
+  // Single source of truth for every station's rtKdsTickets doc. One
+  // collection listener populates this Map. Both `stationCounts` (tab badges)
+  // and `stationDoc` (active station) derive from it via useMemo, so the
+  // page only opens ONE listener on rtKdsTickets instead of two overlapping
+  // ones.
+  const [stationsAllDocs, setStationsAllDocs] = useState<Map<string, RtKdsStationDoc>>(new Map());
+  const [stationsAllDocsLoaded, setStationsAllDocsLoaded] = useState(false);
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [sessionsMap, setSessionsMap] = useState<Map<string, Session>>(new Map());
   const [flavorsMap, setFlavorsMap] = useState<Map<string, string>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const prevTicketIdsRef = useRef(new Set());
   const didInitTicketsRef = useRef(false);
+  // Ticket ids we've already attempted to auto-acknowledge (see the
+  // printedOffline effect below). Guards against re-firing the serve call on
+  // every rtKdsTickets snapshot — each ticket is only ever auto-served once
+  // per page session.
+  const autoAckedTicketIdsRef = useRef(new Set<string>());
+  // Per-ticket failure counter for the silent auto-ack path. Bounds retries so
+  // a permanently-failing ticket (e.g. bad data, permission issue) doesn't spam
+  // transactions forever — it stops retrying after 3 failed attempts and gives
+  // up. The ticket stays `printedOffline` and therefore remains excluded from
+  // the rendered queue/tab badges (see the `printedOffline` filters below); it
+  // is NOT surfaced for manual serve in the KDS. That's acceptable because the
+  // kitchen already has the printed paper ticket from the outage, so no order
+  // is missed — see the one-time give-up toast fired below for visibility.
+  const autoAckFailureCountRef = useRef(new Map<string, number>());
+  // Ticket ids we've already fired the give-up toast for, so a permanently
+  // stuck ticket alerts the kitchen once (not on every stationsAllDocs
+  // snapshot re-scan).
+  const autoAckGaveUpAlertedRef = useRef(new Set<string>());
 
   const [flash, setFlash] = useState<{ type: "served" | "cancelled"; message: string; subtitle?: string } | null>(null);
   const showFlash = useCallback((type: "served" | "cancelled", message: string, subtitle?: string) => {
@@ -134,11 +147,83 @@ export default function KitchenPage() {
   }, []);
 
   useEffect(() => {
-    requestNotifyPermission();
+    void requestKitchenAlertPermission();
+    // Prime the Web Audio beep on the first user gesture so browser autoplay
+    // policy lets us play sounds later. On native platforms this is a no-op.
+    const unlock = () => {
+      primeKitchenAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
   }, []);
   const [timelineSessionId, setTimelineSessionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("");
-  const [stationCounts, setStationCounts] = useState<Map<string, number>>(new Map());
+  const stationCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [id, d] of stationsAllDocs) {
+      const map = d.tickets || {};
+      // Offline-printed tickets are auto-acknowledged (see the printedOffline
+      // effect below) and must not count toward the tab's active badge, even
+      // in the brief window before their serve transaction lands.
+      const count = (d.activeIds || []).filter((tid) => !map[tid]?.printedOffline).length;
+      m.set(id, count);
+    }
+    return m;
+  }, [stationsAllDocs]);
+  const stationDoc = useMemo<RtKdsStationDoc | null>(() => {
+    if (!activeTab) return null;
+    return stationsAllDocs.get(activeTab) ?? null;
+  }, [stationsAllDocs, activeTab]);
+
+  // Coarse clock (20s) to drive the per-station "over SLA" tab counters without
+  // a per-second re-render of the whole page. Individual ticket cards keep
+  // their own 1s ticker for the live timer.
+  const [slaTick, setSlaTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setSlaTick(Date.now()), 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  const slaByStation = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of stations) m.set(s.id, s.slaMinutes ?? DEFAULT_SLA_MINUTES);
+    return m;
+  }, [stations]);
+
+  // Count active tickets at each station that have aged past its SLA.
+  const overSlaByStation = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const [stationId, d] of stationsAllDocs) {
+      const slaMs = (slaByStation.get(stationId) ?? DEFAULT_SLA_MINUTES) * 60000;
+      const map = d.tickets || {};
+      const ids = d.activeIds?.length ? d.activeIds : Object.keys(map);
+      let late = 0;
+      for (const id of ids) {
+        const t = map[id];
+        if (!t) continue;
+        // Offline-printed tickets are auto-acknowledged and excluded from the
+        // "late" alerting count — the kitchen already worked from the printed
+        // paper ticket during the outage.
+        if (t.printedOffline) continue;
+        const start = getStartMs((t as any).createdAtClientMs ?? (t as any).createdAt);
+        if (start != null && slaTick - start >= slaMs) late += 1;
+      }
+      if (late > 0) counts.set(stationId, late);
+    }
+    return counts;
+  }, [stationsAllDocs, slaByStation, slaTick]);
+
+  const activeStationSla = useMemo(
+    () => slaByStation.get(activeTab) ?? DEFAULT_SLA_MINUTES,
+    [slaByStation, activeTab],
+  );
+
   const [dailyAnalytics, setDailyAnalytics] = useState<DailyMetric | null>(null);
   
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
@@ -166,20 +251,28 @@ export default function KitchenPage() {
         }
     }));
     
-    const flavorsRef = collection(db, "flavors");
-    unsubs.push(onSnapshot(query(flavorsRef, where("isActive", "==", true)), (snapshot: QuerySnapshot<DocumentData>) => {
-        const newFlavorsMap = new Map<string, string>();
-        snapshot.docs.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => newFlavorsMap.set(docSnap.id, docSnap.data().name));
-        setFlavorsMap(newFlavorsMap);
-    }));
+    // Flavors are a global, admin-curated catalog that changes maybe once or
+    // twice a year. A live subscription on every kitchen device is overkill —
+    // do a single fetch at session start instead. If admin renames a flavor
+    // mid-shift, devices pick it up on the next reload.
+    void (async () => {
+        try {
+            const flavorsRef = collection(db, "flavors");
+            const snap = await getDocs(query(flavorsRef, where("isActive", "==", true)));
+            const newFlavorsMap = new Map<string, string>();
+            snap.forEach((docSnap: QueryDocumentSnapshot<DocumentData>) => newFlavorsMap.set(docSnap.id, docSnap.data().name));
+            setFlavorsMap(newFlavorsMap);
+        } catch (e) {
+            console.warn("[kitchen] failed to load flavors:", e);
+        }
+    })();
 
     const rtKdsTicketsRef = collection(db, 'stores', activeStore.id, 'rtKdsTickets');
     unsubs.push(onSnapshot(rtKdsTicketsRef, (snapshot) => {
-        const counts = new Map<string, number>();
-        snapshot.forEach(doc => {
-            counts.set(doc.id, (doc.data().activeIds || []).length);
-        });
-        setStationCounts(counts);
+        const m = new Map<string, RtKdsStationDoc>();
+        snapshot.forEach((d) => m.set(d.id, d.data() as RtKdsStationDoc));
+        setStationsAllDocs(m);
+        setStationsAllDocsLoaded(true);
     }));
 
     return () => unsubs.forEach(unsub => unsub());
@@ -202,68 +295,82 @@ export default function KitchenPage() {
   }, [activeStore]);
 
 
-  // Effect for fetching live tickets for the currently active tab
+  const activeStationName = useMemo(() => {
+    return stations.find(s => s.id === activeTab)?.name || 'Station';
+  }, [stations, activeTab]);
+
+  // Effect to load sessions referenced by the active station's tickets, plus
+  // fire the new-ticket alert. Re-runs when the derived `stationDoc` changes,
+  // which is whenever the collection listener gets a new snapshot for the
+  // active station. No extra listener is needed — `stationDoc` is a useMemo
+  // off `stationsAllDocs`.
   useEffect(() => {
     if (!activeStore || !activeTab) {
-        setStationDoc(null);
         setIsLoading(false);
         return;
     }
-    
-    setIsLoading(true);
-    
-    const stationDocRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', activeTab);
-    
-    const unsubscribe = onSnapshot(stationDocRef, async (docSnap: DocumentSnapshot<DocumentData>) => {
-        const data = docSnap.exists() ? docSnap.data() as RtKdsStationDoc : null;
-        setStationDoc(data);
-        
-        const currentTickets = data?.tickets || {};
+    // Wait for the collection listener's first snapshot before we declare loading done.
+    if (!stationsAllDocsLoaded) {
+        setIsLoading(true);
+        return;
+    }
 
-        // Device notification when new ticket appears (ignore first load)
-        const ids = Object.keys(currentTickets);
-        if (didInitTicketsRef.current) {
-          const prev = prevTicketIdsRef.current;
-          const hasNew = ids.some((id) => !prev.has(id));
-          if (hasNew) {
-            notifyNewTicket({
-              title: "New Kitchen Ticket",
-              body: `${activeStationName || "Station"}: ${ids.length} active`,
+    const currentTickets = stationDoc?.tickets || {};
+
+    // Device notification when new ticket appears (ignore first load).
+    // Offline-printed tickets are excluded — the kitchen already handled them
+    // on paper during the outage, so they must not trigger the "new ticket"
+    // alert sound when they sync back in.
+    const ids = Object.keys(currentTickets).filter((id) => !currentTickets[id]?.printedOffline);
+    if (didInitTicketsRef.current) {
+        const prev = prevTicketIdsRef.current;
+        const hasNew = ids.some((id) => !prev.has(id));
+        if (hasNew) {
+            void fireKitchenAlert({
+                title: "New Kitchen Ticket",
+                body: `${activeStationName || "Station"}: ${ids.length} active`,
             });
-          }
-        } else {
-          didInitTicketsRef.current = true;
         }
-        prevTicketIdsRef.current = new Set(ids);
-        const sessionIds = [...new Set(Object.values(currentTickets).map(t => t.sessionId))];
+    } else {
+        didInitTicketsRef.current = true;
+    }
+    prevTicketIdsRef.current = new Set(ids);
 
-        if (sessionIds.length > 0) {
-            const idChunks: string[][] = [];
-            for (let i = 0; i < sessionIds.length; i += 30) {
-                idChunks.push(sessionIds.slice(i, i + 30));
+    const sessionIds = [...new Set(Object.values(currentTickets).map((t: any) => t.sessionId))];
+    let cancelled = false;
+    if (sessionIds.length > 0) {
+        (async () => {
+            try {
+                const idChunks: string[][] = [];
+                for (let i = 0; i < sessionIds.length; i += 30) {
+                    idChunks.push(sessionIds.slice(i, i + 30));
+                }
+                const newSessionsMap = new Map<string, Session>();
+                for (const chunk of idChunks) {
+                    if (chunk.length === 0) continue;
+                    const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
+                    const sessionsSnap = await getDocs(sessionsQuery);
+                    sessionsSnap.forEach((sDoc: QueryDocumentSnapshot<DocumentData>) => {
+                        newSessionsMap.set(sDoc.id, { id: sDoc.id, ...sDoc.data() } as Session);
+                    });
+                }
+                if (!cancelled) {
+                    setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
+                }
+            } catch (error: any) {
+                if (cancelled || isSigningOut || !appUser) return;
+                console.error("Error fetching sessions for kitchen tickets:", error);
+                toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch session data." });
             }
-
-            const newSessionsMap = new Map<string, Session>();
-            for (const chunk of idChunks) {
-                if (chunk.length === 0) continue;
-                const sessionsQuery = query(collection(db, `stores/${activeStore.id}/sessions`), where("id", "in", chunk));
-                const sessionsSnap = await getDocs(sessionsQuery);
-                sessionsSnap.forEach((sDoc: QueryDocumentSnapshot<DocumentData>) => {
-                    newSessionsMap.set(sDoc.id, {id: sDoc.id, ...sDoc.data()} as Session);
-                });
-            }
-             setSessionsMap(prev => new Map([...prev, ...newSessionsMap]));
-        }
-        setIsLoading(false);
-    }, (error: any) => {
-        if (isSigningOut || !appUser) return;
-        console.error("Error fetching station doc:", error);
-        toast({ variant: "destructive", title: "Error", description: error?.message || "Could not fetch station data." });
-        setIsLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [activeStore, activeTab, toast, isSigningOut, appUser]);
+        })();
+    }
+    setIsLoading(false);
+    return () => { cancelled = true; };
+    // activeStationName intentionally not in deps; the closure picks up the
+    // latest value via lexical scope, and refreshing the effect just to update
+    // the alert body string isn't worth the extra runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStore, activeTab, stationDoc, stationsAllDocsLoaded, toast, isSigningOut, appUser]);
   
   useEffect(() => {
     if (!activeStore || !activeTab) {
@@ -313,10 +420,6 @@ export default function KitchenPage() {
     return { avgMs: sum / count, count };
   }, [dailyAnalytics, activeTab]);
 
-  const activeStationName = useMemo(() => {
-    return stations.find(s => s.id === activeTab)?.name || 'Station';
-  }, [stations, activeTab]);
-
   const ticketsWithData = useMemo(() => {
     if (!stationDoc) return [];
     
@@ -325,7 +428,12 @@ export default function KitchenPage() {
     
     const ticketList = ids
       .map(id => ({ ...(map[id] || {}), id }))
-      .filter(t => t && t.sessionId); // ensure ticket data exists
+      // ensure ticket data exists; offline-printed tickets are auto-acknowledged
+      // (see the printedOffline effect below) and are excluded from the active
+      // queue immediately — the served-transaction removal from `activeIds`
+      // lags a snapshot round-trip, so this filter keeps them from ever
+      // rendering in the meantime.
+      .filter(t => t && t.sessionId && !t.printedOffline);
 
     const sortedTickets = ticketList.sort((a,b) => {
         const timeA = getStartMs(a.createdAtClientMs ?? a.createdAt);
@@ -339,26 +447,45 @@ export default function KitchenPage() {
             ? session?.initialFlavorIds?.map((id: string) => flavorsMap.get(id) || 'Unknown').filter(Boolean)
             : [];
         const finalGuestCount = session?.guestCountFinal ?? session?.guestCountCashierInitial ?? ticket.guestCount;
+        // Live session is the source of truth for the table display name —
+        // it carries any rename done by the cashier mid-session and is set
+        // for both POS- and customer-app-created tickets.
+        const tableDisplayName =
+          session?.tableDisplayName ?? (ticket as any).tableDisplayName ?? null;
         return {
             ...ticket,
+            tableDisplayName,
             guestCount: finalGuestCount,
             initialFlavorNames: flavorNames,
-            sessionLabel: computeSessionLabel({ 
-              sessionMode: ticket.sessionMode, 
-              customerName: ticket.customerName, 
-              tableNumber: ticket.tableNumber 
+            sessionLabel: computeSessionLabel({
+              sessionMode: ticket.sessionMode,
+              customerName: ticket.customerName,
+              tableNumber: ticket.tableNumber,
+              tableDisplayName,
             }),
         };
     });
   }, [stationDoc, sessionsMap, flavorsMap]);
   
-  const updateTicketStatus = async (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => {
+  // `opts.overrideAtMs` lets a caller stamp the served/cancelled moment with a
+  // client timestamp other than "now" (used by the printedOffline auto-ack
+  // effect below, which serves using `printedOfflineAt` so served
+  // counts/durations reflect when the paper actually printed, not the moment
+  // the ticket happened to sync back online). `opts.silent` suppresses the
+  // flash overlay + activity log entry for system-driven (non-human) serves.
+  const updateTicketStatus = async (
+    ticketId: string,
+    sessionId: string,
+    newStatus: "served" | "cancelled",
+    reason?: string,
+    opts?: { overrideAtMs?: number; silent?: boolean },
+  ) => {
     if (!appUser || !activeStore) {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
-        return;
+        return false;
     }
 
-    const nowMs = Date.now();
+    const nowMs = opts?.overrideAtMs ?? Date.now();
     let kdsDelta: { old: any; new: any } | null = null as { old: any; new: any } | null;
 
     try {
@@ -387,6 +514,8 @@ export default function KitchenPage() {
                 updatePayload.servedAt = serverTimestamp();
                 updatePayload.servedAtClientMs = nowMs;
                 updatePayload.servedByUid = appUser.uid;
+                updatePayload.servedByProfileId = currentProfile?.profileId ?? null;
+                updatePayload.servedByProfileName = currentProfile?.name ?? null;
                 updatePayload.preparedAt = serverTimestamp(); // Note: setting prepared and served at same time
                 updatePayload.preparedByUid = appUser.uid;
                 updatePayload.durationMs = durationMs;
@@ -418,11 +547,16 @@ export default function KitchenPage() {
 
                 if (oldTicketState.type === 'addon' && oldTicketState.billLineId) {
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", oldTicketState.billLineId);
+                    const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                     const ticketQty = oldTicketState.qty || 1;
                     transaction.update(billLineRef, {
                         voidedQty: increment(ticketQty),
                         voidReason: "kitchen_cancel",
                         voidNote: "Cancelled by kitchen: " + (reason || ""),
+                        updatedAt: serverTimestamp(),
+                    });
+                    transaction.update(sessionRef, {
+                        billingRevision: increment(1),
                         updatedAt: serverTimestamp(),
                     });
                 }
@@ -453,35 +587,139 @@ export default function KitchenPage() {
         });
 
         if (kdsDelta) {
-          const { writeBatch: wb } = await import('firebase/firestore');
-          const batch = wb(db);
-          await applyKdsTicketDelta(db, activeStore.id, kdsDelta.old, kdsDelta.new, { batch });
-          await batch.commit();
+          const delta = kdsDelta;
+          const actor = { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null };
+          // Server-first (marker-based, idempotent). Fallback also writes the
+          // ticket markers so a later server call doesn't double-count.
+          await applyKdsDeltaServerFirst(activeStore.id, sessionId, [ticketId], actor, async () => {
+            const { writeBatch: wb } = await import('firebase/firestore');
+            const batch = wb(db);
+            await applyKdsTicketDelta(db, activeStore.id, delta.old, delta.new, { batch, actor });
+            const tg = computeKdsTargets(delta.new);
+            batch.update(doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId), {
+              analyticsServedQty: tg.servedQty, analyticsCancelledQty: tg.cancelledQty,
+              analyticsDurationMs: tg.durationMs, analyticsDurationCount: tg.durationCount,
+            });
+            await batch.commit();
+          });
         }
-        const ticket = ticketsWithData.find(t => t.id === ticketId);
-        const flashType = newStatus === "cancelled" ? "cancelled" : "served";
-        showFlash(flashType, `${ticket?.itemName || 'Item'} ${newStatus}`, `${ticket?.sessionLabel || ''}`);
-        if (ticket) {
-          writeActivityLog({ action: newStatus === "cancelled" ? "TICKET_CANCELLED" : "TICKET_SERVED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, reason: reason || undefined }, note: `${ticket.itemName} ${newStatus}${reason ? `: ${reason}` : ""}` });
+        // Silent (system-driven) serves — e.g. the printedOffline auto-ack —
+        // skip the flash overlay and activity log: no human acted here, and
+        // `ticketsWithData` won't even contain an auto-acked ticket (it's
+        // filtered out of the active queue), so `ticket` would be undefined.
+        if (!opts?.silent) {
+          const ticket = ticketsWithData.find(t => t.id === ticketId);
+          const flashType = newStatus === "cancelled" ? "cancelled" : "served";
+          showFlash(flashType, `${ticket?.itemName || 'Item'} ${newStatus}`, `${ticket?.sessionLabel || ''}`);
+          if (ticket) {
+            writeActivityLog({ action: newStatus === "cancelled" ? "TICKET_CANCELLED" : "TICKET_SERVED", storeId: activeStore.id, sessionId, user: appUser, meta: { itemName: ticket.itemName, reason: reason || undefined }, note: `${ticket.itemName} ${newStatus}${reason ? `: ${reason}` : ""}` });
+          }
         }
+        return true;
 
     } catch (error: any) {
         console.error(`Failed to update ticket status to ${newStatus}:`, error);
-        toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+        // Silent (system-driven) calls — e.g. the printedOffline auto-ack — must
+        // not surface a destructive toast for a background failure; the caller
+        // (the auto-ack effect) handles bounded retry/give-up instead. Manual
+        // taps (Mark Served / Cancel) keep the toast.
+        if (!opts?.silent) {
+          toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+        }
+        return false;
     }
   };
 
+  // Auto-acknowledge tickets printed to the offline backup kitchen printer
+  // (kitchen-bt-printer-backup feature). While a cashier/server device is
+  // disconnected, it prints the ticket to a shared Bluetooth printer and
+  // stamps it `printedOffline`/`printedOfflineAt`. The kitchen already worked
+  // from that paper ticket, so on reconnect it must be marked served — not
+  // re-queued for prep — via the SAME serve path used for a manual "mark
+  // served" tap (`updateTicketStatus`), reusing `printedOfflineAt` as the
+  // serve timestamp so served counts/durations reflect when the paper
+  // actually printed rather than the (possibly much later) sync moment.
+  //
+  // Scans every station in `stationsAllDocs` (not just the active tab) so a
+  // backlog acknowledges even on tabs the kitchen isn't currently viewing.
+  // `ticketsWithData` (and therefore the rendered queue / tab badges) already
+  // excludes `printedOffline` tickets synchronously, so this effect only
+  // needs to fire the actual serve transaction; it never gates rendering.
+  //
+  // Idempotency: `autoAckedTicketIdsRef` is a ref-backed Set marked BEFORE the
+  // async call, so a ticket is only ever auto-served once per page session
+  // even though this effect re-runs on every projection snapshot (e.g. an
+  // unrelated ticket changing at the same station). `updateTicketStatus`'s own
+  // transaction is additionally guarded against double-serving server-side
+  // (it no-ops if the ticket is already `served`/`cancelled`). `updateTicketStatus`
+  // catches its own errors and resolves `false` (never rejects — see its
+  // try/catch), so a transient failure un-marks the ref via `.then` and the
+  // next snapshot naturally retries.
+  useEffect(() => {
+    if (!activeStore) return;
+    for (const stationDocEntry of stationsAllDocs.values()) {
+      const map = stationDocEntry.tickets || {};
+      for (const [ticketId, t] of Object.entries(map)) {
+        if (!t || t.printedOffline !== true) continue;
+        if (t.status !== "preparing" && t.status !== "ready") continue;
+        if (!t.sessionId) continue;
+        if (autoAckedTicketIdsRef.current.has(ticketId)) continue;
+        // Bounded retry: once a ticket has failed 3 silent attempts, stop
+        // retrying. The ticket stays `printedOffline`, so it remains excluded
+        // from the rendered queue/tab badges (see the `printedOffline`
+        // filters below) rather than falling back into view for manual
+        // handling — it is NOT "left in the queue". This is safe KDS
+        // data-hygiene, not a lost order: the kitchen already has the printed
+        // paper ticket from the outage. A one-time destructive toast fires
+        // below on give-up so it isn't silently dropped either.
+        const failCount = autoAckFailureCountRef.current.get(ticketId) ?? 0;
+        if (failCount >= 3) continue;
+        autoAckedTicketIdsRef.current.add(ticketId);
+        const overrideAtMs = typeof t.printedOfflineAt === "number" ? t.printedOfflineAt : undefined;
+        void updateTicketStatus(ticketId, t.sessionId, "served", undefined, { overrideAtMs, silent: true })
+          .then((ok) => {
+            if (!ok) {
+              autoAckedTicketIdsRef.current.delete(ticketId);
+              const nextFailCount = failCount + 1;
+              autoAckFailureCountRef.current.set(ticketId, nextFailCount);
+              // Give-up: the 3rd failed silent attempt. Surface a one-time,
+              // non-silent toast so this doesn't fail invisibly — the ticket
+              // itself stays excluded from the KDS queue (covered by the
+              // printed paper ticket), but staff should still know it needs
+              // to be marked served manually in the backend/records if ever
+              // needed.
+              if (nextFailCount >= 3 && !autoAckGaveUpAlertedRef.current.has(ticketId)) {
+                autoAckGaveUpAlertedRef.current.add(ticketId);
+                toast({
+                  variant: "destructive",
+                  title: "Kitchen ticket needs manual serve",
+                  description: "An offline-printed ticket couldn't auto-acknowledge — mark it served manually.",
+                });
+              }
+            } else {
+              autoAckFailureCountRef.current.delete(ticketId);
+            }
+          });
+      }
+    }
+    // updateTicketStatus is intentionally not in deps (same pattern as the
+    // activeStationName omission above) — it closes over appUser/activeStore/
+    // currentProfile, which change far less often than stationsAllDocs, and
+    // re-running this scan on every render just to pick up a fresh function
+    // identity isn't worth it given the ref guard already makes re-scans cheap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stationsAllDocs, activeStore]);
 
   const handleServeBatch = async ({ ticketId, sessionId, qtyToServe }: { ticketId: string; sessionId: string; qtyToServe: number }) => {
     if (!appUser || !activeStore) return;
     const nowMs = Date.now();
     try {
-      await runTransaction(db, async (transaction: Transaction) => {
+      const kdsDelta = await runTransaction(db, async (transaction: Transaction): Promise<{ old: KitchenTicket; new: KitchenTicket } | null> => {
         const ticketRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId);
         const ticketSnap = await transaction.get(ticketRef);
         if (!ticketSnap.exists()) throw new Error('Ticket not found.');
         const old = ticketSnap.data() as KitchenTicket;
-        if (old.status === 'served' || old.status === 'cancelled') return;
+        if (old.status === 'served' || old.status === 'cancelled') return null;
         const qtyOrdered = old.qtyOrdered ?? old.qty ?? 1;
         const qtyServed = (old.qtyServed ?? 0) + qtyToServe;
         const qtyCancelled = old.qtyCancelled ?? 0;
@@ -489,12 +727,14 @@ export default function KitchenPage() {
         const newStatus = qtyRemaining <= 0 ? 'served' : 'partially_served';
         const startMs = getStartMs(old.createdAtClientMs ?? old.createdAt);
         const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
-        const newLogEntry = { qty: qtyToServe, servedAt: nowMs, servedAtClientMs: nowMs, servedByUid: appUser.uid };
+        const newLogEntry = { qty: qtyToServe, servedAt: nowMs, servedAtClientMs: nowMs, servedByUid: appUser.uid, servedByProfileId: currentProfile?.profileId ?? null, servedByProfileName: currentProfile?.name ?? null };
         const updatePayload: any = {
           qtyServed, qtyCancelled, qtyRemaining,
           status: newStatus,
           serveLog: [...(old.serveLog ?? []), newLogEntry],
           servedByUid: appUser.uid,
+          servedByProfileId: currentProfile?.profileId ?? null,
+          servedByProfileName: currentProfile?.name ?? null,
           servedAtClientMs: nowMs,
           servedAt: serverTimestamp(),
           durationMs,
@@ -527,7 +767,23 @@ export default function KitchenPage() {
             transaction.update(rtKdsDocRef, rtUpdate);
           }
         }
+        return { old, new: { ...old, ...updatePayload } as KitchenTicket };
       });
+      if (kdsDelta) {
+        const delta = kdsDelta;
+        const actor = { profileId: currentProfile?.profileId ?? null, name: currentProfile?.name ?? null };
+        await applyKdsDeltaServerFirst(activeStore.id, sessionId, [ticketId], actor, async () => {
+          const { writeBatch: wb } = await import('firebase/firestore');
+          const batch = wb(db);
+          await applyKdsTicketDelta(db, activeStore.id, delta.old, delta.new, { batch, actor });
+          const tg = computeKdsTargets(delta.new);
+          batch.update(doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId), {
+            analyticsServedQty: tg.servedQty, analyticsCancelledQty: tg.cancelledQty,
+            analyticsDurationMs: tg.durationMs, analyticsDurationCount: tg.durationCount,
+          });
+          await batch.commit();
+        });
+      }
       const ticket = ticketsWithData.find(t => t.id === ticketId);
       showFlash("served", `${qtyToServe} pcs served`);
       if (ticket) {
@@ -564,7 +820,9 @@ export default function KitchenPage() {
         };
         if (old.type === 'addon' && old.billLineId) {
           const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', old.billLineId);
+          const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId);
           transaction.update(billLineRef, { voidedQty: increment(qtyRemaining), voidReason: "kitchen_cancel", voidNote: "Cancelled by kitchen: " + reason, updatedAt: serverTimestamp() });
+          transaction.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
         }
         transaction.update(ticketRef, updatePayload);
         if (old.kitchenLocationId) {
@@ -596,8 +854,8 @@ export default function KitchenPage() {
 
   return (
     <RoleGuard allow={["admin", "manager", "kitchen"]}>
-      <PageHeader 
-        title="Kitchen Display System" 
+      <PageHeader
+        title="Kitchen Display System"
         description="Monitor and manage all active food and beverage orders."
       >
         <div className="flex items-center gap-2">
@@ -613,8 +871,8 @@ export default function KitchenPage() {
             </div>
         </div>
       </PageHeader>
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-            <div className="lg:col-span-3">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
+            <div className="xl:col-span-3">
                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     {isMobile ? (
                         <Select value={activeTab} onValueChange={setActiveTab}>
@@ -624,9 +882,10 @@ export default function KitchenPage() {
                             <SelectContent>
                                 {stations.map((station: KitchenStation) => {
                                     const count = stationCounts.get(station.id) || 0;
+                                    const late = overSlaByStation.get(station.id) || 0;
                                     return (
                                         <SelectItem key={station.id} value={station.key}>
-                                            {station.name} {count > 0 && `(${count})`}
+                                            {station.name} {count > 0 && `(${count})`}{late > 0 && ` · ${late} late`}
                                         </SelectItem>
                                     )
                                 })}
@@ -636,11 +895,17 @@ export default function KitchenPage() {
                         <TabsList className="gap-2">
                             {stations.map((station: KitchenStation) => {
                                 const count = stationCounts.get(station.id) || 0;
+                                const late = overSlaByStation.get(station.id) || 0;
                                 return (
                                     <TabsTrigger key={station.id} value={station.key} className="relative">
                                         {station.name}
                                         {count > 0 && (
                                             <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 justify-center p-0">{count}</Badge>
+                                        )}
+                                        {late > 0 && (
+                                            <Badge variant="outline" className="ml-2 border-destructive bg-destructive/10 text-destructive text-[10px] px-1.5 py-0 gap-0.5">
+                                                {late} late
+                                            </Badge>
                                         )}
                                     </TabsTrigger>
                                 )
@@ -649,13 +914,13 @@ export default function KitchenPage() {
                     )}
                     {stations.map((station: KitchenStation) => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} />
+                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} slaMinutes={activeStationSla} />
                         </TabsContent>
                     ))}
                  </Tabs>
             </div>
-            <div className="lg:col-span-1 space-y-4">
-                <HistoryView 
+            <div className="xl:col-span-1 space-y-4">
+                <HistoryView
                   items={historyPreview}
                   isLoading={isLoadingHistory}
                   activeStationId={activeTab}
@@ -671,6 +936,7 @@ export default function KitchenPage() {
         subtitle={flash?.subtitle}
         onDone={() => setFlash(null)}
       />
+      {activeStore?.id && <AssistanceAlerts storeId={activeStore.id} />}
     </RoleGuard>
   );
 }

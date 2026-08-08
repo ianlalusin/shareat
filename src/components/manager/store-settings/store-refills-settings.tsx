@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Refill, Store, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
+import { rebuildCustomerRefillOptionsCache } from "@/lib/manager/dataManagement";
 
 function coerceStoreRefill(d: QueryDocumentSnapshot<DocumentData>): StoreRefill {
   const data = d.data() ?? {};
@@ -139,21 +140,23 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                 kitchenLocationName: null,
                 isOther: false,
             }, { merge: true });
+            await rebuildCustomerRefillOptionsCache(store.id);
             toast({ title: "Refill Added" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Add Failed", description: error.message });
         }
     };
-    
+
     const handleToggleEnabled = async (refill: StoreRefill) => {
         if (!appUser || !store) return;
         const newStatus = !refill.isEnabled;
 
         const docRef = doc(db, "stores", store.id, "storeRefills", refill.refillId);
         try {
-            await updateDoc(docRef, { 
+            await updateDoc(docRef, {
                 isEnabled: newStatus,
             });
+            await rebuildCustomerRefillOptionsCache(store.id);
             toast({ title: "Status Updated" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Update Failed", description: error.message });
@@ -175,11 +178,12 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
         const kitchenLocationName = kitchenLocations.find(k => k.id === editingValues.kitchenLocationId)?.name || null;
 
         try {
-             await updateDoc(docRef, { 
+             await updateDoc(docRef, {
                 sortOrder: editingValues.sortOrder,
                 kitchenLocationId: editingValues.kitchenLocationId,
                 kitchenLocationName: kitchenLocationName
             });
+            await rebuildCustomerRefillOptionsCache(store.id);
             toast({ title: "Refill Updated" });
             setEditingId(null);
         } catch (error: any) {
@@ -254,6 +258,7 @@ export function StoreRefillsSettings({ store }: { store: Store }) {
                                                 const docRef = doc(db, "stores", store.id, "storeRefills", refill.refillId);
                                                 try {
                                                     await updateDoc(docRef, { isOther: !!v });
+                                                    await rebuildCustomerRefillOptionsCache(store.id);
                                                     toast({ title: "Other flag updated" });
                                                 } catch (error: any) {
                                                     toast({ variant: 'destructive', title: "Update Failed", description: error.message });

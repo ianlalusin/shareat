@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -62,6 +62,7 @@ interface RequestChangeDialogProps {
   storeId: string;
   storePackages: StorePackage[];
   schedules: Map<string, MenuSchedule>;
+  serverProfile?: { id: string; name: string } | null;
 }
 
 const DIALOG_TABS = [
@@ -69,7 +70,7 @@ const DIALOG_TABS = [
     { value: "package", label: "Package" },
 ]
 
-function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose }: RequestChangeDialogProps) {
+function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose, serverProfile }: RequestChangeDialogProps) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -93,6 +94,10 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   const availablePackages = useMemo(() => {
     return storePackages.filter(pkg => {
         if (!pkg.isEnabled) return false;
+        // Every bundle stays selectable regardless of headcount: its cap is the
+        // number of guests the flat price covers, not a seating limit. Guests
+        // beyond it are billed on the Extra Pax line. The option label shows the
+        // cap, so the cashier can see what they're choosing.
         if (!pkg.menuScheduleId) return true; // Always available if no schedule
         const schedule = schedules.get(pkg.menuScheduleId);
         if (!schedule) return true; // Fail open if schedule not found
@@ -101,7 +106,13 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
   }, [storePackages, schedules]);
 
 
+  const lastSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
+    // Reset only when the session actually changes. Parent spreads into a
+    // fresh object each snapshot tick, so depending on `session` directly
+    // would wipe typed input. Guard with the id instead.
+    if (lastSessionIdRef.current === session.id) return;
+    lastSessionIdRef.current = session.id;
     guestForm.reset({ requestedCount: session.guestCountFinal || 0, reasonNote: "" });
     packageForm.reset({ requestedPackageId: session.packageOfferingId, reasonNote: "" });
   }, [session, guestForm, packageForm]);
@@ -143,7 +154,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         });
 
       await batch.commit();
-      writeActivityLog({ action: "GUEST_COUNT_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { beforeQty: session.guestCountFinal ?? undefined, newQty: data.requestedCount, reason: data.reason }, note: `Guest count change requested: ${session.guestCountFinal} → ${data.requestedCount}` });
+      writeActivityLog({ action: "GUEST_COUNT_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { beforeQty: session.guestCountFinal ?? undefined, newQty: data.requestedCount, reason: data.reason }, note: `Guest count change requested: ${session.guestCountFinal} → ${data.requestedCount}`, serverProfile });
       toast({ title: "Request Sent", description: "Guest count change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {
@@ -169,6 +180,14 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         const requestedPackageSnapshot = {
             name: selectedPackage.packageName,
             pricePerHead: selectedPackage.pricePerHead,
+            ...(selectedPackage.isBundle
+                ? {
+                    isBundle: true,
+                    bundlePrice: Number(selectedPackage.bundlePrice ?? 0),
+                    bundleMaxCap: Number(selectedPackage.bundleMaxCap ?? 0),
+                    bundleExtraHeadPrice: Number(selectedPackage.bundleExtraHeadPrice ?? 0),
+                  }
+                : {}),
         };
 
         batch.update(sessionRef, {
@@ -188,7 +207,7 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
         });
 
       await batch.commit();
-      writeActivityLog({ action: "PACKAGE_CHANGE_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedPackage.packageName }, note: `Package change requested: ${session.packageSnapshot?.name} → ${selectedPackage.packageName}` });
+      writeActivityLog({ action: "PACKAGE_CHANGE_REQUESTED", storeId, sessionId: session.id, user: appUser, meta: { itemName: selectedPackage.packageName }, note: `Package change requested: ${session.packageSnapshot?.name} → ${selectedPackage.packageName}`, serverProfile });
       toast({ title: "Request Sent", description: "Package change request sent to cashier for approval." });
       onClose();
     } catch (e: any) {
@@ -321,7 +340,9 @@ function ChangeRequestForm({ session, storeId, storePackages, schedules, onClose
                             {availablePackages.length > 0 ? (
                                 availablePackages.map(p => (
                                 <SelectItem key={p.packageId} value={p.packageId}>
-                                    {p.packageName} - ₱{p.pricePerHead}/head
+                                    {p.isBundle
+                                        ? `${p.packageName} - ₱${p.bundlePrice ?? 0} (≤${p.bundleMaxCap ?? 1} pax)`
+                                        : `${p.packageName} - ₱${p.pricePerHead}/head`}
                                 </SelectItem>
                                 ))
                             ) : (

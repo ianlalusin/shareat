@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { StorePackageEditDialog } from "@/components/manager/store-settings/_components/StorePackageEditDialog";
+import { rebuildStoreConfig } from "@/lib/manager/dataManagement";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
@@ -112,18 +113,30 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         setIsDialogOpen(false);
     };
 
+    // The cashier reads packages from the denormalized storeConfig/current cache,
+    // so any edit must rebuild it or the change (price, sortOrder, bundle fields)
+    // never reaches the POS. Mirrors the discounts/charges admin flows.
+    const syncConfigCache = async () => {
+        try {
+            await rebuildStoreConfig(db, store.id);
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "POS cache not refreshed", description: "Saved, but the POS config cache didn't rebuild. Run Data Management → Rebuild." });
+        }
+    };
+
     const handleSave = async (data: Partial<StorePackage>) => {
         if (!appUser || !editingPackage) return;
         const docRef = doc(db, "stores", store.id, "storePackages", editingPackage.packageId);
         try {
             await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
+            await syncConfigCache();
             toast({ title: "Package Updated" });
             handleCloseDialog();
         } catch (error: any) {
             toast({ variant: "destructive", title: "Save Failed", description: error.message });
         }
     };
-    
+
     const handleToggleEnabled = async (pkg: StorePackage) => {
         if (!appUser) return;
         const newStatus = !pkg.isEnabled;
@@ -131,6 +144,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
 
         const docRef = doc(db, "stores", store.id, "storePackages", pkg.packageId);
         await updateDoc(docRef, { isEnabled: newStatus, updatedAt: serverTimestamp() });
+        await syncConfigCache();
         toast({ title: "Status Updated" });
     };
 
@@ -152,6 +166,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                 menuScheduleId: null,
             };
             await setDoc(docRef, newStorePackage);
+            await syncConfigCache();
             toast({ title: "Package Added", description: `"${gPackage.name}" added to your store. Please edit to set a price.`});
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Failed to Add", description: error.message });
@@ -170,6 +185,7 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         const docRef = doc(db, "stores", store.id, "storePackages", pkg.packageId);
         try {
             await deleteDoc(docRef);
+            await syncConfigCache();
             toast({ title: "Package Deleted" });
         } catch (error: any) {
             toast({ variant: 'destructive', title: "Delete Failed", description: error.message });
@@ -211,8 +227,15 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                             <TableBody>
                                 {filteredPackages.map(pkg => (
                                     <TableRow key={pkg.packageId} className={!pkg.isEnabled ? "text-muted-foreground" : ""}>
-                                        <TableCell className="font-medium">{pkg.packageName}</TableCell>
-                                        <TableCell>₱{pkg.pricePerHead.toFixed(2)}</TableCell>
+                                        <TableCell className="font-medium">
+                                            {pkg.packageName}
+                                            {pkg.isBundle && <Badge variant="secondary" className="ml-2 font-normal">Bundle</Badge>}
+                                        </TableCell>
+                                        <TableCell>
+                                            {pkg.isBundle
+                                                ? <>₱{(pkg.bundlePrice ?? 0).toFixed(2)} <span className="text-xs text-muted-foreground">/ ≤{pkg.bundleMaxCap ?? 1} pax{(pkg.bundleExtraHeadPrice ?? 0) > 0 ? ` · +₱${pkg.bundleExtraHeadPrice}/extra` : ""}</span></>
+                                                : <>₱{pkg.pricePerHead.toFixed(2)} <span className="text-xs text-muted-foreground">/head</span></>}
+                                        </TableCell>
                                         <TableCell>
                                             <Badge variant="outline" className="font-normal">
                                                 {schedules.get(pkg.menuScheduleId || "")?.name || "Always On"}

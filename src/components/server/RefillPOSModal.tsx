@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, X } from "lucide-react";
-import { collection, onSnapshot, query, where, doc, runTransaction, orderBy, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, query, where, doc, runTransaction, orderBy, getDocs, writeBatch, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
@@ -19,8 +19,13 @@ import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
 import { Separator } from "../ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 import { createKitchenTickets, getActorStamp } from "../cashier/firestore";
 import { writeActivityLog } from "../cashier/activity-log";
+import { commitLocalFirst } from "@/lib/offline/commit";
+import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
+import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
+import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
 
 interface RefillPOSModalProps {
   open: boolean;
@@ -28,6 +33,7 @@ interface RefillPOSModalProps {
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
+  serverProfile?: { id: string; name: string } | null;
 }
 
 type CartItem = {
@@ -39,18 +45,21 @@ type CartItem = {
 const OTHER_REFILLS_ID = "__OTHER_REFILLS__";
 
 function POSContent({
-    storeId, 
-    session, 
-    sessionIsLocked, 
-    onClose
+    storeId,
+    session,
+    sessionIsLocked,
+    onClose,
+    serverProfile,
 }: {
     storeId: string;
     session: PendingSession;
     sessionIsLocked?: boolean;
     onClose: () => void;
+    serverProfile?: { id: string; name: string } | null;
 }) {
   const { appUser } = useAuthContext();
   const { toast } = useToast();
+  const isOnline = useOnlineStatus();
   const [storeRefills, setStoreRefills] = useState<StoreRefill[]>([]);
   const [globalRefills, setGlobalRefills] = useState<Refill[]>([]);
   const [storeFlavors, setStoreFlavors] = useState<StoreFlavor[]>([]);
@@ -160,7 +169,7 @@ function POSContent({
         const bIsInitial = initialFlavorIds.has(b.flavorId);
         if (aIsInitial && !bIsInitial) return -1;
         if (!aIsInitial && bIsInitial) return 1;
-        return a.flavorName.localeCompare(b.flavorName);
+        return ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.flavorName.localeCompare(b.flavorName);
     });
 }, [activeCartItem, storeFlavors, globalRefills, session.initialFlavorIds]);
 
@@ -190,7 +199,46 @@ function POSContent({
   const handleSelectOtherRefills = () => {
     setActiveRefillId(OTHER_REFILLS_ID);
   };
-  
+
+  // Fire-and-forget backup print of offline-created kitchen tickets to the
+  // shared Bluetooth kitchen printer. Never awaited into the order flow;
+  // any dep (or the kitchenLocations fetch) throwing is swallowed.
+  const printOfflineKitchenTickets = (tickets: Array<Record<string, any>>) => {
+    if (!tickets.length) return;
+    void (async () => {
+      const klSnap = await getDocs(collection(db, "stores", storeId, "kitchenLocations"));
+      const kitchenLocations = klSnap.docs.map((d) => ({ id: d.id, printOnOutage: (d.data() as any).printOnOutage }));
+      // `deps` (and its stampTicket closure) is built once for the whole batch,
+      // but each ticket in the loop can belong to a different station. Map
+      // ticketId -> kitchenLocationId up front so the shared closure can still
+      // patch the correct rtKdsTickets projection per ticket.
+      const stationByTicketId = new Map<string, string>();
+      for (const t of tickets) {
+        if (t?.id && t?.kitchenLocationId) stationByTicketId.set(t.id, t.kitchenLocationId);
+      }
+      const deps = makeKitchenBackupDeps({
+        kitchenLocations,
+        stampTicket: (ticketId) => {
+          const ref = doc(db, "stores", storeId, "sessions", session.id, "kitchentickets", ticketId);
+          void updateDoc(ref, { printedOffline: true, printedOfflineAt: Date.now(), printedOfflineDevice: getBrowserDeviceId() }).catch(() => {});
+          // Also patch the rtKdsTickets projection the KDS page actually reads
+          // from, so the auto-ack effect there can see the stamp.
+          const _stationId = stationByTicketId.get(ticketId);
+          if (_stationId) {
+            void updateDoc(doc(db, "stores", storeId, "rtKdsTickets", _stationId), {
+              [`tickets.${ticketId}.printedOffline`]: true,
+              [`tickets.${ticketId}.printedOfflineAt`]: Date.now(),
+            }).catch(() => {});
+          }
+        },
+        alert: (message) => toast({ variant: "destructive", title: "Kitchen printer", description: message }),
+      });
+      for (const ticket of tickets) {
+        await printKitchenTicketBackup(ticket as any, deps).catch(() => {});
+      }
+    })().catch(() => {});
+  };
+
   const handleAddToOrder = async () => {
     if (sessionIsLocked) {
       toast({ variant: "destructive", title: "Session Closed", description: "Session is closed. KDS updates are disabled." });
@@ -227,21 +275,101 @@ function POSContent({
     
     try {
         const actor = getActorStamp(appUser);
-        await runTransaction(db, async (tx) => {
+        if (isOnline) {
+            await runTransaction(db, async (tx) => {
+                for (const item of cart.values()) {
+                    const stationId = item.refill.kitchenLocationId;
+                    if (!stationId) {
+                        throw new Error(`Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`);
+                    }
+
+                    const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
+                    let finalNotes = item.notes.trim();
+                    if (selectedFlavorNames.length > 0) {
+                        const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
+                        finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
+                    }
+
+                    await createKitchenTickets(
+                        db,
+                        storeId,
+                        session.id,
+                        session,
+                        'refill',
+                        {
+                            itemId: item.refill.refillId,
+                            itemName: item.refill.refillName,
+                            kitchenLocationId: stationId,
+                            kitchenLocationName: item.refill.kitchenLocationName,
+                            billLineId: null,
+                        },
+                        1, // Qty for refill ticket is always 1
+                        actor,
+                        { tx },
+                        finalNotes
+                    );
+                }
+                // Other Refills tickets (grouped by kitchenLocationId)
+                if (hasOtherNow) {
+                    const byStation = new Map<string, { name?: string | null; entries: Array<[string, number]> }>();
+
+                    for (const r of otherRefills) {
+                        const qty = Number(otherQty[r.refillId] || 0);
+                        if (qty <= 0) continue;
+
+                        const stationId = r.kitchenLocationId;
+                        if (!stationId) {
+                            throw new Error(`Other refill "${r.refillName}" is missing an assigned kitchen location.`);
+                        }
+
+                        const bucket = byStation.get(stationId) || { name: r.kitchenLocationName, entries: [] };
+                        bucket.name = bucket.name || r.kitchenLocationName;
+                        bucket.entries.push([r.refillName, qty]);
+                        byStation.set(stationId, bucket);
+                    }
+
+                    for (const [stationId, bucket] of byStation.entries()) {
+                        await createKitchenTickets(
+                            db,
+                            storeId,
+                            session.id,
+                            session,
+                            'refill',
+                            {
+                                itemId: "OTHER_REFILLS",
+                                itemName: "OTHER REFILLS",
+                                kitchenLocationId: stationId,
+                                kitchenLocationName: bucket.name,
+                                billLineId: null,
+                            },
+                            1,
+                            actor,
+                            { tx },
+                            "",
+                            { refillRequest: Object.fromEntries(bucket.entries) }
+                        );
+                    }
+                }
+
+
+            });
+        } else {
+            const batch = writeBatch(db);
+            const offlineTicketPayloads: Array<Record<string, any>> = [];
             for (const item of cart.values()) {
                 const stationId = item.refill.kitchenLocationId;
                 if (!stationId) {
                     throw new Error(`Refill item "${item.refill.refillName}" is missing an assigned kitchen location.`);
                 }
-    
+
                 const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
                 let finalNotes = item.notes.trim();
                 if (selectedFlavorNames.length > 0) {
                     const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
                     finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
                 }
-    
-                await createKitchenTickets(
+
+                const ticketPayload = await createKitchenTickets(
                     db,
                     storeId,
                     session.id,
@@ -256,9 +384,10 @@ function POSContent({
                     },
                     1, // Qty for refill ticket is always 1
                     actor,
-                    { tx },
+                    { batch },
                     finalNotes
                 );
+                if (ticketPayload) offlineTicketPayloads.push(ticketPayload);
             }
             // Other Refills tickets (grouped by kitchenLocationId)
             if (hasOtherNow) {
@@ -280,7 +409,7 @@ function POSContent({
                 }
 
                 for (const [stationId, bucket] of byStation.entries()) {
-                    await createKitchenTickets(
+                    const ticketPayload = await createKitchenTickets(
                         db,
                         storeId,
                         session.id,
@@ -295,18 +424,23 @@ function POSContent({
                         },
                         1,
                         actor,
-                        { tx },
+                        { batch },
                         "",
                         { refillRequest: Object.fromEntries(bucket.entries) }
                     );
+                    if (ticketPayload) offlineTicketPayloads.push(ticketPayload);
                 }
             }
 
+            commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
 
-        });
-        
+            // Fire-and-forget backup print — one per ticket created in this
+            // offline batch. Never awaited into the order flow.
+            printOfflineKitchenTickets(offlineTicketPayloads);
+        }
+
         const refillNames = [...cart.entries()].map(([id, qty]) => `${id} x${qty}`).join(", ");
-        writeActivityLog({ action: "REFILL_ADDED", storeId, sessionId: session.id, user: appUser, note: `Refill ordered: ${refillNames || "other"}`, meta: { qty: cart.size + (hasOther ? 1 : 0) } });
+        writeActivityLog({ action: "REFILL_ADDED", storeId, sessionId: session.id, user: appUser, note: `Refill ordered: ${refillNames || "other"}`, meta: { qty: cart.size + (hasOther ? 1 : 0) }, serverProfile });
         toast({ title: `Sent ${cart.size + (hasOther ? 1 : 0)} refill(s) to the kitchen.` });
         handleReset();
 
@@ -360,8 +494,30 @@ function POSContent({
         const itemName = `REFILL - ${packageName}`;
         
         const actor = getActorStamp(appUser);
-        await runTransaction(db, async (tx) => {
-            await createKitchenTickets(
+        if (isOnline) {
+            await runTransaction(db, async (tx) => {
+                await createKitchenTickets(
+                    db,
+                    storeId,
+                    session.id,
+                    session,
+                    'refill',
+                    {
+                        itemId: "REFILL_PACKAGE_FIRST_ORDER",
+                        itemName: itemName,
+                        kitchenLocationId: first.kitchenLocationId!,
+                        kitchenLocationName: first.kitchenLocationName,
+                        billLineId: null,
+                    },
+                    1,
+                    actor,
+                    { tx },
+                    notes
+                );
+            });
+        } else {
+            const batch = writeBatch(db);
+            const ticketPayload = await createKitchenTickets(
                 db,
                 storeId,
                 session.id,
@@ -376,11 +532,15 @@ function POSContent({
                 },
                 1,
                 actor,
-                { tx },
+                { batch },
                 notes
             );
-        });
-        
+            commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
+
+            // Fire-and-forget backup print. Never awaited into the order flow.
+            if (ticketPayload) printOfflineKitchenTickets([ticketPayload]);
+        }
+
         toast({
             title: "Sent refill ticket to kitchen.",
             description: itemName

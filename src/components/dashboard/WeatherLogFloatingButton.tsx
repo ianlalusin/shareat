@@ -1,12 +1,13 @@
 
 'use client';
 
-import { useState, useEffect } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Sun, Cloudy, CloudRain, CloudLightning, Moon, CloudSun } from "lucide-react";
+import { Sun, Cloudy, CloudRain, CloudLightning, Moon, CloudSun, CalendarDays } from "lucide-react";
 import { db } from "@/lib/firebase/client";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 import { toJsDate } from "@/lib/utils/date";
 import { format } from "date-fns";
@@ -35,21 +36,24 @@ function getWeatherDisplay(condition: string, timestamp?: Date) {
 
 
 export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
+    const router = useRouter();
     const [entries, setEntries] = useState<WeatherEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    useEffect(() => {
+    // One-time read (on mount + whenever the sheet opens) instead of a live
+    // listener — the log doesn't need to be realtime, and the listener would
+    // re-read on every hourly API append for every open device.
+    const loadEntries = useCallback(async () => {
         if (!storeId) {
             setIsLoading(false);
             return;
         }
         setIsLoading(true);
-        const dayId = getDayIdFromTimestamp(new Date());
-        const recordRef = doc(db, 'stores', storeId, 'weatherRecords', dayId);
-
-        const unsubscribe = onSnapshot(recordRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data() as WeatherRecord;
+        try {
+            const dayId = getDayIdFromTimestamp(new Date());
+            const snap = await getDoc(doc(db, 'stores', storeId, 'weatherRecords', dayId));
+            if (snap.exists()) {
+                const data = snap.data() as WeatherRecord;
                 const sortedEntries = (data.entries || []).sort((a, b) => {
                     const timeA = toJsDate(a.timestamp)?.getTime() || 0;
                     const timeB = toJsDate(b.timestamp)?.getTime() || 0;
@@ -59,14 +63,14 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
             } else {
                 setEntries([]);
             }
-            setIsLoading(false);
-        }, (error) => {
+        } catch (error) {
             console.error("Error fetching weather logs:", error);
+        } finally {
             setIsLoading(false);
-        });
-
-        return () => unsubscribe();
+        }
     }, [storeId]);
+
+    useEffect(() => { loadEntries(); }, [loadEntries]);
 
     const latestEntry = entries.length > 0 ? entries[0] : null;
     const latestDisplay = latestEntry ? getWeatherDisplay(latestEntry.condition, toJsDate(latestEntry.timestamp) ?? undefined) : null;
@@ -74,7 +78,7 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
     const btnGradient = latestDisplay?.gradient || "from-gray-400 to-gray-600";
 
     return (
-        <Sheet>
+        <Sheet onOpenChange={(o) => { if (o) loadEntries(); }}>
             <SheetTrigger asChild>
                 <button
                     className={`fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-50 bg-gradient-to-br ${btnGradient} flex items-center justify-center hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-150 border-0 outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary`}
@@ -108,8 +112,14 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                                           <Icon className="h-5 w-5 text-white" strokeWidth={1.8} />
                                       </div>
                                       <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium">{display.label}</p>
-                                          <p className="text-xs text-muted-foreground">{format(entryDate, 'h:mm a')}</p>
+                                          <p className="text-sm font-medium">
+                                              {display.label}
+                                              {entry.tempC != null ? <span className="text-muted-foreground font-normal"> · {entry.tempC}°</span> : null}
+                                          </p>
+                                          <p className="text-xs text-muted-foreground">
+                                              {format(entryDate, 'h:mm a')}
+                                              {entry.loggedByProfileName ? ` · ${entry.loggedByProfileName}` : ""}
+                                          </p>
                                       </div>
                                       <div className={`h-2 w-2 rounded-full ${display.dot} shrink-0`} />
                                   </div>
@@ -118,6 +128,18 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
                       )}
                   </div>
                 </ScrollArea>
+                <div className="border-t pt-3 pr-6">
+                    <SheetClose asChild>
+                        <Button
+                            variant="outline"
+                            className="w-full"
+                            onClick={() => router.push("/weather-calendar")}
+                        >
+                            <CalendarDays className="h-4 w-4 mr-2" />
+                            View calendar
+                        </Button>
+                    </SheetClose>
+                </div>
             </SheetContent>
         </Sheet>
     );

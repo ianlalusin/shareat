@@ -57,3 +57,16 @@ export function formatDurationHuman(ms: number, fallback = ""): string {
   if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
 }
+
+export function formatDurationVerbose(ms: number, fallback = "less than a minute"): string {
+  if (isNaN(ms) || ms <= 0) return fallback;
+  const totalMinutes = Math.floor(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const hPart = hours > 0 ? `${hours} ${hours === 1 ? "hour" : "hours"}` : "";
+  const mPart = minutes > 0 ? `${minutes} ${minutes === 1 ? "minute" : "minutes"}` : "";
+  if (hPart && mPart) return `${hPart} and ${mPart}`;
+  if (hPart) return hPart;
+  if (mPart) return mPart;
+  return fallback;
+}

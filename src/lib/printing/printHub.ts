@@ -1,6 +1,6 @@
 'use client';
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import { webusbPrint } from '@/lib/printing/webusbPrinter';
 
@@ -15,6 +15,10 @@ export type PrintJob = {
   beep?: boolean;
   encoding?: string;
   showLogo?: boolean;
+  /** Logo width as a % of paper width (20-100), from receipt settings. */
+  logoWidthPct?: number;
+  /** Thermal font size bucket: small=Font B, normal=Font A, large=double-height. */
+  font?: 'small' | 'normal' | 'large';
   storeId?: string | null;
 };
 
@@ -40,6 +44,20 @@ const LOGO_URL_PREFIX = 'logoCacheUrl:';
  */
 async function fetchImageAsBase64(url: string): Promise<string | null> {
   try {
+    // Native (Capacitor) build: fetch through the native HTTP client, which is
+    // NOT subject to the WebView's CORS policy. A Storage image read as a blob
+    // via window.fetch otherwise needs a bucket CORS rule (origin
+    // https://localhost) — without it the fetch is blocked and the logo silently
+    // never prints. CapacitorHttp returns the body as base64 for a blob response.
+    if (Capacitor.isNativePlatform()) {
+      const res = await CapacitorHttp.get({ url, responseType: 'blob' });
+      const data = res?.data;
+      if (typeof data === 'string' && data.length > 0) {
+        return data.includes(',') ? data.split(',')[1] : data;
+      }
+      return null;
+    }
+
     const response = await fetch(url);
     if (!response.ok) return null;
     const blob = await response.blob();
@@ -139,12 +157,15 @@ async function resolveLogoBase64(storeId: string): Promise<string | null> {
  * Central print function for native bluetooth (Capacitor).
  * Keep UI pages thin and route all thermal jobs here.
  */
-export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text'>> & PrintJob) {
+export async function printViaNativeBluetooth(
+  job: Required<Pick<PrintJob, 'text'>> & PrintJob,
+  address: string | null = getLastPrinterAddress(),
+) {
   if (!Capacitor.isNativePlatform()) {
     throw new Error('Native Bluetooth printing is only available in the Android app build.');
   }
 
-  const lastAddress = getLastPrinterAddress();
+  const lastAddress = address;
   if (!lastAddress) {
     throw new Error('No printer connected. Please configure printer in Settings.');
   }
@@ -153,33 +174,39 @@ export async function printViaNativeBluetooth(job: Required<Pick<PrintJob, 'text
   let logoPrinted = false;
 
   await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
-
-  // Print logo if enabled — cache → fetch fallback → skip gracefully
-  if (job.showLogo && job.storeId) {
-    try {
-      const base64 = await resolveLogoBase64(job.storeId);
-      if (base64) {
-        await ThermalPrinter.printImage({
-          base64,
-          widthMm,
-          align: 'center',
-        });
-        logoPrinted = true;
+  try {
+    // Print logo if enabled — cache → fetch fallback → skip gracefully
+    if (job.showLogo && job.storeId) {
+      try {
+        const base64 = await resolveLogoBase64(job.storeId);
+        if (base64) {
+          await ThermalPrinter.printImage({
+            base64,
+            widthMm,
+            align: 'center',
+            widthPct: job.logoWidthPct,
+          });
+          logoPrinted = true;
+        }
+      } catch (e) {
+        // Logo print failed — continue with text-only receipt
+        console.warn('Logo print failed, continuing without logo:', e);
       }
-    } catch (e) {
-      // Logo print failed — continue with text-only receipt
-      console.warn('Logo print failed, continuing without logo:', e);
     }
-  }
 
-  await ThermalPrinter.printReceipt({
-    text: job.text,
-    widthMm,
-    cut: job.cut ?? true,
-    beep: job.beep ?? true,
-    encoding: job.encoding ?? 'CP437',
-    skipInit: logoPrinted,
-  });
+    await ThermalPrinter.printReceipt({
+      text: job.text,
+      widthMm,
+      cut: job.cut ?? true,
+      beep: job.beep ?? true,
+      encoding: job.encoding ?? 'CP437',
+      skipInit: logoPrinted,
+      font: job.font,
+    });
+  } finally {
+    // Always release the BT socket so other apps (e.g. GrabFood) can print freely.
+    try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
+  }
 }
 
 

@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc, documentId } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc, documentId, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,8 @@ import { ArrowRight, Check, X, Package, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { writeActivityLog } from "@/components/cashier/activity-log";
+import { recomputeSessionAdjustmentFlags, approveGuestCountChange, type GuestCountApprovalResult } from "@/components/cashier/firestore";
+import { bundleExtraPax } from "@/lib/billing/bundle";
 
 type ChangeRequest = {
   sessionId: string;
@@ -29,7 +31,8 @@ type ChangeRequest = {
   reason: string;
   reasonNote?: string;
   isSessionLocked: boolean;
-  onApprove: () => Promise<void>;
+  packageOfferingId?: string;
+  onApprove: () => Promise<void | GuestCountApprovalResult>;
   onReject: () => Promise<void>;
 };
 
@@ -88,36 +91,17 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             reason: session.guestCountChange.reason,
             reasonNote: session.guestCountChange.reasonNote,
             isSessionLocked: isLocked,
+            packageOfferingId: session.packageOfferingId || undefined,
             onApprove: async () => {
-              const batch = writeBatch(db);
-              const sessionRef = doc(db, "stores", storeId, "sessions", sessionDoc.id);
-              const sessionProjectionRef = doc(db, "stores", storeId, "activeSessions", sessionDoc.id);
-
-              if (session.packageOfferingId) {
-                const packageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageOfferingId}`);
-                batch.update(packageLineRef, {
-                    qtyOrdered: session.guestCountChange.requestedCount,
-                    qtyLastSyncedApprovedAt: session.guestCountChange.requestedAt.toString(),
-                    updatedAt: serverTimestamp(),
-                    updatedByUid: appUser?.uid,
-                    updatedByName: appUser?.displayName || appUser?.name || "System"
-                });
-              }
-
-              batch.update(sessionRef, {
-                guestCountFinal: session.guestCountChange.requestedCount,
-                "guestCountChange.status": "approved",
-                "guestCountChange.approvedByUid": appUser?.uid,
-                "guestCountChange.approvedAt": serverTimestamp(),
+              if (!appUser) throw new Error("Not signed in.");
+              // Reconciles the package line so billable covers == the approved
+              // count, clearing any prior package-cover void (see helper).
+              return approveGuestCountChange({
+                storeId,
+                sessionId: sessionDoc.id,
+                requestedCount: session.guestCountChange.requestedCount,
+                actor: appUser,
               });
-              
-              batch.update(sessionProjectionRef, {
-                guestCountFinal: session.guestCountChange.requestedCount,
-                "guestCountChange.status": "approved",
-                updatedAt: serverTimestamp(),
-              });
-
-              await batch.commit();
             },
             onReject: async () => {
               const batch = writeBatch(db);
@@ -166,14 +150,22 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 const newPackageLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/package_${session.packageChange.requestedPackageId}`);
                 
                 batch.delete(oldPackageLineRef);
-                
+                // Drop any overflow "Extra Pax" line tied to the old package.
+                batch.delete(doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/bundleextra_${session.packageOfferingId}`));
+
+                // Build the new line for the target package type. Bundles bill a
+                // flat unit (qty 1 @ bundlePrice); per-head packages bill
+                // guestCount × pricePerHead.
+                const reqSnap = session.packageChange.requestedPackageSnapshot;
+                const toBundle = !!reqSnap.isBundle;
+
                 batch.set(newPackageLineRef, {
                     id: newPackageLineRef.id,
                     type: 'package',
                     itemId: session.packageChange.requestedPackageId,
-                    itemName: session.packageChange.requestedPackageSnapshot.name,
-                    unitPrice: session.packageChange.requestedPackageSnapshot.pricePerHead,
-                    qtyOrdered: session.guestCountFinal,
+                    itemName: reqSnap.name,
+                    unitPrice: toBundle ? Number(reqSnap.bundlePrice ?? 0) : Number(reqSnap.pricePerHead ?? 0),
+                    qtyOrdered: toBundle ? 1 : session.guestCountFinal,
                     discountType: null,
                     discountValue: 0,
                     discountQty: 0,
@@ -185,12 +177,42 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                     updatedByName: appUser?.displayName || appUser?.name || 'System'
                 });
 
+                // Overflow line for the new bundle when guests exceed its cap.
+                const newExtraPrice = Number(reqSnap.bundleExtraHeadPrice ?? 0);
+                const newCap = Number(reqSnap.bundleMaxCap ?? 0);
+                const newDesiredExtra = bundleExtraPax(session.guestCountFinal ?? 0, newCap);
+                if (toBundle && newExtraPrice > 0 && newDesiredExtra > 0) {
+                    const newExtraLineRef = doc(db, `stores/${storeId}/sessions/${sessionDoc.id}/sessionBillLines/bundleextra_${session.packageChange.requestedPackageId}`);
+                    batch.set(newExtraLineRef, {
+                        id: newExtraLineRef.id,
+                        type: 'addon',
+                        itemId: newExtraLineRef.id,
+                        itemName: `Extra Pax — ${reqSnap.name}`,
+                        category: 'Extra Pax',
+                        unitPrice: newExtraPrice,
+                        qtyOrdered: newDesiredExtra,
+                        discountType: null,
+                        discountValue: 0,
+                        discountQty: 0,
+                        freeQty: 0,
+                        voidedQty: 0,
+                        kitchenLocationId: null,
+                        kitchenLocationName: null,
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                        updatedByUid: appUser?.uid,
+                        updatedByName: appUser?.displayName || appUser?.name || 'System'
+                    });
+                }
+
                 batch.update(sessionRef, {
                     packageOfferingId: session.packageChange.requestedPackageId,
                     packageSnapshot: session.packageChange.requestedPackageSnapshot,
                     "packageChange.status": "approved",
                     "packageChange.approvedByUid": appUser?.uid,
                     "packageChange.approvedAt": serverTimestamp(),
+                    billingRevision: increment(1),
+                    updatedAt: serverTimestamp(),
                 });
                 
                  batch.update(sessionProjectionRef, {
@@ -202,6 +224,11 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                 });
 
                 await batch.commit();
+
+                // Old package line (which may have had voids/free/discounts) was
+                // replaced with a fresh zero-state line. Reconverge the
+                // activeSessions badge flags.
+                await recomputeSessionAdjustmentFlags(storeId, sessionDoc.id);
             },
             onReject: async () => {
               const batch = writeBatch(db);
@@ -236,11 +263,34 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
       toast({ variant: 'destructive', title: 'Action Failed', description: 'This session is already closed and cannot be modified.' });
       return;
     }
-    if (!(await confirm({ title: `Approve this ${req.type} change?`, confirmText: "Yes, Approve", destructive: false }))) return;
+
+    // For a guest-count change, the approved count is the authoritative billable
+    // headcount — any existing package-cover void will be cleared. Warn first.
+    let confirmDescription: string | undefined;
+    if (req.type === 'guest' && req.packageOfferingId) {
+      try {
+        const lineRef = doc(db, "stores", storeId, "sessions", req.sessionId, "sessionBillLines", `package_${req.packageOfferingId}`);
+        const lineSnap = await getDoc(lineRef);
+        const voided = lineSnap.exists() ? (lineSnap.data().voidedQty ?? 0) : 0;
+        if (voided > 0) {
+          confirmDescription = `Table ${req.tableNumber} has ${voided} voided cover${voided === 1 ? '' : 's'}. Approving will bill ${req.requestedValue} cover${Number(req.requestedValue) === 1 ? '' : 's'} and clear the void.`;
+        }
+      } catch {
+        // Fall back to the plain confirmation if the line can't be read.
+      }
+    }
+
+    if (!(await confirm({ title: `Approve this ${req.type} change?`, description: confirmDescription, confirmText: "Yes, Approve", destructive: false }))) return;
     try {
-      await req.onApprove();
+      const approveResult = await req.onApprove();
+      const clearedVoidQty =
+        approveResult && typeof approveResult === 'object' && 'clearedVoidQty' in approveResult
+          ? approveResult.clearedVoidQty
+          : 0;
       const action = req.type === 'guest' ? "GUEST_COUNT_APPROVED" : "PACKAGE_CHANGE_APPROVED";
-      writeActivityLog({ action, storeId, sessionId: req.sessionId, user: appUser!, meta: { beforeQty: Number(req.currentValue) || undefined, afterQty: Number(req.requestedValue) || undefined, itemName: req.type === 'package' ? String(req.requestedValue) : undefined }, note: `${req.type === 'guest' ? 'Guest count' : 'Package'} change approved: ${req.currentValue} → ${req.requestedValue}` });
+      const baseNote = `${req.type === 'guest' ? 'Guest count' : 'Package'} change approved: ${req.currentValue} → ${req.requestedValue}`;
+      const note = clearedVoidQty > 0 ? `${baseNote} (cleared ${clearedVoidQty} prior voided cover${clearedVoidQty === 1 ? '' : 's'})` : baseNote;
+      writeActivityLog({ action, storeId, sessionId: req.sessionId, user: appUser!, meta: { beforeQty: Number(req.currentValue) || undefined, afterQty: Number(req.requestedValue) || undefined, itemName: req.type === 'package' ? String(req.requestedValue) : undefined }, note });
       toast({ title: "Request Approved" });
     } catch (e: any) {
       toast({ variant: 'destructive', title: "Approval Failed", description: e.message });

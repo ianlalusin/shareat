@@ -15,6 +15,11 @@ const DailySaleSchema = z.object({
   netSales: z.number().describe("The total net sales for that day."),
 });
 
+const DayOfWeekAverageSchema = z.object({
+  day: z.string().describe("Day of the week, e.g., 'Monday'."),
+  averageSales: z.number().describe("Average net sales for this day of the week."),
+});
+
 const ForecastInputSchema = z.object({
   historicalSales: z.array(DailySaleSchema).describe("An array of historical daily sales data for the past few weeks."),
   storeLocation: z.string().describe("The location of the store, e.g., 'Manila, Philippines'."),
@@ -24,13 +29,27 @@ const ForecastInputSchema = z.object({
       date: z.string().describe("The date in YYYY-MM-DD format."),
       condition: z.string().describe("A summary of weather conditions for that day, e.g., 'mostly sunny', 'rainy'."),
   })).describe("An array of historical daily weather data.").optional(),
+  forecastWeather: z.array(z.object({
+      date: z.string().describe("The date in YYYY-MM-DD format."),
+      condition: z.string().describe("Whole-day forecasted condition, e.g., 'sunny', 'light rain', 'heavy rain'."),
+      am: z.string().optional().describe("Morning (00:00-12:00) condition."),
+      pm: z.string().optional().describe("Afternoon/evening (12:00-24:00) condition — dinner hours matter most for dine-in."),
+      tempC: z.number().nullable().optional().describe("Average temperature in °C."),
+      popPct: z.number().nullable().optional().describe("Chance of rain, 0-100%."),
+  })).describe("Weather forecast for the upcoming days being projected. Rain — especially in the afternoon/evening — typically lowers dine-in sales.").optional(),
+  weatherSensitivity: z.string().describe("How strongly THIS branch's sales react to rain, measured from its own history. Apply this rather than a generic assumption.").optional(),
   currentWeather: z.string().describe("The current weather condition, e.g., 'Sunny', 'Cloudy', 'Rainy'.").optional(),
+  dayOfWeekAverages: z.array(DayOfWeekAverageSchema).describe("Pre-computed average sales per day of week from historical data.").optional(),
+  trendDirection: z.enum(["up", "down", "flat"]).describe("Whether recent sales are trending up, down, or flat compared to the prior period.").optional(),
+  recentVsHistoricalRatio: z.number().describe("Ratio of last-7-day average to prior-7-day average. >1 means sales are above average.").optional(),
+  storeContext: z.string().describe("Free-text context about the store, e.g., 'near a university, busy during enrollment'.").optional(),
 });
 export type ForecastInput = z.infer<typeof ForecastInputSchema>;
 
 const ForecastedDaySchema = z.object({
     day: z.string().describe("The day of the week for the forecast (e.g., Monday, Tuesday)."),
     forecastedSales: z.number().describe("The forecasted net sales for that day."),
+    confidence: z.enum(["high", "medium", "low"]).describe("Confidence level: 'high' when strong historical patterns exist, 'medium' for moderate certainty, 'low' when data is sparse or unusual factors apply."),
 });
 
 const ForecastOutputSchema = z.object({
@@ -50,19 +69,31 @@ const prompt = ai.definePrompt({
   prompt: `You are a data analyst for a restaurant located in {{{storeLocation}}}. Based on the following information, provide a realistic day-by-day sales forecast for the next 7 days.
 
 Your analysis must consider multiple factors:
-1.  **Historical Data**: Analyze the provided sales data to identify weekly trends, such as higher sales on weekends (Friday, Saturday, Sunday) and lower sales on weekdays.
-2.  **Weather**: The current weather is '{{{currentWeather}}}'. Consider historical weather patterns. Rainy days often lead to lower sales, while sunny days might increase them.
-3.  **Paydays**: Check for any upcoming payroll dates. Sales typically see a significant spike on and immediately after payroll dates.
-4.  **Holidays**: Consider any upcoming local holidays. Some holidays boost sales (e.g., Christmas), while others might decrease them if people leave town.
+1.  **Historical Data**: Analyze the provided sales data to identify weekly trends, such as higher sales on weekends (Friday, Saturday, Sunday) and lower sales on weekdays. Use the pre-computed day-of-week averages as a baseline.
+2.  **Trend**: The recent trend is '{{{trendDirection}}}' with a ratio of {{{recentVsHistoricalRatio}}} (>1 means recent sales are above the prior period average). Factor this momentum into your forecast.
+3.  **Weather**: Use the upcoming forecast per day — afternoon/evening (PM) rain and heavy rain hurt dine-in the most, while clear, mild days lift it. Apply THIS branch's measured rain sensitivity (listed below) instead of a generic rule, and treat heavy-rain or high rain-chance days as higher uncertainty.
+4.  **Paydays**: Check for any upcoming payroll dates. Sales typically see a significant spike on and immediately after payroll dates.
+5.  **Holidays & special occasions**: Each upcoming holiday line may include THIS branch's measured historical lift versus a normal same-weekday (learned from past occurrences here). When a lift figure is given (e.g. "+34% vs a normal Sunday"), apply it to that day instead of guessing; when it says "no measured history yet", treat the day cautiously and lower its confidence. Occasions like Mother's Day, Father's Day, and Valentine's often drive large swings even when they are not non-working holidays.
 
 **Input Data:**
 
 *   **Store Location**: {{{storeLocation}}}
+{{#if storeContext}}
+*   **Store Context**: {{{storeContext}}}
+{{/if}}
 *   **Current Weather**: {{{currentWeather}}}
 *   **Historical Sales**:
 {{#each historicalSales}}
     *   {{date}}: {{netSales}}
 {{/each}}
+*   **Day-of-Week Averages**:
+{{#if dayOfWeekAverages}}
+{{#each dayOfWeekAverages}}
+    *   {{day}}: {{averageSales}}
+{{/each}}
+{{else}}
+    *   Not available.
+{{/if}}
 *   **Historical Weather**:
 {{#if historicalWeather}}
 {{#each historicalWeather}}
@@ -71,7 +102,18 @@ Your analysis must consider multiple factors:
 {{else}}
     *   No historical weather data available.
 {{/if}}
-*   **Upcoming Payroll Dates**: 
+*   **Upcoming Weather Forecast** (for the days you are projecting):
+{{#if forecastWeather}}
+{{#each forecastWeather}}
+    *   {{date}}: {{condition}} — AM {{am}}, PM {{pm}}{{#if tempC}}, ~{{tempC}}°C{{/if}}{{#if popPct}}, {{popPct}}% rain{{/if}}
+{{/each}}
+{{else}}
+    *   No forecast weather available.
+{{/if}}
+{{#if weatherSensitivity}}
+*   **This branch's rain sensitivity**: {{weatherSensitivity}}
+{{/if}}
+*   **Upcoming Payroll Dates**:
 {{#if upcomingPayrollDates}}
 {{#each upcomingPayrollDates}}
     *   {{{this}}}
@@ -79,7 +121,7 @@ Your analysis must consider multiple factors:
 {{else}}
     *   None specified.
 {{/if}}
-*   **Upcoming Holidays**: 
+*   **Upcoming Holidays**:
 {{#if upcomingHolidays}}
 {{#each upcomingHolidays}}
     *   {{{this}}}
@@ -88,7 +130,7 @@ Your analysis must consider multiple factors:
     *   None specified.
 {{/if}}
 
-Provide the forecast for the next week, starting from tomorrow. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday") and a 'forecastedSales' property. Do not include any other text or reasoning in your response.
+Provide the forecast for the next 7 days, starting from today. The output must be a JSON object containing a 'forecast' array with exactly 7 objects, each with a 'day' (e.g., "Monday"), a 'forecastedSales' property, and a 'confidence' property ('high', 'medium', or 'low'). Set confidence to 'high' when the day has strong consistent patterns, 'medium' for moderate certainty, and 'low' when data is sparse or unusual factors (holidays, a heavy-rain or high rain-chance forecast, big weather swings) introduce uncertainty. Do not include any other text or reasoning in your response.
 `,
 });
 

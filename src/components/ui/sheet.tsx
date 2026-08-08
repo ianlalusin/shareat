@@ -32,7 +32,11 @@ const SheetOverlay = React.forwardRef<
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
 const sheetVariants = cva(
-  "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
+  // max-h + overflow-y-auto so tall sheet content scrolls instead of
+  // overflowing the viewport. The left/right variants are h-full, so without
+  // this their content simply runs off the bottom with no way to reach it.
+  // Consumers override via tailwind-merge.
+  "fixed z-50 gap-4 max-h-[100dvh] overflow-y-auto bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
   {
     variants: {
       side: {

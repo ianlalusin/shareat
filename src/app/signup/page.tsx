@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, User } from 'firebase/auth';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,10 +41,13 @@ export default function SignupPage() {
   const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   useEffect(() => {
-    // If user is logged in and needs to create a profile, open the modal.
-    const signupFlow = typeof window !== "undefined" && sessionStorage.getItem("signup_flow") === "1";
-    if (firebaseUser && (appUser?.status === 'needs_profile' || signupFlow)) {
-      sessionStorage.setItem("signup_flow", "1");
+    // Only pull a signed-in user into the profile-creation modal when they
+    // GENUINELY have no staff doc yet (needs_profile). This previously also
+    // fired on a sticky `signup_flow` sessionStorage flag, which re-opened the
+    // (overwriting) modal for fully-provisioned users — including admins — who
+    // merely landed on /signup, and demoted them on submit. Gate strictly on
+    // the real no-doc state.
+    if (firebaseUser && appUser?.status === 'needs_profile') {
       setCreatedUser(firebaseUser);
       setIsDetailsModalOpen(true);
     }
@@ -53,6 +56,10 @@ export default function SignupPage() {
 
   async function handleAccountCreation(e: React.FormEvent) {
     e.preventDefault();
+    if (password.length < 8) {
+      setAccountError("Password must be at least 8 characters.");
+      return;
+    }
     if (password !== confirmPassword) {
       setAccountError("Passwords do not match.");
       return;
@@ -62,7 +69,6 @@ export default function SignupPage() {
 
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      sessionStorage.setItem("signup_flow", "1");
       setCreatedUser(userCredential.user);
       setIsDetailsModalOpen(true);
     } catch (err: any) {
@@ -89,6 +95,23 @@ export default function SignupPage() {
 
     try {
       const userDocRef = doc(db, "staff", createdUser.uid);
+
+      // Never overwrite an existing profile. This self-signup flow is strictly
+      // for brand-new accounts with no staff doc. If a doc already exists (e.g.
+      // a provisioned admin who transiently bounced through /signup), a full
+      // setDoc here would demote them to pending/server and wipe store access —
+      // the admin-lockout bug. Bail out and send them home instead.
+      const existing = await getDoc(userDocRef);
+      if (existing.exists()) {
+        setIsDetailsModalOpen(false);
+        toast({
+          title: "You already have an account",
+          description: "Taking you to your home page.",
+        });
+        router.replace("/");
+        return;
+      }
+
       await setDoc(userDocRef, {
         staffId: createdUser.uid,
         email: createdUser.email,
@@ -101,8 +124,7 @@ export default function SignupPage() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      
-      sessionStorage.removeItem("signup_flow");
+
       router.push("/pending");
 
     } catch (err: any) {

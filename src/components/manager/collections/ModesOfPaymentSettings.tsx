@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { ModeOfPaymentEditDialog } from "./ModeOfPaymentEditDialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { rebuildStoreConfig } from "@/lib/manager/dataManagement";
 import type { Store, ModeOfPayment } from "@/lib/types";
 
 export function ModesOfPaymentSettings({ store }: { store: Store }) {
@@ -58,6 +59,17 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
     return () => unsubscribe();
   }, [store?.id, toast, isSigningOut, appUser]);
 
+  // The cashier reads modes of payment from the denormalized storeConfig/current cache,
+  // so any create/edit/enable/disable/archive must rebuild it or the change never reaches
+  // the POS. Mirrors the packages/discounts/charges settings flows.
+  const syncConfigCache = async () => {
+    try {
+      await rebuildStoreConfig(db, store.id);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "POS cache not refreshed", description: "Saved, but the POS config cache didn't rebuild. Run Data Management → Rebuild." });
+    }
+  };
+
   const handleOpenDialog = (mode: ModeOfPayment | null = null) => {
     setEditingMode(mode);
     setIsDialogOpen(true);
@@ -92,6 +104,7 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
         await updateDoc(docRef, { ...data, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
         toast({ title: "Mode of Payment Updated" });
       }
+      await syncConfigCache();
       setIsDialogOpen(false);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Save Failed", description: error.message });
@@ -107,6 +120,7 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
 
     const docRef = doc(db, "stores", store.id, "storeModesOfPayment", mode.id);
     await updateDoc(docRef, { isActive: newStatus, updatedBy: appUser.uid, updatedAt: serverTimestamp() });
+    await syncConfigCache();
     toast({ title: "Status Updated" });
   };
 
@@ -125,8 +139,9 @@ export function ModesOfPaymentSettings({ store }: { store: Store }) {
       archivedAt: serverTimestamp(),
       archivedBy: appUser.uid,
       updatedBy: appUser.uid, 
-      updatedAt: serverTimestamp() 
+      updatedAt: serverTimestamp()
     });
+    await syncConfigCache();
     toast({ title: "Mode Archived" });
   };
 

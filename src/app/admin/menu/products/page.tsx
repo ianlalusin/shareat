@@ -13,15 +13,20 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle, RefreshCw, Archive, ArchiveRestore } from "lucide-react";
+import { getAuth } from "firebase/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { ProductEditDialog, type ProductFormValues } from "@/components/admin/product-edit-dialog";
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
+import { ProductMergeDialog } from "@/components/admin/product-merge-dialog";
 import { slugify } from "@/lib/utils/slugify";
 import type { Product } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
 import { getKind, getDisplayName } from "@/lib/products/variants";
+import { scheduleStorefrontAutoPublish, publishStorefrontNow, getStorefrontStoreId, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { read, utils } from "xlsx";
 import { ProductImportPreviewDialog } from "@/components/admin/product-import-preview-dialog";
@@ -49,6 +54,62 @@ export default function ProductManagementPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
+  // Multi-row selection + merge state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+
+  // Collapsed sub-category headers. Persisted to localStorage so closing a
+  // section stays closed across reloads. Defaults to all expanded.
+  const COLLAPSED_KEY = "adminProductsCollapsedSubCategories";
+  const [collapsedSubCategories, setCollapsedSubCategories] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(COLLAPSED_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? new Set<string>(arr) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleSubCategoryCollapsed = (subCategory: string) => {
+    setCollapsedSubCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(subCategory)) next.delete(subCategory);
+      else next.add(subCategory);
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (id: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectedProducts = useMemo(
+    () => products.filter((p) => selectedIds.has(p.id)),
+    [products, selectedIds]
+  );
+
   useEffect(() => {
     if (!appUser) return;
 
@@ -66,7 +127,7 @@ export default function ProductManagementPage() {
     return () => unsubscribe();
   }, [appUser, toast]);
 
-  const groupedAndSortedProducts = useMemo(() => {
+  const { groupedAndSortedProducts, archivedRows } = useMemo(() => {
     const filteredProducts = debouncedSearchTerm
       ? products.filter(p =>
           getDisplayName(p).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
@@ -74,28 +135,105 @@ export default function ProductManagementPage() {
         )
       : products;
 
-    const grouped = filteredProducts.reduce((acc, product) => {
-      const subCategory = product.subCategory || 'Uncategorized';
+    // Split archived from live FIRST. Archived items live in their own section
+    // pinned to the bottom of the page; live items go through the normal
+    // sub-category + family grouping below.
+    const liveProducts = filteredProducts.filter((p) => p.isArchived !== true);
+    const archivedProducts = filteredProducts.filter((p) => p.isArchived === true);
 
-      if (!acc[subCategory]) {
-        acc[subCategory] = [];
+    // ---- Live partitioning -------------------------------------------------
+    // Partition into families. Variants whose parent isn't in the live set
+    // (filtered out, missing, or archived) become "orphans" rendered flat with
+    // a warning.
+    const liveIds = new Set(liveProducts.map((p) => p.id));
+    const variantsByGroupId = new Map<string, Product[]>();
+    for (const p of liveProducts) {
+      if (getKind(p) === "variant" && p.groupId) {
+        const arr = variantsByGroupId.get(p.groupId) || [];
+        arr.push(p);
+        variantsByGroupId.set(p.groupId, arr);
       }
-      acc[subCategory].push(product);
-      return acc;
-    }, {} as Record<string, Product[]>);
-
-    // Sort products within each sub-category
-    for (const subCategory in grouped) {
-        grouped[subCategory].sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
     }
-    
-    // Sort subcategories
-    return Object.keys(grouped).sort().reduce((acc, subCategory) => {
-        acc[subCategory] = grouped[subCategory];
-        return acc;
-    }, {} as Record<string, Product[]>);
 
+    type TopLevelRow =
+      | { kind: "group"; product: Product; variants: Product[] }
+      | { kind: "single"; product: Product }
+      | { kind: "orphan"; product: Product };
+
+    const topLevel: TopLevelRow[] = [];
+    for (const p of liveProducts) {
+      const k = getKind(p);
+      if (k === "group") {
+        const variants = (variantsByGroupId.get(p.id) || []).slice().sort((a, b) =>
+          getDisplayName(a).localeCompare(getDisplayName(b))
+        );
+        topLevel.push({ kind: "group", product: p, variants });
+      } else if (k === "single") {
+        topLevel.push({ kind: "single", product: p });
+      } else if (k === "variant") {
+        const parentVisible = p.groupId && liveIds.has(p.groupId);
+        if (!parentVisible) {
+          topLevel.push({ kind: "orphan", product: p });
+        }
+      }
+    }
+
+    const grouped = topLevel.reduce((acc, row) => {
+      const subCategory = row.product.subCategory || 'Uncategorized';
+      if (!acc[subCategory]) acc[subCategory] = [];
+      acc[subCategory].push(row);
+      return acc;
+    }, {} as Record<string, TopLevelRow[]>);
+
+    for (const subCategory in grouped) {
+      grouped[subCategory].sort((a, b) =>
+        getDisplayName(a.product).localeCompare(getDisplayName(b.product))
+      );
+    }
+
+    const sortedGrouped = Object.keys(grouped).sort().reduce((acc, subCategory) => {
+      acc[subCategory] = grouped[subCategory];
+      return acc;
+    }, {} as Record<string, TopLevelRow[]>);
+
+    // ---- Archived rows (pinned bottom) -------------------------------------
+    // Family parents render with their archived variants nested; archived
+    // variants whose parent isn't archived render flat in the archived list.
+    const archivedById = new Set(archivedProducts.map((p) => p.id));
+    const archivedVariantsByGroup = new Map<string, Product[]>();
+    for (const p of archivedProducts) {
+      if (getKind(p) === "variant" && p.groupId) {
+        const arr = archivedVariantsByGroup.get(p.groupId) || [];
+        arr.push(p);
+        archivedVariantsByGroup.set(p.groupId, arr);
+      }
+    }
+    const archivedTopLevel: TopLevelRow[] = [];
+    for (const p of archivedProducts) {
+      const k = getKind(p);
+      if (k === "group") {
+        const variants = (archivedVariantsByGroup.get(p.id) || []).slice().sort((a, b) =>
+          getDisplayName(a).localeCompare(getDisplayName(b))
+        );
+        archivedTopLevel.push({ kind: "group", product: p, variants });
+      } else if (k === "single") {
+        archivedTopLevel.push({ kind: "single", product: p });
+      } else if (k === "variant") {
+        const parentAlsoArchived = p.groupId && archivedById.has(p.groupId);
+        if (!parentAlsoArchived) archivedTopLevel.push({ kind: "orphan", product: p });
+      }
+    }
+    archivedTopLevel.sort((a, b) =>
+      getDisplayName(a.product).localeCompare(getDisplayName(b.product))
+    );
+
+    return { groupedAndSortedProducts: sortedGrouped, archivedRows: archivedTopLevel };
   }, [products, debouncedSearchTerm]);
+
+  type TopLevelRow =
+    | { kind: "group"; product: Product; variants: Product[] }
+    | { kind: "single"; product: Product }
+    | { kind: "orphan"; product: Product };
 
 
   const handleOpenDialog = (product: Product | null = null) => {
@@ -114,17 +252,27 @@ export default function ProductManagementPage() {
     
     const { imageFile, ...productData } = formData;
 
-    // Normalize data to ensure required fields are present
+    // Normalize data to ensure required fields are present.
+    // Family/group products don't carry their own variant label, UOM, or barcode —
+    // those live on each child variant SKU. We force them blank to avoid stale
+    // data lingering on a product that was just toggled into group mode.
+    const isGroup = productData.hasVariants;
+    const optionGroupIds = Array.isArray((productData as any).optionGroupIds)
+      ? ((productData as any).optionGroupIds as string[]).filter((v) => typeof v === "string" && v.length > 0)
+      : [];
     const dataToSave: Partial<Product> = {
         name: productData.name,
         isActive: productData.isActive,
-        variant: productData.variant || "",
-        uom: productData.uom || "pcs",
-        barcode: productData.barcode || "",
+        variant: isGroup ? "" : (productData.variant || ""),
+        description: (productData as any).description || "",
+        uom: isGroup ? "pcs" : (productData.uom || "pcs"),
+        barcode: isGroup ? "" : (productData.barcode || ""),
         category: "Add-on", // Default category
         subCategory: productData.subCategory || "Uncategorized",
-        kind: productData.hasVariants ? "group" : "single",
-        isSku: !productData.hasVariants,
+        kind: isGroup ? "group" : "single",
+        isSku: !isGroup,
+        showOnStorefront: !!(productData as any).showOnStorefront,
+        optionGroupIds,
     };
 
     try {
@@ -184,7 +332,13 @@ export default function ProductManagementPage() {
             
             toast({ title: "Product Created" });
         }
-        
+
+        // Auto-publish the storefront if this save affects it: the product was on
+        // the storefront before (edits/turn-off) or is on it now (turn-on/create).
+        const wasOnStorefront = !!(editingProduct as any)?.showOnStorefront;
+        const nowOnStorefront = !!dataToSave.showOnStorefront;
+        if (wasOnStorefront || nowOnStorefront) autoPublishStorefront();
+
         handleCloseDialog();
     } catch (error: any) {
         toast({ variant: "destructive", title: "Save Failed", description: error.message });
@@ -231,49 +385,173 @@ export default function ProductManagementPage() {
     handleOpenDialog(product);
   };
   
+  /**
+   * Soft-archive a product (and cascade to its variants when it's a family
+   * parent). Auto-deactivates so the cashier inventory picker stops surfacing
+   * it. Archived products move into the pinned "Archived" group at the bottom
+   * of the page and can be restored from there.
+   */
   const handleDeleteProduct = async (product: Product) => {
-    // This is the key change: ensure the details modal is closed
-    // so its overlay doesn't interfere with the confirmation dialog.
     setSelectedProduct(null);
-    
+
     if (!appUser?.isPlatformAdmin) {
       toast({ variant: "destructive", title: "Permission Denied" });
       return;
     }
-    
-    const isGroup = getKind(product) === 'group';
+
+    const isGroup = getKind(product) === "group";
     const confirmed = await confirm({
-      title: `Permanently Delete ${getDisplayName(product)}?`,
-      description: isGroup 
-        ? "This action is irreversible and will also delete all of its variants. This cannot be undone."
-        : "This action is irreversible and cannot be undone.",
-      confirmText: "Yes, Delete Permanently",
+      title: `Archive ${getDisplayName(product)}?`,
+      description: isGroup
+        ? "The family and all of its variants will be archived and deactivated. They'll move to the Archived section at the bottom of the page. You can restore them from there."
+        : "This product will be archived and deactivated. It will move to the Archived section at the bottom of the page. You can restore it from there.",
+      confirmText: "Archive",
       destructive: true,
     });
-  
+
     if (!confirmed) return;
-  
+
     setIsSubmitting(true);
     try {
       const batch = writeBatch(db);
-  
+
       if (isGroup) {
         const variantsQuery = query(collection(db, "products"), where("groupId", "==", product.id));
         const variantsSnap = await getDocs(variantsQuery);
-        variantsSnap.forEach(doc => batch.delete(doc.ref));
+        variantsSnap.forEach((d) =>
+          batch.update(d.ref, { isArchived: true, isActive: false, updatedAt: serverTimestamp() })
+        );
       }
-  
-      batch.delete(doc(db, "products", product.id));
-      
+
+      batch.update(doc(db, "products", product.id), {
+        isArchived: true,
+        isActive: false,
+        updatedAt: serverTimestamp(),
+      });
+
       await batch.commit();
-      
-      toast({ title: "Product Deleted", description: `${getDisplayName(product)} and its data have been removed.` });
+
+      toast({
+        title: "Archived",
+        description: `${getDisplayName(product)} ${isGroup ? "and its variants " : ""}moved to Archived.`,
+      });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Delete Failed", description: error.message });
+      toast({ variant: "destructive", title: "Archive Failed", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  /**
+   * Restore a previously-archived product. Does NOT auto-reactivate — operator
+   * decides when to flip isActive back on, in case the item shouldn't go live
+   * the moment it's unarchived.
+   */
+  const handleRestoreProduct = async (product: Product) => {
+    if (!appUser?.isPlatformAdmin) {
+      toast({ variant: "destructive", title: "Permission Denied" });
+      return;
+    }
+    const isGroup = getKind(product) === "group";
+    setIsSubmitting(true);
+    try {
+      const batch = writeBatch(db);
+      if (isGroup) {
+        const variantsQuery = query(collection(db, "products"), where("groupId", "==", product.id));
+        const variantsSnap = await getDocs(variantsQuery);
+        variantsSnap.forEach((d) =>
+          batch.update(d.ref, { isArchived: false, updatedAt: serverTimestamp() })
+        );
+      }
+      batch.update(doc(db, "products", product.id), {
+        isArchived: false,
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      toast({
+        title: "Restored",
+        description: `${getDisplayName(product)} restored. Activate it manually when ready.`,
+      });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Restore Failed", description: error.message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+    const [isSyncingInventory, setIsSyncingInventory] = useState(false);
+
+    const handleSyncInventoryMetadata = async () => {
+        if (isSyncingInventory) return;
+        setIsSyncingInventory(true);
+        try {
+            const user = getAuth().currentUser;
+            if (!user) throw new Error("Not signed in.");
+            const idToken = await user.getIdToken();
+            const res = await fetch("/api/admin/products/sync-inventory-from-products", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json?.ok) throw new Error(json?.error || `Sync failed (${res.status})`);
+            toast({
+                title: "Inventory synced",
+                description: `Updated ${json.inventoryUpdated} inventory row${json.inventoryUpdated === 1 ? "" : "s"} across ${json.storesScanned} store${json.storesScanned === 1 ? "" : "s"}.`,
+            });
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "Sync failed", description: e?.message });
+        } finally {
+            setIsSyncingInventory(false);
+        }
+    };
+
+    // Publish the public website storefront catalog snapshot (shareat.net/shop).
+    // The snapshot is rebuilt after toggling "Show on online store", saving an
+    // on-storefront product/variant, or editing the pilot store's inventory.
+    // Debounce + overlap handling live in the shared helper (one source of truth,
+    // also used by /manager/inventory). Targets the pilot store
+    // (NEXT_PUBLIC_STOREFRONT_STORE_ID).
+    const [isRebuildingStorefront, setIsRebuildingStorefront] = useState(false);
+
+    const notifyAutoPublish = (r: StorefrontPublishResult) => {
+        if (r.ok) toast({ title: "Storefront updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the website.` });
+        else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
+    };
+    const autoPublishStorefront = () => scheduleStorefrontAutoPublish(getStorefrontStoreId(), notifyAutoPublish);
+
+    // Manual "Rebuild Storefront" button — immediate, with loud config error.
+    const handleRebuildStorefront = async () => {
+        if (isRebuildingStorefront) return;
+        const storeId = getStorefrontStoreId();
+        if (!storeId) {
+            toast({ variant: "destructive", title: "Storefront store not configured", description: "Set NEXT_PUBLIC_STOREFRONT_STORE_ID to the pilot store id." });
+            return;
+        }
+        setIsRebuildingStorefront(true);
+        await publishStorefrontNow(storeId, (r) => {
+            if (r.ok) toast({ title: "Storefront catalog rebuilt", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} now live on the website.` });
+            else toast({ variant: "destructive", title: "Rebuild failed", description: r.error });
+        });
+        setIsRebuildingStorefront(false);
+    };
+
+    // Row-level quick toggle for "Show on online store". Optimistic + per-id
+    // in-flight guard (no confirm dialog — this is the fast path). A successful
+    // flip schedules a debounced auto-publish so the live site updates itself.
+    const [storefrontPending, setStorefrontPending] = useState<Set<string>>(new Set());
+    const handleToggleStorefront = async (p: Product, next: boolean) => {
+        if (!appUser || storefrontPending.has(p.id)) return;
+        setStorefrontPending((prev) => new Set(prev).add(p.id));
+        try {
+            await updateDoc(doc(db, "products", p.id), { showOnStorefront: next, updatedAt: serverTimestamp() });
+            autoPublishStorefront();
+        } catch (e: any) {
+            toast({ variant: "destructive", title: "Update failed", description: e?.message });
+        } finally {
+            setStorefrontPending((prev) => { const n = new Set(prev); n.delete(p.id); return n; });
+        }
+    };
 
     const handleExportTemplate = () => {
         const headers = ["name", "variantLabel", "uom", "category", "subCategory", "barcode", "isActive"];
@@ -369,9 +647,25 @@ export default function ProductManagementPage() {
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Product Management" description="Manage all global products available in the system.">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" onClick={() => router.back()}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            {selectedIds.size >= 2 && (
+              <Button onClick={() => setMergeDialogOpen(true)}>
+                <GitMerge className="mr-2 h-4 w-4" /> Merge Selected ({selectedIds.size})
+              </Button>
+            )}
+            {selectedIds.size > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Clear selection
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleSyncInventoryMetadata} disabled={isSyncingInventory} title="Push the latest family / variant info from the products catalog into every store's inventory">
+                {isSyncingInventory ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Sync Inventory
+            </Button>
+            <Button variant="outline" onClick={handleRebuildStorefront} disabled={isRebuildingStorefront} title="Rebuild the public website (shareat.net/shop) catalog from products toggled 'Show on online store'">
+                {isRebuildingStorefront ? <Loader className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />} Rebuild Storefront
             </Button>
             <Button variant="outline" onClick={handleExportTemplate}><Download className="mr-2"/> Export Template</Button>
             <Button onClick={() => fileInputRef.current?.click()}><Upload className="mr-2"/> Import Products</Button>
@@ -404,64 +698,360 @@ export default function ProductManagementPage() {
             <div className="flex justify-center items-center h-40">
               <Loader className="animate-spin" />
             </div>
-          ) : Object.keys(groupedAndSortedProducts).length > 0 ? (
+          ) : Object.keys(groupedAndSortedProducts).length > 0 || archivedRows.length > 0 ? (
             <Table>
-                {Object.entries(groupedAndSortedProducts).map(([subCategory, items]) => (
+                {Object.entries(groupedAndSortedProducts).map(([subCategory, rows]) => {
+                  const isCollapsed = collapsedSubCategories.has(subCategory);
+                  return (
                     <React.Fragment key={subCategory}>
                         <TableHeader className="bg-muted/50">
-                            <TableRow>
-                                <TableHead colSpan={6} className="text-lg font-semibold text-foreground">
-                                    {subCategory}
+                            <TableRow
+                                onClick={() => toggleSubCategoryCollapsed(subCategory)}
+                                className="cursor-pointer hover:bg-muted/70"
+                            >
+                                <TableHead colSpan={9} className="text-lg font-semibold text-foreground">
+                                    <div className="flex items-center gap-2">
+                                        {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                        <span>{subCategory}</span>
+                                        <Badge variant="secondary" className="text-xs">{rows.length}</Badge>
+                                    </div>
                                 </TableHead>
                             </TableRow>
-                            <TableRow>
+                            {!isCollapsed && (
+                              <TableRow>
+                                <TableHead className="w-10"></TableHead>
+                                <TableHead className="w-10"></TableHead>
                                 <TableHead>Image</TableHead>
                                 <TableHead>Product Name</TableHead>
                                 <TableHead>UOM</TableHead>
                                 <TableHead>Barcode</TableHead>
                                 <TableHead>Status</TableHead>
+                                <TableHead className="text-center">Online</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
-                            </TableRow>
+                              </TableRow>
+                            )}
                         </TableHeader>
+                         {!isCollapsed && (
                          <TableBody>
-                            {items.map((product) => (
-                                <TableRow key={product.id} onClick={() => setSelectedProduct(product)} className="cursor-pointer">
-                                    <TableCell>
-                                        <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
-                                            {product.imageUrl ? (
-                                                <Image src={product.imageUrl} alt={product.name} fill style={{objectFit:"cover"}} className="rounded-md" />
-                                            ) : (
-                                                <Package className="h-6 w-6 text-muted-foreground"/>
+                            {rows.map((row) => {
+                                const p = row.product;
+                                const isGroup = row.kind === "group";
+                                const isOrphan = row.kind === "orphan";
+                                const expanded = expandedGroupIds.has(p.id);
+                                return (
+                                  <React.Fragment key={p.id}>
+                                    <TableRow onClick={() => setSelectedProduct(p)} className="cursor-pointer">
+                                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                            {!isGroup && (
+                                              <Checkbox
+                                                checked={selectedIds.has(p.id)}
+                                                onCheckedChange={() => toggleSelected(p.id)}
+                                                aria-label={`Select ${getDisplayName(p)}`}
+                                              />
                                             )}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="font-medium">{getDisplayName(product)}</TableCell>
-                                    <TableCell>{product.uom}</TableCell>
-                                    <TableCell>{product.barcode || '—'}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={product.isActive ? "default" : "secondary"}>
-                                            {product.isActive ? "Active" : "Inactive"}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                    <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(product); }} className="mr-2">
-                                        Edit
-                                    </Button>
-                                    <Button
-                                        variant={product.isActive ? "secondary" : "default"}
-                                        size="sm"
-                                        onClick={(e) => { e.stopPropagation(); handleToggleActive(product);}}
-                                        disabled={isSubmitting}
-                                    >
-                                        {product.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
-                                        {product.isActive ? "Deactivate" : "Activate"}
-                                    </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                        </TableCell>
+                                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                            {isGroup ? (
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => toggleExpanded(p.id)}
+                                                aria-label={expanded ? "Collapse family" : "Expand family"}
+                                              >
+                                                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                              </Button>
+                                            ) : null}
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
+                                                {p.imageUrl ? (
+                                                    <Image src={p.imageUrl} alt={p.name} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                                ) : (
+                                                    <Package className="h-6 w-6 text-muted-foreground"/>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="font-medium">
+                                            <div className="flex items-center gap-2">
+                                                <span>{getDisplayName(p)}</span>
+                                                {isGroup && (
+                                                  <Badge variant="outline" className="text-xs">Family · {row.variants.length}</Badge>
+                                                )}
+                                                {isOrphan && (
+                                                  <Badge variant="destructive" className="text-xs gap-1">
+                                                    <AlertTriangle className="h-3 w-3" /> Orphan variant
+                                                  </Badge>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>{p.uom}</TableCell>
+                                        <TableCell>{p.barcode || '—'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={p.isActive ? "default" : "secondary"}>
+                                                {p.isActive ? "Active" : "Inactive"}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                                            {!isOrphan ? (
+                                              <Switch
+                                                checked={!!(p as any).showOnStorefront}
+                                                onCheckedChange={(v) => handleToggleStorefront(p, v)}
+                                                disabled={storefrontPending.has(p.id)}
+                                                aria-label={`Show ${getDisplayName(p)} on online store`}
+                                                title={isGroup ? "Show this family on the online store (variants inherit)" : "Show on the online store"}
+                                              />
+                                            ) : (
+                                              <span className="text-xs text-muted-foreground">—</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(p); }} className="mr-2">
+                                                Edit
+                                            </Button>
+                                            {!isGroup && (
+                                              <Button
+                                                  variant={p.isActive ? "secondary" : "default"}
+                                                  size="sm"
+                                                  onClick={(e) => { e.stopPropagation(); handleToggleActive(p);}}
+                                                  disabled={isSubmitting}
+                                                  className="mr-2"
+                                              >
+                                                  {p.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
+                                                  {p.isActive ? "Deactivate" : "Activate"}
+                                              </Button>
+                                            )}
+                                            {appUser?.isPlatformAdmin && (
+                                              <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={(e) => { e.stopPropagation(); handleDeleteProduct(p); }}
+                                                  disabled={isSubmitting}
+                                                  title={isGroup ? "Archive family and all variants" : "Archive product"}
+                                              >
+                                                  <Archive className="mr-2 h-4 w-4" /> Archive
+                                              </Button>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+                                    {isGroup && expanded && row.variants.map((v) => (
+                                      <TableRow key={v.id} onClick={() => setSelectedProduct(v)} className="cursor-pointer bg-muted/20">
+                                        <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                            <Checkbox
+                                              checked={selectedIds.has(v.id)}
+                                              onCheckedChange={() => toggleSelected(v.id)}
+                                              aria-label={`Select ${getDisplayName(v)}`}
+                                            />
+                                        </TableCell>
+                                        <TableCell className="w-10"></TableCell>
+                                        <TableCell>
+                                            <div className="ml-6 w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
+                                                {v.imageUrl ? (
+                                                    <Image src={v.imageUrl} alt={v.name} fill style={{objectFit:"cover"}} className="rounded-md" />
+                                                ) : (
+                                                    <Package className="h-5 w-5 text-muted-foreground"/>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="font-medium pl-6 text-sm">
+                                            ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                        </TableCell>
+                                        <TableCell>{v.uom}</TableCell>
+                                        <TableCell>{v.barcode || '—'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={v.isActive ? "default" : "secondary"}>
+                                                {v.isActive ? "Active" : "Inactive"}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                            <span className="text-xs text-muted-foreground" title="Controlled by the family">inherits</span>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(v); }} className="mr-2">Edit</Button>
+                                            <Button
+                                                variant={v.isActive ? "secondary" : "default"}
+                                                size="sm"
+                                                onClick={(e) => { e.stopPropagation(); handleToggleActive(v);}}
+                                                disabled={isSubmitting}
+                                                className="mr-2"
+                                            >
+                                                {v.isActive ? <PowerOff className="mr-2"/> : <Power className="mr-2" />}
+                                                {v.isActive ? "Deactivate" : "Activate"}
+                                            </Button>
+                                            {appUser?.isPlatformAdmin && (
+                                              <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={(e) => { e.stopPropagation(); handleDeleteProduct(v); }}
+                                                  disabled={isSubmitting}
+                                                  title="Archive this variant"
+                                              >
+                                                  <Archive className="mr-2 h-4 w-4" /> Archive
+                                              </Button>
+                                            )}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </React.Fragment>
+                                );
+                            })}
                         </TableBody>
+                         )}
                     </React.Fragment>
-                ))}
+                  );
+                })}
+                {archivedRows.length > 0 && (() => {
+                  const archivedCollapsed = collapsedSubCategories.has("__archived__");
+                  return (
+                  <React.Fragment key="__archived__">
+                    <TableHeader className="bg-muted/40">
+                      <TableRow
+                        onClick={() => toggleSubCategoryCollapsed("__archived__")}
+                        className="cursor-pointer hover:bg-muted/60"
+                      >
+                        <TableHead colSpan={9} className="text-lg font-semibold text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            {archivedCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            <Archive className="h-4 w-4" />
+                            Archived
+                            <Badge variant="secondary" className="text-xs">{archivedRows.length}</Badge>
+                          </div>
+                        </TableHead>
+                      </TableRow>
+                      {!archivedCollapsed && (
+                        <TableRow>
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead className="w-10"></TableHead>
+                          <TableHead>Image</TableHead>
+                          <TableHead>Product Name</TableHead>
+                          <TableHead>UOM</TableHead>
+                          <TableHead>Barcode</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-center">Online</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      )}
+                    </TableHeader>
+                    {!archivedCollapsed && (
+                    <TableBody>
+                      {archivedRows.map((row) => {
+                        const p = row.product;
+                        const isGroup = row.kind === "group";
+                        const isOrphan = row.kind === "orphan";
+                        const expanded = expandedGroupIds.has(p.id);
+                        return (
+                          <React.Fragment key={p.id}>
+                            <TableRow onClick={() => setSelectedProduct(p)} className="cursor-pointer opacity-70">
+                              <TableCell className="w-10"></TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()} className="w-10">
+                                {isGroup ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => toggleExpanded(p.id)}
+                                    aria-label={expanded ? "Collapse family" : "Expand family"}
+                                  >
+                                    {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                  </Button>
+                                ) : null}
+                              </TableCell>
+                              <TableCell>
+                                <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
+                                  {p.imageUrl ? (
+                                    <Image src={p.imageUrl} alt={p.name} fill style={{ objectFit: "cover" }} className="rounded-md grayscale" />
+                                  ) : (
+                                    <Package className="h-6 w-6 text-muted-foreground" />
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <span className="line-through decoration-muted-foreground/60">{getDisplayName(p)}</span>
+                                  {isGroup && (
+                                    <Badge variant="outline" className="text-xs">Family · {row.variants.length}</Badge>
+                                  )}
+                                  {isOrphan && (
+                                    <Badge variant="destructive" className="text-xs gap-1">
+                                      <AlertTriangle className="h-3 w-3" /> Orphan variant
+                                    </Badge>
+                                  )}
+                                  {p.subCategory && (
+                                    <Badge variant="outline" className="text-xs text-muted-foreground">{p.subCategory}</Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>{p.uom}</TableCell>
+                              <TableCell>{p.barcode || '—'}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">Archived</Badge>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <span className="text-xs text-muted-foreground">—</span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {appUser?.isPlatformAdmin && (
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={(e) => { e.stopPropagation(); handleRestoreProduct(p); }}
+                                    disabled={isSubmitting}
+                                    title={isGroup ? "Restore family and all variants" : "Restore product"}
+                                  >
+                                    <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            {isGroup && expanded && row.variants.map((v) => (
+                              <TableRow key={v.id} onClick={() => setSelectedProduct(v)} className="cursor-pointer bg-muted/20 opacity-70">
+                                <TableCell className="w-10"></TableCell>
+                                <TableCell className="w-10"></TableCell>
+                                <TableCell>
+                                  <div className="ml-6 w-10 h-10 rounded-md bg-muted flex items-center justify-center relative">
+                                    {v.imageUrl ? (
+                                      <Image src={v.imageUrl} alt={v.name} fill style={{ objectFit: "cover" }} className="rounded-md grayscale" />
+                                    ) : (
+                                      <Package className="h-5 w-5 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="font-medium pl-6 text-sm">
+                                  <span className="line-through decoration-muted-foreground/60">
+                                    ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                  </span>
+                                </TableCell>
+                                <TableCell>{v.uom}</TableCell>
+                                <TableCell>{v.barcode || '—'}</TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">Archived</Badge>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {appUser?.isPlatformAdmin && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={(e) => { e.stopPropagation(); handleRestoreProduct(v); }}
+                                      disabled={isSubmitting}
+                                      title="Restore this variant"
+                                    >
+                                      <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
+                    </TableBody>
+                    )}
+                  </React.Fragment>
+                  );
+                })()}
             </Table>
           ) : (
             <p className="text-center text-muted-foreground py-8">{searchTerm ? `No products found for "${searchTerm}".` : 'No products found. Click "New Product" to add one.'}</p>
@@ -485,6 +1075,7 @@ export default function ProductManagementPage() {
           onSave={handleSaveProduct}
           product={editingProduct}
           isSubmitting={isSubmitting}
+          onStorefrontMayChange={autoPublishStorefront}
         />
       )}
       
@@ -495,6 +1086,18 @@ export default function ProductManagementPage() {
             product={selectedProduct}
             onEdit={handleEditFromDetails}
             onDelete={handleDeleteProduct}
+        />
+      )}
+
+      {mergeDialogOpen && (
+        <ProductMergeDialog
+          open={mergeDialogOpen}
+          onOpenChange={setMergeDialogOpen}
+          selected={selectedProducts}
+          onMerged={() => {
+            clearSelection();
+            setMergeDialogOpen(false);
+          }}
         />
       )}
 

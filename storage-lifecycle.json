@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Object lifecycle for the POS Storage bucket — deletes payment-proof photos",
+    "15 days after upload so the bucket does not grow without bound.",
+    "",
+    "APPLY WITH (once, per bucket):",
+    "  gcloud storage buckets update gs://shareat-hub-v2.firebasestorage.app \\",
+    "    --lifecycle-file=storage-lifecycle.json",
+    "",
+    "VERIFY WITH:",
+    "  gcloud storage buckets describe gs://shareat-hub-v2.firebasestorage.app \\",
+    "    --format='value(lifecycle)'",
+    "",
+    "NOTE 1: this is NOT deployed by `firebase deploy`. Lifecycle is bucket",
+    "  configuration, not security rules, so it has to be applied separately and",
+    "  will not be picked up by a normal deploy.",
+    "",
+    "NOTE 2: matchesPrefix is a LITERAL prefix — no wildcards. That is why proof",
+    "  photos live at paymentProofs/{storeId}/... rather than under",
+    "  stores/{storeId}/, which would have made a single prefix impossible",
+    "  without also matching store logos.",
+    "",
+    "NOTE 3: this deletes the PHOTO only. The matching Firestore document is",
+    "  deleted by a TTL policy on PaymentProof.expiresAt — see the type in",
+    "  src/lib/types.ts. Both must be applied or one half survives the other.",
+    "",
+    "NOTE 4: GCS evaluates lifecycle asynchronously, usually within 24h of the",
+    "  condition being met. Expect deletion at day 15-16, not on the stroke of",
+    "  day 15. Do not treat it as a hard guarantee for compliance purposes."
+  ],
+  "lifecycle": {
+    "rule": [
+      {
+        "action": { "type": "Delete" },
+        "condition": {
+          "age": 15,
+          "matchesPrefix": ["paymentProofs/"]
+        }
+      }
+    ]
+  }
+}

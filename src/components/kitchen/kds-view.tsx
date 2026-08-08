@@ -8,9 +8,10 @@ interface KdsViewProps {
     onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
     onServeBatch?: (payload: ServeBatchPayload) => void;
     onCancelRemaining?: (payload: CancelRemainingPayload) => void;
+    slaMinutes?: number;
 }
 
-export function KdsView({ tickets, onUpdateStatus, onServeBatch, onCancelRemaining }: KdsViewProps) {
+export function KdsView({ tickets, onUpdateStatus, onServeBatch, onCancelRemaining, slaMinutes }: KdsViewProps) {
     if (tickets.length > 0) {
         return (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -21,6 +22,7 @@ export function KdsView({ tickets, onUpdateStatus, onServeBatch, onCancelRemaini
                         onUpdateStatus={onUpdateStatus}
                         onServeBatch={onServeBatch}
                         onCancelRemaining={onCancelRemaining}
+                        slaMinutes={slaMinutes}
                     />
                 ))}
             </div>
