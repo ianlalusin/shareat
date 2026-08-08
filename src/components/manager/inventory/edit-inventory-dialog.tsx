@@ -17,6 +17,9 @@ import { Info } from "lucide-react";
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
   sellingPrice: z.coerce.number().min(0, "Selling price must be a positive number."),
+  // Optional per-branch online price. NOT `z.coerce.number()` — coercion turns
+  // null into 0, which is exactly the "no override" state we must preserve.
+  onlinePrice: z.number().min(0, "Online price cannot be negative.").nullable().optional(),
   kitchenLocationId: z.string().nullable().optional(),
 });
 
@@ -111,12 +114,80 @@ function CurrencyFormField({ name, label, form, uom }: { name: "cost" | "selling
     );
 }
 
+/**
+ * Optional per-branch online price.
+ *
+ * Deliberately NOT built on `CurrencyFormField`: that one coerces a blank input
+ * to 0 on blur, which here would destroy the "no override" state. Blank must
+ * stay blank and save as `null`, so the storefront falls back to the dine-in
+ * selling price.
+ */
+function OnlinePriceFormField({ form, item }: { form: any; item: InventoryItem }) {
+    const [displayValue, setDisplayValue] = React.useState(() => {
+        const v = form.getValues("onlinePrice");
+        return v == null ? "" : String(v);
+    });
+
+    React.useEffect(() => {
+        const v = form.getValues("onlinePrice");
+        setDisplayValue(v == null ? "" : String(v));
+    }, [form, item]);
+
+    // Track the value being saved, not the stored one — if the manager is also
+    // editing the selling price, that is what "leave blank to match" will mean.
+    const dineIn = Number(form.watch("sellingPrice") ?? item.sellingPrice ?? 0);
+
+    const handleBlur = (field: any) => () => {
+        const raw = displayValue.trim();
+        const numericValue = parseFloat(raw);
+        if (raw === "" || isNaN(numericValue)) {
+            setDisplayValue("");
+            field.onChange(null);
+            return;
+        }
+        field.onChange(numericValue);
+    };
+
+    return (
+        <FormField
+            control={form.control}
+            name="onlinePrice"
+            render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Online Price (per {item.uom})</FormLabel>
+                    <div className="relative">
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                            ₱
+                        </span>
+                        <FormControl>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="Same as selling price"
+                                className="pl-7"
+                                value={displayValue}
+                                onChange={(e) => setDisplayValue(e.target.value)}
+                                onBlur={handleBlur(field)}
+                            />
+                        </FormControl>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Dine-in: ₱{(isNaN(dineIn) ? 0 : dineIn).toFixed(2)} — leave blank to match.
+                    </p>
+                    <FormMessage />
+                </FormItem>
+            )}
+        />
+    );
+}
+
 export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(refinedFormSchema(item.isAddon || false)),
     defaultValues: {
       cost: item.cost || 0,
       sellingPrice: item.sellingPrice || 0,
+      onlinePrice: item.onlinePrice ?? null,
       kitchenLocationId: item.kitchenLocationId || null,
     },
   });
@@ -126,13 +197,16 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
       form.reset({
         cost: item.cost || 0,
         sellingPrice: item.sellingPrice || 0,
+        onlinePrice: item.onlinePrice ?? null,
         kitchenLocationId: item.kitchenLocationId || null,
       });
     }
   }, [isOpen, item, form]);
 
   const onSubmit = (data: FormValues) => {
-    onSave(item, data);
+    // Never hand Firestore an `undefined` — an untouched blank field must
+    // persist as an explicit null ("no online override").
+    onSave(item, { ...data, onlinePrice: data.onlinePrice ?? null });
   };
 
   return (
@@ -155,6 +229,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, isSubmittin
             )}
             <CurrencyFormField name="cost" label="Cost" form={form} uom={item.uom} />
             <CurrencyFormField name="sellingPrice" label="Selling Price" form={form} uom={item.uom} />
+            <OnlinePriceFormField form={form} item={item} />
             <FormField
               control={form.control}
               name="kitchenLocationId"

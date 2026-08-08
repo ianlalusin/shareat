@@ -34,7 +34,7 @@ function fakeDb(opts: {
 }
 
 const STORE = "STORE_X";
-const inv = (productId: string, sellingPrice: number) => ({ id: `i_${productId}`, productId, sellingPrice, isActive: true, isArchived: false });
+const inv = (productId: string, sellingPrice: number, over: Record<string, any> = {}) => ({ id: `i_${productId}`, productId, sellingPrice, isActive: true, isArchived: false, ...over });
 
 /** A group root plus variants, with whatever description fields the test needs. */
 function family(over: { root?: any; variants?: any[] } = {}) {
@@ -228,5 +228,100 @@ describe("untouched behaviour", () => {
       inventory: [inv("s1", 100)],
     });
     expect(cat.itemCount).toBe(0);
+  });
+});
+
+/** One storefront-flagged single SKU whose inventory row the test controls. */
+const oneSingle = (invOver: Record<string, any> = {}, sellingPrice = 249) => ({
+  products: [{ id: "s1", name: "Unli Pork", kind: "single", showOnStorefront: true, isActive: true, subCategory: "Unli" }],
+  inventory: [inv("s1", sellingPrice, invOver)],
+});
+
+describe("per-branch online availability (onlineEnabled)", () => {
+  /**
+   * The backwards-compatibility guarantee, and the reason the builder tests
+   * `=== false` rather than `!== true`. No live inventory row carries this
+   * field yet; if a missing value read as "withheld", every published item at
+   * every branch would vanish the first time this ships.
+   */
+  it("publishes an item whose inventory has NO onlineEnabled field at all", async () => {
+    const opts = oneSingle();
+    expect(opts.inventory[0]).not.toHaveProperty("onlineEnabled");
+    const cat = await build(opts);
+    expect(cat.itemCount).toBe(1);
+    expect(onlyItem(cat).price).toBe(249);
+  });
+
+  it("publishes an item the branch has explicitly enabled online", async () => {
+    const cat = await build(oneSingle({ onlineEnabled: true }));
+    expect(cat.itemCount).toBe(1);
+  });
+
+  it("drops an item the branch has withheld, despite the global flag and a good price", async () => {
+    const cat = await build(oneSingle({ onlineEnabled: false }));
+    expect(cat.itemCount).toBe(0);
+    expect(cat.categories).toHaveLength(0);
+  });
+});
+
+describe("per-branch online price (onlinePrice)", () => {
+  it("charges the online price when one is set, not the dine-in price", async () => {
+    const cat = await build(oneSingle({ onlinePrice: 299 }, 249));
+    expect(onlyItem(cat).price).toBe(299);
+  });
+
+  // Anything that is not a positive finite number means "no online price set"
+  // and must fall back to sellingPrice — never to 0, which downstream reads as
+  // "not sellable" and would silently drop the item.
+  const fallbacks: [string, Record<string, any>][] = [
+    ["missing", {}],
+    ["null", { onlinePrice: null }],
+    ["zero", { onlinePrice: 0 }],
+    ["negative", { onlinePrice: -50 }],
+  ];
+  for (const [label, over] of fallbacks) {
+    it(`falls back to sellingPrice when onlinePrice is ${label}`, async () => {
+      const cat = await build(oneSingle(over, 249));
+      expect(cat.itemCount).toBe(1);
+      expect(onlyItem(cat).price).toBe(249);
+    });
+  }
+});
+
+describe("online overrides on variant families", () => {
+  it("reprices one variant only, and recomputes the family's 'from' price and order", async () => {
+    // v1 is the cheaper tier dine-in (1111 vs 2222) and so is normally the
+    // family's "from" price. Pricing v1 at 3000 online must hand that role to
+    // v2 — proving the "from" price is derived from the resolved online set,
+    // not from sellingPrice.
+    const f = family();
+    f.inventory = [inv("v1", 1111, { onlinePrice: 3000 }), inv("v2", 2222)];
+
+    const item = onlyItem(await build(f));
+    const v1 = item.variants!.find((v) => v.productId === "v1")!;
+    const v2 = item.variants!.find((v) => v.productId === "v2")!;
+
+    expect(v1.price).toBe(3000);          // overridden
+    expect(v2.price).toBe(2222);          // sibling untouched
+    expect(item.price).toBe(2222);        // "from" recomputed, no longer 1111
+    expect(item.variants!.map((v) => v.price)).toEqual([2222, 3000]); // still sorted ascending
+  });
+
+  it("drops a family entirely when the branch withholds every variant", async () => {
+    const f = family();
+    f.inventory = [inv("v1", 1111, { onlineEnabled: false }), inv("v2", 2222, { onlineEnabled: false })];
+
+    const cat = await build(f);
+    expect(cat.itemCount).toBe(0);
+    expect(cat.categories).toHaveLength(0); // dropped, not published as an empty family
+  });
+
+  it("keeps the surviving variants when the branch withholds only one", async () => {
+    const f = family();
+    f.inventory = [inv("v1", 1111, { onlineEnabled: false }), inv("v2", 2222)];
+
+    const item = onlyItem(await build(f));
+    expect(item.variants!.map((v) => v.productId)).toEqual(["v2"]);
+    expect(item.price).toBe(2222);
   });
 });

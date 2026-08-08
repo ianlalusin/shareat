@@ -242,6 +242,15 @@ export default function InventoryManagementPage() {
     }
   };
 
+  // The online price only when it is a real override — mirrors the catalog
+  // builder's rule (positive finite number wins, anything else falls back to
+  // sellingPrice), so the badge shows exactly what the storefront will charge.
+  const onlinePriceOverride = (item: InventoryItem): number | null => {
+    const op = Number(item.onlinePrice ?? 0);
+    if (!Number.isFinite(op) || op <= 0) return null;
+    return op === Number(item.sellingPrice ?? 0) ? null : op;
+  };
+
   // Republish the public storefront if this store is the storefront pilot store.
   // Inventory price / availability is the snapshot's pricing source, so changing
   // it here must refresh shareat.net/shop (debounced; no-op on other stores).
@@ -250,7 +259,7 @@ export default function InventoryManagementPage() {
     else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
   };
 
-  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; }) => {
+  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
@@ -269,9 +278,13 @@ export default function InventoryManagementPage() {
     }
   };
   
-  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'isAddon') => {
+  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'isAddon' | 'onlineEnabled') => {
     if (!activeStore || !appUser) return;
-    const newStatus = !item[field];
+    // `onlineEnabled` defaults to TRUE when absent (see InventoryItem), so its
+    // current state cannot be read with a plain `!!` — on an untouched item
+    // that would flip undefined to true and the first tap would do nothing.
+    const current = field === 'onlineEnabled' ? item.onlineEnabled !== false : !!item[field];
+    const newStatus = !current;
 
     if (field === 'isAddon' && newStatus) {
         if ((item.sellingPrice ?? 0) <= 0 || !item.kitchenLocationId) {
@@ -287,8 +300,11 @@ export default function InventoryManagementPage() {
     }
     
     const action = newStatus ? "Enable" : "Disable";
-    const fieldName = field === 'isActive' ? 'availability' : 'add-on status';
-    
+    const fieldName =
+      field === 'isActive' ? 'availability'
+      : field === 'onlineEnabled' ? 'online availability'
+      : 'add-on status';
+
     const confirmed = await confirm({
         title: `${action} ${getDisplayName(item)}'s ${fieldName}?`,
         confirmText: `Yes, ${action}`,
@@ -300,7 +316,7 @@ export default function InventoryManagementPage() {
     try {
         await updateDoc(itemDocRef, { [field]: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Item Status Updated" });
-        if (field === 'isActive') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
+        if (field === 'isActive' || field === 'onlineEnabled') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     }
@@ -419,7 +435,7 @@ export default function InventoryManagementPage() {
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                        <TableHead colSpan={7} className="text-lg font-semibold text-foreground">
+                        <TableHead colSpan={8} className="text-lg font-semibold text-foreground">
                             {subCategory}
                         </TableHead>
                     </TableRow>
@@ -429,12 +445,15 @@ export default function InventoryManagementPage() {
                         <TableHead>Cost</TableHead>
                         <TableHead>Selling Price</TableHead>
                         <TableHead>Is Add-on</TableHead>
+                        <TableHead>Online</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => (
+                    {items.map((item) => {
+                      const onlineOverride = onlinePriceOverride(item);
+                      return (
                       <TableRow key={item.id}>
                         <TableCell>
                             <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center relative">
@@ -447,12 +466,29 @@ export default function InventoryManagementPage() {
                         </TableCell>
                         <TableCell className="font-medium py-1">{getDisplayName(item)}</TableCell>
                         <TableCell className="py-1">₱{(item.cost || 0).toFixed(2)}</TableCell>
-                        <TableCell className="py-1">₱{(item.sellingPrice || 0).toFixed(2)}</TableCell>
+                        <TableCell className="py-1">
+                          <div className="flex items-center gap-2">
+                            <span>₱{(item.sellingPrice || 0).toFixed(2)}</span>
+                            {onlineOverride !== null && (
+                              <Badge variant="outline" className="font-normal whitespace-nowrap" title="This item is priced differently on the online store.">
+                                Online ₱{onlineOverride.toFixed(2)}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="py-1">
                           <Switch
                             checked={!!item.isAddon}
                             onCheckedChange={() => handleToggle(item, 'isAddon')}
                             disabled={showArchived}
+                          />
+                        </TableCell>
+                        <TableCell className="py-1">
+                          <Switch
+                            checked={item.onlineEnabled !== false}
+                            onCheckedChange={() => handleToggle(item, 'onlineEnabled')}
+                            disabled={showArchived}
+                            aria-label="Offer this item on the online store"
                           />
                         </TableCell>
                         <TableCell className="py-1">
@@ -495,14 +531,15 @@ export default function InventoryManagementPage() {
                             </DropdownMenu>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      );
+                    })}
                   </TableBody>
                 </React.Fragment>
               ))}
               {Object.keys(groupedInventory).length === 0 && debouncedSearchTerm && (
                 <TableBody>
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       No results found for "{debouncedSearchTerm}".
                     </TableCell>
                   </TableRow>

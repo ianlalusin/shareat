@@ -7,8 +7,15 @@ import { loadOptionOverrides, valueKey } from "./option-overrides";
  * Source of truth is the global `products` collection (the `showOnStorefront`
  * flag staff toggle in the product editor) overlaid with this store's
  * `inventory` for pricing + availability. Pricing ALWAYS comes from the store's
- * inventory.sellingPrice — products carry no price. A product with the flag on
- * but no active, positively-priced inventory record at this store is omitted.
+ * inventory — products carry no price — and is `onlinePrice ?? sellingPrice`:
+ * a branch may charge more online (delivery/packaging) without moving the table
+ * price. A product with the flag on but no active, positively-priced inventory
+ * record at this store is omitted.
+ *
+ * Availability is an AND of two gates: the global `showOnStorefront` decides
+ * what MAY be sold online, and the branch's `inventory.onlineEnabled` decides
+ * whether THIS branch offers it. Only an explicit `false` withholds — see the
+ * gate below.
  *
  * The resulting doc at `stores/{storeId}/storefrontCatalog/main` is read by the
  * website's Cloud Function (getStorefrontCatalog) and is also the price
@@ -126,13 +133,25 @@ export async function rebuildStorefrontCatalog(
     const x = d.data() as any;
     if (x?.isActive === false) continue;
     if (x?.isArchived === true) continue;
+    // Per-branch online gate. Tested with `=== false`, NOT `!== true`: no live
+    // inventory row carries this field yet, so a missing value MUST read as
+    // "offered" or every currently published item would vanish on deploy.
+    if (x?.onlineEnabled === false) continue;
     const pid = String(x?.productId || "");
     if (pid) invByProductId.set(pid, x);
   }
 
+  /**
+   * The price the storefront charges: the branch's `onlinePrice` when it has
+   * set one, otherwise the dine-in `sellingPrice`. Only a positive finite
+   * number counts as an override — missing/null/0/negative all mean "not set".
+   * A non-positive resolved price still means the item is not sellable.
+   */
   function resolvePrice(productId: string): number | null {
     const inv = invByProductId.get(String(productId));
     if (!inv) return null;
+    const op = Number(inv.onlinePrice ?? 0);
+    if (Number.isFinite(op) && op > 0) return op;
     const sp = Number(inv.sellingPrice ?? 0);
     if (!Number.isFinite(sp) || sp <= 0) return null;
     return sp;

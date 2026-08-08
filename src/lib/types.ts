@@ -242,6 +242,22 @@ export type InventoryItem = {
   isActive: boolean;
   isAddon?: boolean;
   isArchived?: boolean;
+  /**
+   * Per-branch online availability. The GLOBAL products/{id}.showOnStorefront
+   * decides what MAY be sold online; this decides whether THIS branch offers
+   * it. Missing or true = offered (so existing inventory keeps publishing
+   * unchanged); false = this branch withholds it online only. Never affects
+   * dine-in.
+   */
+  onlineEnabled?: boolean;
+  /**
+   * Per-branch online price, in pesos. A positive number is what the
+   * storefront charges; anything else (missing, null, 0, negative) falls back
+   * to sellingPrice. NEVER used by the cashier, receipts, or dine-in — it
+   * exists so delivery/packaging cost can be priced in without moving the
+   * table price.
+   */
+  onlinePrice?: number | null;
   kitchenLocationId?: string | null;
   kitchenLocationName?: string | null;
   createdAt: Timestamp;
