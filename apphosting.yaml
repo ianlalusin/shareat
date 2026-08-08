@@ -1,4 +1,18 @@
 env:
+  # Public storefront pilot store: the store whose inventory feeds the public
+  # website (shareat.net) and gets auto-rebuilt on every online-toggle/price
+  # edit. Read client-side via NEXT_PUBLIC_*, so it needs BUILD availability
+  # to actually get inlined into the bundle — RUNTIME alone (like every other
+  # var in this file) does nothing for a NEXT_PUBLIC_ var. Was never declared
+  # here before, so auto-publish-on-toggle has never fired in production;
+  # every real update went through the manual "Rebuild Storefront" button or
+  # a one-off admin script. Value is SharEat Lipa (L5MExycvUOfQ96Y10FqF), the
+  # store the live website's own fallback config already defaults to.
+  - variable: NEXT_PUBLIC_STOREFRONT_STORE_ID
+    value: L5MExycvUOfQ96Y10FqF
+    availability:
+      - BUILD
+      - RUNTIME
   # Genkit Google GenAI plugin looks for GEMINI_API_KEY (or GOOGLE_API_KEY)
   - variable: GEMINI_API_KEY
     secret: GEMINI_API_KEY
