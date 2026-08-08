@@ -525,9 +525,11 @@ export default function ProductManagementPage() {
     // Manual "Rebuild Storefront" button — immediate, targets whichever store
     // is currently selected in the header. The public site's branch picker can
     // show any store meeting its own eligibility rules (acceptsOnlineOrders,
-    // isActive, geo) — it isn't limited to NEXT_PUBLIC_STOREFRONT_STORE_ID,
-    // which only matters for the automatic (debounced) publish path elsewhere
-    // on this page and on /manager/inventory.
+    // isActive, geo) — every store publishes for itself now (see
+    // auto-publish.ts), so NEXT_PUBLIC_STOREFRONT_STORE_ID only still matters
+    // for this page's OWN automatic publish after a global product edit
+    // (autoPublishStorefront, above) — /manager/inventory's toggles are fully
+    // store-scoped and no longer touch that env var at all.
     const handleRebuildStorefront = async () => {
         if (isRebuildingStorefront) return;
         if (!activeStore) {
