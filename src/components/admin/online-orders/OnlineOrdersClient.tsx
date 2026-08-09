@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, getDoc, limit, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon } from "lucide-react";
+import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon, MessageCircle } from "lucide-react";
 import { computeOnlineAvailability, type OnlineAvailabilityInput } from "@/lib/storefront/online-hours";
 import { OnlineAvailabilityControl } from "@/components/admin/online-orders/OnlineAvailabilityControl";
 import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
@@ -217,17 +217,54 @@ export default function OnlineOrdersClient() {
   // Does an order-bound chat thread exist for the selected order? The website
   // creates the thread (deterministic id order_{orderId}), never the cashier —
   // ChatThreadPane.sendReply calls updateDoc on the thread doc, which throws
-  // if it doesn't exist yet.
+  // if it doesn't exist yet. Opening an order with unread customer messages
+  // also marks them read here, mirroring ChatInbox.tsx's openThread().
   const [threadExists, setThreadExists] = useState<boolean | null>(null);
   useEffect(() => {
     if (!selected || !storeId) { setThreadExists(null); return; }
+    const threadRef = doc(db, `stores/${storeId}/chatThreads/order_${selected.id}`);
     const unsub = onSnapshot(
-      doc(db, `stores/${storeId}/chatThreads/order_${selected.id}`),
-      (snap) => setThreadExists(snap.exists()),
+      threadRef,
+      (snap) => {
+        setThreadExists(snap.exists());
+        if (snap.exists() && (Number((snap.data() as any)?.unreadForStaff) || 0) > 0) {
+          updateDoc(threadRef, { unreadForStaff: 0 }).catch(() => {});
+        }
+      },
       () => setThreadExists(false)
     );
     return () => unsub();
   }, [storeId, selected?.id]);
+
+  // Red badge on an order's card when the customer has an unread message.
+  // One listener for the whole collection (mirrors ChatInbox.tsx's pattern)
+  // rather than one per card — cheaper, and consistent with how the site-wide
+  // chat inbox already reads this same collection.
+  const [unreadByOrderId, setUnreadByOrderId] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!storeId) { setUnreadByOrderId({}); return; }
+    const unsub = onSnapshot(
+      collection(db, `stores/${storeId}/chatThreads`),
+      (snap) => {
+        const map: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          const data = d.data() as any;
+          const unread = Number(data?.unreadForStaff) || 0;
+          if (unread <= 0) return;
+          const orderId =
+            typeof data?.orderId === "string" && data.orderId
+              ? data.orderId
+              : d.id.startsWith("order_")
+              ? d.id.slice("order_".length)
+              : null;
+          if (orderId) map[orderId] = unread;
+        });
+        setUnreadByOrderId(map);
+      },
+      () => {} // non-fatal — badges just won't show
+    );
+    return () => unsub();
+  }, [storeId]);
 
   // Trust signal ("First online order · not a known customer", etc).
   // normalizedPhone / priorOrders are cheap, synchronous derivations from
@@ -522,6 +559,11 @@ export default function OnlineOrdersClient() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold truncate">{o.contact?.name || "Guest"}</span>
                           <Badge variant={statusBadgeVariant(o.status)}>{STATUS_LABEL[o.status] || o.status}</Badge>
+                          {unreadByOrderId[o.id] > 0 && (
+                            <Badge variant="destructive" className="inline-flex items-center gap-1">
+                              <MessageCircle className="h-3 w-3" /> {unreadByOrderId[o.id]}
+                            </Badge>
+                          )}
                           {o.fulfillment?.type === "delivery" ? (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Truck className="h-3 w-3" /> Delivery</span>
                           ) : (
