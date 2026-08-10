@@ -15,7 +15,7 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { db } from "@/lib/firebase/client";
-import { Loader, Send } from "lucide-react";
+import { Loader, Send, History, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -433,7 +433,7 @@ export default function KitchenPage() {
       // queue immediately — the served-transaction removal from `activeIds`
       // lags a snapshot round-trip, so this filter keeps them from ever
       // rendering in the meantime.
-      .filter(t => t && t.sessionId && !t.printedOffline);
+      .filter(t => t && (t.sessionId || t.onlineOrderId) && !t.printedOffline);
 
     const sortedTickets = ticketList.sort((a,b) => {
         const timeA = getStartMs(a.createdAtClientMs ?? a.createdAt);
@@ -478,8 +478,11 @@ export default function KitchenPage() {
     sessionId: string,
     newStatus: "served" | "cancelled",
     reason?: string,
-    opts?: { overrideAtMs?: number; silent?: boolean },
+    opts?: { overrideAtMs?: number; silent?: boolean; source?: "online" },
   ) => {
+    if (opts?.source === "online") {
+      return updateOnlineOrderTicketStatus(ticketId, sessionId, newStatus, opts);
+    }
     if (!appUser || !activeStore) {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
         return false;
@@ -627,6 +630,84 @@ export default function KitchenPage() {
           toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
         }
         return false;
+    }
+  };
+
+  // Serve/cancel for an online-order ticket. Deliberately NOT a branch inside
+  // updateTicketStatus above: that function's dine-in path also increments
+  // session serve counters, voids sessionBillLines, and pushes KDS analytics
+  // deltas — none of which have an online-order equivalent (online-order
+  // analytics already flow through the receipt/completion path in
+  // route.ts, unrelated to kitchen-ticket serve timing). This function does
+  // only what actually applies: flip the ticket, remove it from the active
+  // rtKdsTickets projection, archive it into closedKdsTickets.
+  const updateOnlineOrderTicketStatus = async (
+    ticketId: string,
+    onlineOrderId: string,
+    newStatus: "served" | "cancelled",
+    opts?: { overrideAtMs?: number; silent?: boolean },
+  ): Promise<boolean> => {
+    if (!appUser || !activeStore) {
+      toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
+      return false;
+    }
+    const nowMs = opts?.overrideAtMs ?? Date.now();
+
+    try {
+      await runTransaction(db, async (transaction: Transaction) => {
+        const ticketRef = doc(db, "stores", activeStore.id, "onlineOrders", onlineOrderId, "kitchentickets", ticketId);
+        const ticketSnap = await transaction.get(ticketRef);
+        if (!ticketSnap.exists()) throw new Error("Ticket not found.");
+
+        const oldTicketState = ticketSnap.data() as KitchenTicket;
+        if (oldTicketState.status === "served" || oldTicketState.status === "cancelled") {
+          console.log(`Ticket ${ticketId} is already finalized. Skipping update.`);
+          return;
+        }
+
+        const updatePayload: any = { status: newStatus, updatedAt: serverTimestamp() };
+        if (newStatus === "served") {
+          const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
+          updatePayload.servedAt = serverTimestamp();
+          updatePayload.servedAtClientMs = nowMs;
+          updatePayload.servedByUid = appUser.uid;
+          updatePayload.durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
+        } else {
+          updatePayload.cancelledAt = serverTimestamp();
+          updatePayload.cancelledAtClientMs = nowMs;
+          updatePayload.cancelledByUid = appUser.uid;
+        }
+        transaction.update(ticketRef, updatePayload);
+
+        const { kitchenLocationId } = oldTicketState;
+        if (kitchenLocationId) {
+          const rtKdsDocRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId);
+          transaction.update(rtKdsDocRef, {
+            [`tickets.${ticketId}`]: deleteField(),
+            activeIds: arrayRemove(ticketId),
+            [`sessionIndex.${onlineOrderId}`]: arrayRemove(ticketId),
+            "meta.updatedAt": serverTimestamp(),
+          });
+          const closedTicketRef = doc(db, "stores", activeStore.id, "rtKdsTickets", kitchenLocationId, "closedKdsTickets", ticketId);
+          transaction.set(closedTicketRef, { ...oldTicketState, ...updatePayload, closedAtClientMs: nowMs });
+        }
+      });
+
+      if (!opts?.silent) {
+        const ticket = ticketsWithData.find((t) => t.id === ticketId);
+        showFlash(
+          newStatus === "cancelled" ? "cancelled" : "served",
+          `${ticket?.itemName || "Item"} ${newStatus}`,
+          ticket?.customerName ? `Online · ${ticket.customerName}` : "Online order",
+        );
+      }
+      return true;
+    } catch (error: any) {
+      console.error(`Failed to update online ticket status to ${newStatus}:`, error);
+      if (!opts?.silent) {
+        toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+      }
+      return false;
     }
   };
 

@@ -71,7 +71,13 @@ export interface CancelRemainingPayload {
 
 interface KdsItemCardProps {
     ticket: KitchenTicket;
-    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
+    onUpdateStatus: (
+      ticketId: string,
+      sessionId: string,
+      newStatus: "served" | "cancelled",
+      reason?: string,
+      opts?: { source?: "online" },
+    ) => void;
     onServeBatch?: (payload: ServeBatchPayload) => void;
     onCancelRemaining?: (payload: CancelRemainingPayload) => void;
     slaMinutes?: number;
@@ -102,6 +108,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
 
     const isAlaCarte = ticket.sessionMode === 'alacarte';
     const isPackage = ticket.type === 'package';
+    const isOnline = !!ticket.onlineOrderId;
     const tableLabel = isAlaCarte
         ? (ticket.sessionLabel ?? (ticket.customerName || "Ala Carte"))
         : ((ticket as any).tableDisplayName || ticket.sessionLabel || `Table ${ticket.tableNumber}`);
@@ -119,7 +126,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
             destructive: true,
         });
         cleanupRadixOverlays();
-        if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId ?? "", "cancelled", reason);
+        if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId!, "cancelled", reason, isOnline ? { source: "online" } : undefined);
     };
 
     const handleCancelRemaining = async (reason: string) => {
@@ -283,7 +290,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                                         <Send className="h-5 w-5 mr-1.5" /> Serve ({qtyRemaining})
                                     </Button>
                                 ) : (
-                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId ?? '', 'served')}>
+                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId!, 'served', undefined, isOnline ? { source: "online" } : undefined)}>
                                         <Send className="h-5 w-5 mr-1.5" /> Served
                                     </Button>
                                 )}
