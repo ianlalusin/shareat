@@ -115,11 +115,13 @@ function HistoryPageContent() {
     return Object.entries(groupedByDate)
         .sort(([dateA], [dateB]) => dateB.localeCompare(dateA)) // Sort dates descending
         .map(([date, tickets]) => {
-            const groupedBySession = tickets.reduce((acc, ticket) => {
-                const sessionKey = ticket.sessionId;
-                if (!acc[sessionKey]) acc[sessionKey] = [];
-                acc[sessionKey].push(ticket);
-                return acc;
+            const groupedBySession = tickets
+                .filter((t) => t.sessionId || t.onlineOrderId)
+                .reduce((acc, ticket) => {
+                    const sessionKey = (ticket.sessionId || ticket.onlineOrderId) as string;
+                    if (!acc[sessionKey]) acc[sessionKey] = [];
+                    acc[sessionKey].push(ticket);
+                    return acc;
             }, {} as Record<string, KitchenTicket[]>);
             
             return {

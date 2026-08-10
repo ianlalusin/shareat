@@ -6,6 +6,7 @@ import {
   collection, query, where, onSnapshot, doc, writeBatch, setDoc, serverTimestamp, Timestamp, collectionGroup, getDocs, getDoc, runTransaction, updateDoc, increment, orderBy, getCountFromServer, limit, startAfter, type QueryDocumentSnapshot, type DocumentSnapshot, type DocumentData, type Transaction, type QuerySnapshot,
   arrayRemove, deleteField
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { KdsView } from "@/components/kitchen/kds-view";
@@ -15,11 +16,12 @@ import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { db } from "@/lib/firebase/client";
-import { Loader, Send } from "lucide-react";
+import { Loader, Send, History } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc, DailyMetric } from "@/lib/types";
@@ -101,7 +103,7 @@ import {
 import { AssistanceAlerts } from "@/components/kitchen/AssistanceAlerts";
 
 export default function KitchenPage() {
-  const { appUser, isSigningOut } = useAuthContext();
+  const { appUser, user, isSigningOut } = useAuthContext();
   const { activeStore } = useStoreContext();
   const { currentProfile } = useLocalProfile();
   const { toast } = useToast();
@@ -228,7 +230,19 @@ export default function KitchenPage() {
   
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  
+
+  const [historyCollapsed, setHistoryCollapsed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("kds_history_collapsed") !== "false";
+  });
+  const toggleHistoryCollapsed = () => {
+    setHistoryCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("kds_history_collapsed", String(next));
+      return next;
+    });
+  };
+
 
   useEffect(() => {
     if (!activeStore) {
@@ -336,7 +350,7 @@ export default function KitchenPage() {
     }
     prevTicketIdsRef.current = new Set(ids);
 
-    const sessionIds = [...new Set(Object.values(currentTickets).map((t: any) => t.sessionId))];
+    const sessionIds = [...new Set(Object.values(currentTickets).map((t: any) => t.sessionId).filter(Boolean))];
     let cancelled = false;
     if (sessionIds.length > 0) {
         (async () => {
@@ -433,7 +447,7 @@ export default function KitchenPage() {
       // queue immediately — the served-transaction removal from `activeIds`
       // lags a snapshot round-trip, so this filter keeps them from ever
       // rendering in the meantime.
-      .filter(t => t && t.sessionId && !t.printedOffline);
+      .filter(t => t && (t.sessionId || t.onlineOrderId) && !t.printedOffline);
 
     const sortedTickets = ticketList.sort((a,b) => {
         const timeA = getStartMs(a.createdAtClientMs ?? a.createdAt);
@@ -442,7 +456,7 @@ export default function KitchenPage() {
     });
 
     return sortedTickets.map((ticket: KitchenTicket) => {
-        const session = sessionsMap.get(ticket.sessionId);
+        const session = ticket.sessionId ? sessionsMap.get(ticket.sessionId) : undefined;
         const flavorNames = ticket.type === 'package' 
             ? session?.initialFlavorIds?.map((id: string) => flavorsMap.get(id) || 'Unknown').filter(Boolean)
             : [];
@@ -478,8 +492,11 @@ export default function KitchenPage() {
     sessionId: string,
     newStatus: "served" | "cancelled",
     reason?: string,
-    opts?: { overrideAtMs?: number; silent?: boolean },
+    opts?: { overrideAtMs?: number; silent?: boolean; source?: "online" },
   ) => {
+    if (opts?.source === "online") {
+      return updateOnlineOrderTicketStatus(ticketId, sessionId, newStatus, reason, opts);
+    }
     if (!appUser || !activeStore) {
         toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
         return false;
@@ -627,6 +644,64 @@ export default function KitchenPage() {
           toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
         }
         return false;
+    }
+  };
+
+  // Serve/cancel for an online-order ticket. Deliberately NOT a branch inside
+  // updateTicketStatus above: that function's dine-in path also increments
+  // session serve counters, voids sessionBillLines, and pushes KDS analytics
+  // deltas — none of which have an online-order equivalent (online-order
+  // analytics already flow through the receipt/completion path in
+  // route.ts, unrelated to kitchen-ticket serve timing). This function does
+  // only what actually applies: flip the ticket, remove it from the active
+  // rtKdsTickets projection, archive it into closedKdsTickets.
+  const updateOnlineOrderTicketStatus = async (
+    ticketId: string,
+    onlineOrderId: string,
+    newStatus: "served" | "cancelled",
+    reason?: string,
+    opts?: { silent?: boolean },
+  ): Promise<boolean> => {
+    if (!appUser || !activeStore) {
+      toast({ variant: "destructive", title: "Action Failed", description: "Authentication or store context is missing." });
+      return false;
+    }
+    try {
+      const authUser = user || getAuth().currentUser;
+      if (!authUser) throw new Error("Not signed in.");
+      const idToken = await authUser.getIdToken();
+      const res = await fetch("/api/admin/online-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          op: "kitchen-ticket-status",
+          storeId: activeStore.id,
+          orderId: onlineOrderId,
+          ticketId,
+          status: newStatus,
+          reason,
+          profileId: currentProfile?.profileId ?? null,
+          profileName: currentProfile?.name ?? null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update the ticket status.");
+
+      if (!opts?.silent) {
+        const ticket = ticketsWithData.find((t) => t.id === ticketId);
+        showFlash(
+          newStatus === "cancelled" ? "cancelled" : "served",
+          `${ticket?.itemName || "Item"} ${newStatus}`,
+          ticket?.customerName ? `Online · ${ticket.customerName}` : "Online order",
+        );
+      }
+      return true;
+    } catch (error: any) {
+      console.error(`Failed to update online ticket status to ${newStatus}:`, error);
+      if (!opts?.silent) {
+        toast({ variant: "destructive", title: "Update Failed", description: error.message || "Could not update the ticket status." });
+      }
+      return false;
     }
   };
 
@@ -871,8 +946,8 @@ export default function KitchenPage() {
             </div>
         </div>
       </PageHeader>
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
-            <div className="xl:col-span-3">
+        <div className={cn("grid grid-cols-1 gap-4 items-start", !historyCollapsed && "xl:grid-cols-4")}>
+            <div className={!historyCollapsed ? "xl:col-span-3" : ""}>
                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     {isMobile ? (
                         <Select value={activeTab} onValueChange={setActiveTab}>
@@ -914,19 +989,31 @@ export default function KitchenPage() {
                     )}
                     {stations.map((station: KitchenStation) => (
                         <TabsContent key={station.id} value={station.key}>
-                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} slaMinutes={activeStationSla} />
+                            <KdsView tickets={preparingItems} onUpdateStatus={updateTicketStatus} onServeBatch={handleServeBatch} onCancelRemaining={handleCancelRemaining} slaMinutes={activeStationSla} wideLayout={historyCollapsed} />
                         </TabsContent>
                     ))}
                  </Tabs>
             </div>
-            <div className="xl:col-span-1 space-y-4">
-                <HistoryView
-                  items={historyPreview}
-                  isLoading={isLoadingHistory}
-                  activeStationId={activeTab}
-                />
-            </div>
+            {!historyCollapsed && (
+                <div className="xl:col-span-1 space-y-4">
+                    <HistoryView
+                      items={historyPreview}
+                      isLoading={isLoadingHistory}
+                      activeStationId={activeTab}
+                      onCollapse={toggleHistoryCollapsed}
+                    />
+                </div>
+            )}
         </div>
+        {historyCollapsed && (
+            <Button
+                onClick={toggleHistoryCollapsed}
+                className="fixed bottom-6 right-6 z-40 h-14 px-5 gap-2 rounded-full text-base shadow-lg"
+                size="lg"
+            >
+                <History className="h-5 w-5" /> History
+            </Button>
+        )}
       {timelineSessionId && activeStore && (
         <SessionTimelineDrawer open={!!timelineSessionId} onOpenChange={(isOpen) => !isOpen && setTimelineSessionId(null)} storeId={activeStore.id} sessionId={timelineSessionId} />
        )}

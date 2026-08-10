@@ -148,7 +148,7 @@ async function rebuildDaily(db: Firestore, storeId: string, start: Date, end: Da
   ]);
 
   const receipts = receiptsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Receipt));
-  const tickets = ticketsSnap.docs.map((d) => d.data() as KitchenTicket);
+  const tickets = ticketsSnap.docs.map((d) => d.data() as KitchenTicket).filter((t) => !(t as any).onlineOrderId);
   const verifiedSessions = sessionsSnap.docs.map((d) => d.data() as any);
 
   const aggregates = aggregateDailyMetrics({

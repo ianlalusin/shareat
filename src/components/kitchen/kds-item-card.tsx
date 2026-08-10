@@ -71,7 +71,13 @@ export interface CancelRemainingPayload {
 
 interface KdsItemCardProps {
     ticket: KitchenTicket;
-    onUpdateStatus: (ticketId: string, sessionId: string, newStatus: "served" | "cancelled", reason?: string) => void;
+    onUpdateStatus: (
+      ticketId: string,
+      sessionId: string,
+      newStatus: "served" | "cancelled",
+      reason?: string,
+      opts?: { source?: "online" },
+    ) => void;
     onServeBatch?: (payload: ServeBatchPayload) => void;
     onCancelRemaining?: (payload: CancelRemainingPayload) => void;
     slaMinutes?: number;
@@ -102,7 +108,10 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
 
     const isAlaCarte = ticket.sessionMode === 'alacarte';
     const isPackage = ticket.type === 'package';
-    const tableLabel = isAlaCarte
+    const isOnline = !!ticket.onlineOrderId;
+    const tableLabel = isOnline
+        ? (ticket.customerName || "Online Order")
+        : isAlaCarte
         ? (ticket.sessionLabel ?? (ticket.customerName || "Ala Carte"))
         : ((ticket as any).tableDisplayName || ticket.sessionLabel || `Table ${ticket.tableNumber}`);
     const paxCount = Number((ticket as any).guestCount ?? 0);
@@ -119,10 +128,11 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
             destructive: true,
         });
         cleanupRadixOverlays();
-        if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId, "cancelled", reason);
+        if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId!, "cancelled", reason, isOnline ? { source: "online" } : undefined);
     };
 
     const handleCancelRemaining = async (reason: string) => {
+        if (!ticket.sessionId) return;
         if (!reason) return;
         const confirmed = await confirm({
             title: `Cancel remaining ${qtyRemaining} of ${ticket.itemName}?`,
@@ -132,15 +142,16 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
         });
         cleanupRadixOverlays();
         if (confirmed) {
-            if (onCancelRemaining) onCancelRemaining({ ticketId: ticket.id, sessionId: ticket.sessionId, reason });
-            else onUpdateStatus(ticket.id, ticket.sessionId, "cancelled", reason);
+            if (onCancelRemaining) onCancelRemaining({ ticketId: ticket.id, sessionId: ticket.sessionId ?? "", reason });
+            else onUpdateStatus(ticket.id, ticket.sessionId ?? "", "cancelled", reason);
         }
     };
 
     const handleServeBatchConfirm = () => {
+        if (!ticket.sessionId) return;
         const qty = parseInt(serveQtyInput, 10);
         if (isNaN(qty) || qty <= 0 || qty > qtyRemaining) return;
-        if (onServeBatch) onServeBatch({ ticketId: ticket.id, sessionId: ticket.sessionId, qtyToServe: qty });
+        if (onServeBatch) onServeBatch({ ticketId: ticket.id, sessionId: ticket.sessionId ?? "", qtyToServe: qty });
         setServeBatchOpen(false);
         setServeQtyInput("1");
     };
@@ -156,6 +167,8 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
         ? 'bg-gray-50 dark:bg-gray-900/20 border-gray-200'
         : isLate
         ? 'border-destructive border-2 bg-destructive/5'
+        : isOnline
+        ? 'bg-gradient-to-br from-green-50 to-white dark:from-green-950/40 dark:to-background border-green-300 dark:border-green-800'
         : '';
 
     return (
@@ -163,7 +176,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
             <Card className={cn("flex flex-col", statusColor)}>
                 <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-center gap-2">
-                        <p className="text-2xl font-bold text-destructive truncate">{identifier}</p>
+                        <p className={cn("text-2xl font-bold truncate", isOnline ? "text-green-700 dark:text-green-400" : "text-destructive")}>{identifier}</p>
                         <div className="flex items-center gap-2 shrink-0">
                             {isLate && (
                                 <Badge variant="destructive" className="gap-1 animate-pulse">
@@ -173,6 +186,11 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                             <TimeLapse elapsedMs={elapsedMs} isLate={isLate} />
                         </div>
                     </div>
+                    {isOnline && (
+                        <Badge className="mt-1.5 w-fit gap-1 bg-green-600 text-white hover:bg-green-600">
+                            ● Online
+                        </Badge>
+                    )}
                     <CardTitle className="text-xl leading-tight">{ticket.itemName}</CardTitle>
                     {(ticket as any).modifiersText && (
                       <p className="text-sm text-muted-foreground -mt-1 italic">
@@ -283,7 +301,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                                         <Send className="h-5 w-5 mr-1.5" /> Serve ({qtyRemaining})
                                     </Button>
                                 ) : (
-                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
+                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId!, 'served', undefined, isOnline ? { source: "online" } : undefined)}>
                                         <Send className="h-5 w-5 mr-1.5" /> Served
                                     </Button>
                                 )}

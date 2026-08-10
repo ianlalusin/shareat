@@ -10,6 +10,8 @@ import {
 } from "@/lib/server/notify-customer";
 import type { Receipt, ReceiptAnalyticsV2, SessionBillLine } from "@/lib/types";
 import { paymentLabel } from "@/lib/payment-label";
+import { buildOnlineOrderKitchenTicketWrites, resolveInventoryLookupId } from "@/lib/kitchen/online-order-tickets";
+import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
 
 export const runtime = "nodejs";
 
@@ -60,7 +62,7 @@ export async function POST(req: Request) {
     const decoded = await getAdminAuth().verifyIdToken(m[1]);
 
     const db = getAdminDb();
-    const staff = await requireActiveStaff(db, decoded, ["admin", "manager", "cashier"]);
+    const staff = await requireActiveStaff(db, decoded, ["admin", "manager", "cashier", "kitchen"]);
 
     const body = await req.json().catch(() => ({}));
     const op = String(body?.op || "transition");
@@ -69,8 +71,16 @@ export async function POST(req: Request) {
     const toStatus = body?.toStatus ? String(body.toStatus) : "";
     const reason = body?.reason ? String(body.reason).slice(0, 300) : "";
 
-    if (op !== "transition" && op !== "confirm-payment" && op !== "unconfirm-payment") {
+    if (op !== "transition" && op !== "confirm-payment" && op !== "unconfirm-payment" && op !== "kitchen-ticket-status") {
       return bad(`Unknown op: ${op}`, 400);
+    }
+    // The kitchen role is only on this route to serve/cancel its own kitchen
+    // tickets. requireActiveStaff() above is a route-wide gate with no
+    // per-op awareness, so without this check widening it to admit "kitchen"
+    // would also hand that role transition/confirm-payment/unconfirm-payment —
+    // completing orders, minting receipts, and confirming arbitrary payments.
+    if (staff.role === "kitchen" && !staff.isPlatformAdmin && op !== "kitchen-ticket-status") {
+      return bad("Kitchen staff may only update kitchen ticket status.", 403);
     }
     if (op === "transition") {
       if (!storeId || !orderId || !toStatus) return bad("storeId, orderId, toStatus required.", 400);
@@ -215,7 +225,103 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, paid: false });
     }
 
+    // --- op: kitchen-ticket-status ------------------------------------------
+    // Kitchen staff serve/cancel a ticket created for an accepted online order.
+    // This MUST stay server-side: firestore.rules deliberately keeps `onlineOrders`
+    // (and its subcollections) write-denied to every client role — see
+    // tests/rules/store-scoped.test.ts's SERVER_ONLY_COLLECTIONS. Routing the
+    // write through this Admin SDK transaction is what makes that enforceable.
+    if (op === "kitchen-ticket-status") {
+      const ticketId = body?.ticketId ? String(body.ticketId) : "";
+      const ticketStatus = body?.status ? String(body.status) : "";
+      const profileId = body?.profileId ? String(body.profileId) : null;
+      const profileName = body?.profileName ? String(body.profileName) : null;
+      if (!ticketId) return bad("ticketId required.", 400);
+      if (ticketStatus !== "served" && ticketStatus !== "cancelled") {
+        return bad('status must be "served" or "cancelled".', 400);
+      }
+      if (ticketStatus === "cancelled" && !reason) {
+        return bad("A reason is required to cancel a kitchen ticket.", 400);
+      }
+
+      const ticketRef = db.doc(`stores/${storeId}/onlineOrders/${orderId}/kitchentickets/${ticketId}`);
+      let alreadyFinal = false;
+
+      await db.runTransaction(async (tx) => {
+        const ticketSnap = await tx.get(ticketRef);
+        if (!ticketSnap.exists) throw new OpError("Ticket not found.", 404);
+        const oldTicket = ticketSnap.data() as any;
+        if (oldTicket.status === "served" || oldTicket.status === "cancelled") {
+          alreadyFinal = true;
+          return;
+        }
+
+        const nowMs = Date.now();
+        const updatePayload: any = { status: ticketStatus, updatedAt: FieldValue.serverTimestamp() };
+        if (ticketStatus === "served") {
+          const startMs = Number(oldTicket.createdAtClientMs) || null;
+          updatePayload.servedAt = FieldValue.serverTimestamp();
+          updatePayload.servedAtClientMs = nowMs;
+          updatePayload.servedByUid = actorUid;
+          updatePayload.durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
+        } else {
+          updatePayload.cancelledAt = FieldValue.serverTimestamp();
+          updatePayload.cancelledAtClientMs = nowMs;
+          updatePayload.cancelledByUid = actorUid;
+          updatePayload.cancelReason = reason;
+        }
+        tx.update(ticketRef, updatePayload);
+
+        const { kitchenLocationId } = oldTicket;
+        if (kitchenLocationId) {
+          // tx.update() (unlike tx.set()) DOES parse dotted keys as field paths —
+          // see C1's writeup for why that distinction matters. This block already
+          // used update() before this fix, which is why it was correct as-is.
+          const rtKdsDocRef = db.doc(`stores/${storeId}/rtKdsTickets/${kitchenLocationId}`);
+          tx.update(rtKdsDocRef, {
+            [`tickets.${ticketId}`]: FieldValue.delete(),
+            activeIds: FieldValue.arrayRemove(ticketId),
+            [`sessionIndex.${orderId}`]: FieldValue.arrayRemove(ticketId),
+            "meta.updatedAt": FieldValue.serverTimestamp(),
+          });
+          const closedTicketRef = db.doc(`stores/${storeId}/rtKdsTickets/${kitchenLocationId}/closedKdsTickets/${ticketId}`);
+          tx.set(closedTicketRef, { ...oldTicket, ...updatePayload, closedAtClientMs: nowMs });
+        }
+
+        // Activity log (I2) — there's no `sessions/{id}` doc for an online order, so
+        // this doesn't reuse writeActivityLog (a client-SDK helper keyed on
+        // sessionId under stores/{storeId}/sessions/{sessionId}/activityLogs).
+        // Mirror its shape under the order's own subcollection instead, plus the
+        // same day-partitioned collection every other activity log uses.
+        // getDayIdFromTimestamp's `Timestamp` type is the client SDK's, not the
+        // Admin SDK's `firebase-admin/firestore` one used elsewhere in this file
+        // (they are structurally different) — pass the plain ms number instead,
+        // matching every other server call site of this function.
+        const dayId = getDayIdFromTimestamp(nowMs);
+        const logEntry = {
+          storeId,
+          onlineOrderId: orderId,
+          sessionId: orderId,
+          action: ticketStatus === "cancelled" ? "TICKET_CANCELLED" : "TICKET_SERVED",
+          actorUid,
+          actorRole: staff.role,
+          actorName,
+          serverProfileId: profileId,
+          serverProfileName: profileName,
+          reason: ticketStatus === "cancelled" ? reason : null,
+          meta: { itemName: oldTicket.itemName ?? null },
+          createdAt: FieldValue.serverTimestamp(),
+        };
+        tx.set(db.collection(`stores/${storeId}/onlineOrders/${orderId}/activityLogs`).doc(), logEntry);
+        tx.set(db.collection(`stores/${storeId}/activityLogsByDay/${dayId}/logs`).doc(), logEntry);
+      });
+
+      return NextResponse.json({ ok: true, status: ticketStatus, alreadyFinal });
+    }
+
     let didComplete = false;
+    let ticketsCreated = 0;
+    let itemsSkipped = 0;
     // Captured inside the transaction, consumed only after it commits. Left null
     // for statuses the customer is never told about, so those transitions do no
     // extra work at all.
@@ -238,6 +344,33 @@ export async function POST(req: Request) {
       }
       if (toStatus === "out_for_delivery" && order?.fulfillment?.type !== "delivery") {
         throw new Error("out_for_delivery is only valid for delivery orders.");
+      }
+
+      // --- more reads: resolve each line's kitchen location, only when accepting ---
+      const accepting = toStatus === "accepted";
+      const orderLines: any[] = Array.isArray(order.lines) ? order.lines : [];
+      const locationByInvId = new Map<string, { kitchenLocationId: string; kitchenLocationName?: string | null }>();
+      if (accepting) {
+        // A lookup failure here (transient read error, or a malformed line
+        // throwing during id resolution) must never block the accept itself —
+        // it just means this order ends up with 0 tickets, all lines skipped.
+        try {
+          const invIds = Array.from(new Set(orderLines.map((ln) => resolveInventoryLookupId(ln)).filter(Boolean)));
+          const invRefs = invIds.map((id) => db.doc(`stores/${storeId}/inventory/${id}`));
+          const invSnaps = invRefs.length ? await tx.getAll(...invRefs) : [];
+          invSnaps.forEach((snap, i) => {
+            if (!snap.exists) return;
+            const data: any = snap.data();
+            if (data?.kitchenLocationId) {
+              locationByInvId.set(invIds[i], {
+                kitchenLocationId: String(data.kitchenLocationId),
+                kitchenLocationName: data.kitchenLocationName ?? null,
+              });
+            }
+          });
+        } catch (e) {
+          console.error("[online-orders] kitchen-location lookup failed; accepting with 0 tickets:", e);
+        }
       }
 
       let receiptRead: any = null;
@@ -416,6 +549,47 @@ export async function POST(req: Request) {
         };
       }
 
+      if (accepting) {
+        // Same containment as the lookup above, but narrowed to the build step
+        // only: a bad line (or any other throw while resolving/building
+        // tickets) degrades to "0 tickets, everything skipped" rather than
+        // failing the accept transition. The build is pure and never partially
+        // applies, so once it succeeds its writes are queued unconditionally,
+        // outside the try — that keeps ticketsCreated/itemsSkipped always in
+        // sync with what actually commits, instead of a `tx.set` throw partway
+        // through silently understating a partial success.
+        let built: ReturnType<typeof buildOnlineOrderKitchenTicketWrites> | null = null;
+        try {
+          built = buildOnlineOrderKitchenTicketWrites({
+            storeId,
+            orderId,
+            lines: orderLines,
+            customerName: order?.contact?.name ?? null,
+            actorUid,
+            locationByInvId,
+            nowMs: Date.now(),
+          });
+        } catch (e) {
+          console.error("[online-orders] kitchen ticket build failed; accepting with 0 tickets:", e);
+        }
+
+        if (built) {
+          ticketsCreated = built.ticketsCreated;
+          itemsSkipped = built.itemsSkipped;
+          for (const w of built.writes) {
+            const ref = db.doc(w.path);
+            if (w.merge) {
+              tx.set(ref, w.data, { merge: true });
+            } else {
+              tx.set(ref, w.data);
+            }
+          }
+        } else {
+          ticketsCreated = 0;
+          itemsSkipped = orderLines.length;
+        }
+      }
+
       tx.update(orderRef, orderUpdate);
     });
 
@@ -464,7 +638,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, status: toStatus, completed: didComplete, analyticsApplied });
+    return NextResponse.json({ ok: true, status: toStatus, completed: didComplete, analyticsApplied, ticketsCreated, itemsSkipped });
   } catch (e: any) {
     const message = e?.message ?? "Unknown error";
     // Payment guards carry their own status. The regex below stays the fallback

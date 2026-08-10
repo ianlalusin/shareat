@@ -26,6 +26,7 @@ vi.mock("firebase-admin/firestore", () => ({
   FieldValue: {
     serverTimestamp: () => ({ __sentinel: "serverTimestamp" }),
     arrayUnion: (...values: any[]) => ({ __sentinel: "arrayUnion", values }),
+    arrayRemove: (...values: any[]) => ({ __sentinel: "arrayRemove", values }),
     delete: () => ({ __sentinel: "delete" }),
   },
   Timestamp: {
@@ -44,6 +45,7 @@ vi.mock("@/lib/server/active-staff-check", () => ({
   requireActiveStaff: async () => ({
     isPlatformAdmin: false,
     assignedStoreIds: [STORE],
+    role: mockStaffRole,
   }),
 }));
 
@@ -66,6 +68,7 @@ type SetOp = { path: string; data: any };
 function makeHarness(docs: Record<string, any>) {
   const updates: Update[] = [];
   const sets: SetOp[] = [];
+  let autoIdCounter = 0;
 
   const makeRef = (path: string) => ({
     path,
@@ -75,6 +78,11 @@ function makeHarness(docs: Record<string, any>) {
 
   const db = {
     doc: (path: string) => makeRef(path),
+    // Only .doc() (auto-id) is exercised today, by the activity-log writes in
+    // op: kitchen-ticket-status.
+    collection: (path: string) => ({
+      doc: () => makeRef(`${path}/auto_${++autoIdCounter}`),
+    }),
     runTransaction: async (fn: (tx: any) => Promise<void>) => {
       const tx = {
         get: async (ref: any) => ({
@@ -82,6 +90,12 @@ function makeHarness(docs: Record<string, any>) {
           data: () => docs[ref.path],
           id: ref.id,
         }),
+        getAll: async (...refs: any[]) =>
+          refs.map((ref) => ({
+            exists: docs[ref.path] !== undefined,
+            data: () => docs[ref.path],
+            id: ref.id,
+          })),
         update: (ref: any, data: any) => {
           updates.push({ path: ref.path, data });
         },
@@ -99,6 +113,7 @@ function makeHarness(docs: Record<string, any>) {
 }
 
 let harness: ReturnType<typeof makeHarness>;
+let mockStaffRole: string | undefined;
 
 function post(body: Record<string, unknown>) {
   return POST(
@@ -149,8 +164,22 @@ function seed(order: Record<string, any>) {
   });
 }
 
+function seedWithInventory(order: Record<string, any>, inventory: Record<string, any> = {}) {
+  const docs: Record<string, any> = {
+    [ORDER_PATH]: order,
+    [`stores/${STORE}/receiptSettings/main`]: { receiptNoFormat: "SELIP-######" },
+    [`stores/${STORE}/counters/receipts`]: { seq: 41 },
+    [`stores/${STORE}`]: { name: "Lipa" },
+  };
+  for (const [invId, data] of Object.entries(inventory)) {
+    docs[`stores/${STORE}/inventory/${invId}`] = data;
+  }
+  harness = makeHarness(docs);
+}
+
 beforeEach(() => {
   seed(baseOrder());
+  mockStaffRole = undefined;
 });
 
 // --- confirm-payment -------------------------------------------------------
@@ -524,5 +553,237 @@ describe("op dispatch", () => {
       methodLabel: "GCash",
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// The kitchen role is only on this route (requireActiveStaff widened to admit
+// it) so the KDS can serve/cancel its own tickets — it must not gain the
+// other ops as a side effect of that widening.
+describe("op dispatch — kitchen role is scoped to kitchen-ticket-status", () => {
+  it("denies a kitchen-role staffer calling transition", async () => {
+    mockStaffRole = "kitchen";
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a kitchen-role staffer calling confirm-payment", async () => {
+    mockStaffRole = "kitchen";
+    const res = await post({ op: "confirm-payment", storeId: STORE, orderId: ORDER, methodLabel: "GCash" });
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a kitchen-role staffer calling unconfirm-payment", async () => {
+    mockStaffRole = "kitchen";
+    const res = await post({ op: "unconfirm-payment", storeId: STORE, orderId: ORDER, reason: "test" });
+    expect(res.status).toBe(403);
+  });
+
+  it("still allows a cashier through to transition (role gate is kitchen-specific)", async () => {
+    mockStaffRole = "cashier";
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("op: kitchen-ticket-status", () => {
+  const TICKET_PATH = `stores/${STORE}/onlineOrders/${ORDER}/kitchentickets/k1`;
+
+  function seedTicket(over: Record<string, any> = {}) {
+    harness.docs[TICKET_PATH] = {
+      id: "k1",
+      onlineOrderId: ORDER,
+      storeId: STORE,
+      status: "preparing",
+      itemName: "Unli Samgyup",
+      kitchenLocationId: "grill",
+      createdAtClientMs: Date.now() - 60_000,
+      ...over,
+    };
+  }
+
+  it("allows a kitchen-role staffer to serve a ticket", async () => {
+    mockStaffRole = "kitchen";
+    seedTicket();
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "served" });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true, status: "served", alreadyFinal: false });
+    const update = harness.updates.find((u) => u.path === TICKET_PATH)?.data;
+    expect(update).toMatchObject({ status: "served", servedByUid: ACTOR_UID });
+  });
+
+  it("removes the ticket from the rtKdsTickets fan-out and archives it", async () => {
+    seedTicket();
+    await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "served" });
+    const rtUpdate = harness.updates.find((u) => u.path === `stores/${STORE}/rtKdsTickets/grill`)?.data;
+    expect(rtUpdate).toBeTruthy();
+    expect(Object.keys(rtUpdate).some((k) => k.includes("k1"))).toBe(true);
+    const archived = harness.sets.find((s) => s.path === `stores/${STORE}/rtKdsTickets/grill/closedKdsTickets/k1`);
+    expect(archived).toBeTruthy();
+  });
+
+  it("requires a reason to cancel a ticket", async () => {
+    seedTicket();
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "cancelled" });
+    expect(res.status).toBe(400);
+  });
+
+  it("writes cancelReason onto the ticket when a reason is given", async () => {
+    seedTicket();
+    await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "cancelled", reason: "Out of stock" });
+    const update = harness.updates.find((u) => u.path === TICKET_PATH)?.data;
+    expect(update).toMatchObject({ status: "cancelled", cancelReason: "Out of stock" });
+  });
+
+  it("no-ops without error on an already-finalized ticket", async () => {
+    seedTicket({ status: "served" });
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "served" });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true, alreadyFinal: true });
+    expect(harness.updates.find((u) => u.path === TICKET_PATH)).toBeUndefined();
+  });
+
+  it("404s when the ticket doesn't exist", async () => {
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "missing", status: "served" });
+    expect(res.status).toBe(404);
+  });
+
+  it("400s on an unrecognized status value", async () => {
+    seedTicket();
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "preparing" });
+    expect(res.status).toBe(400);
+  });
+});
+
+// --- transition: accepted creates kitchen tickets ---------------------------
+
+describe("transition: accepted creates kitchen tickets", () => {
+  it("creates a ticket + rtKdsTickets fan-out for each mapped line, and reports the counts", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [
+          { lineId: "l1", productId: "p1", name: "Unli Samgyup", category: "Mains", unitPrice: 500, qty: 1 },
+          { lineId: "l2", productId: "p2", name: "Iced Tea", category: "Drinks", unitPrice: 40, qty: 2 },
+        ],
+      }),
+      {
+        p1: { kitchenLocationId: "grill", kitchenLocationName: "Grill" },
+        p2: { kitchenLocationId: "drinks", kitchenLocationName: "Drinks" },
+      }
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ticketsCreated).toBe(2);
+    expect(json.itemsSkipped).toBe(0);
+
+    const ticketSets = harness.sets.filter((s) => s.path.includes("/kitchentickets/"));
+    expect(ticketSets).toHaveLength(2);
+    expect(ticketSets.map((s) => s.path).sort()).toEqual([
+      `stores/${STORE}/onlineOrders/${ORDER}/kitchentickets/${ORDER}_0`,
+      `stores/${STORE}/onlineOrders/${ORDER}/kitchentickets/${ORDER}_1`,
+    ]);
+
+    const fanoutSets = harness.sets.filter((s) => s.path.startsWith(`stores/${STORE}/rtKdsTickets/`));
+    expect(fanoutSets.map((s) => s.path).sort()).toEqual([
+      `stores/${STORE}/rtKdsTickets/drinks`,
+      `stores/${STORE}/rtKdsTickets/grill`,
+    ]);
+  });
+
+  it("still accepts the order and reports itemsSkipped when a line has no kitchen-location mapping", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [{ lineId: "l1", productId: "p1", name: "Unmapped Item", category: "Mains", unitPrice: 500, qty: 1 }],
+      }),
+      { p1: {} } // exists, but no kitchenLocationId
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(orderUpdate().status).toBe("accepted");
+    expect(json.ticketsCreated).toBe(0);
+    expect(json.itemsSkipped).toBe(1);
+    expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
+  });
+
+  it("still accepts the order when the inventory doc doesn't exist at all", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [{ lineId: "l1", productId: "does-not-exist", name: "Ghost Item", category: "Mains", unitPrice: 500, qty: 1 }],
+      })
+      // no inventory docs seeded at all
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(orderUpdate().status).toBe("accepted");
+    expect(json.ticketsCreated).toBe(0);
+    expect(json.itemsSkipped).toBe(1);
+  });
+
+  it("resolves the kitchen location via variantId, not productId, for a variant line", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [{ lineId: "l1", productId: "family1", variantId: "spicy_v1", name: "Kimbap (Spicy)", category: "Mains", unitPrice: 200, qty: 1 }],
+      }),
+      { spicy_v1: { kitchenLocationId: "grill" } }
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(json.ticketsCreated).toBe(1);
+    const ticketSet = harness.sets.find((s) => s.path.includes("/kitchentickets/"));
+    expect(ticketSet!.data.itemId).toBe("spicy_v1");
+  });
+
+  it("does not create tickets for a transition other than accepted", async () => {
+    seedWithInventory(
+      baseOrder({ status: "accepted", lines: [{ lineId: "l1", productId: "p1", name: "Item", category: "Mains", unitPrice: 500, qty: 1 }] }),
+      { p1: { kitchenLocationId: "grill" } }
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "preparing" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ticketsCreated).toBe(0);
+    expect(json.itemsSkipped).toBe(0);
+    expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
+  });
+
+  it("still accepts the order when ticket resolution throws on a malformed line", async () => {
+    // A null entry in `lines` makes resolveInventoryLookupId throw (it reads
+    // `.variantId`/`.productId` off the line) both during the lookup-read step
+    // and again during the ticket-build step. The accept must still go through.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      seedWithInventory(baseOrder({ status: "pending", lines: [null] }));
+
+      const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.ok).toBe(true);
+      expect(json.status).toBe("accepted");
+      expect(orderUpdate().status).toBe("accepted");
+      expect(json.ticketsCreated).toBe(0);
+      expect(json.itemsSkipped).toBe(1);
+      expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
