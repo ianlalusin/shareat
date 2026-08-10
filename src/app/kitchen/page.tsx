@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc, DailyMetric } from "@/lib/types";
@@ -228,7 +229,20 @@ export default function KitchenPage() {
   
   const [historyPreview, setHistoryPreview] = useState<HistoryPreviewItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  
+
+  const [historyCollapsed, setHistoryCollapsed] = useState(true);
+  useEffect(() => {
+    const saved = localStorage.getItem("kds_history_collapsed");
+    if (saved !== null) setHistoryCollapsed(saved === "true");
+  }, []);
+  const toggleHistoryCollapsed = () => {
+    setHistoryCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("kds_history_collapsed", String(next));
+      return next;
+    });
+  };
+
 
   useEffect(() => {
     if (!activeStore) {
@@ -952,8 +966,8 @@ export default function KitchenPage() {
             </div>
         </div>
       </PageHeader>
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 items-start">
-            <div className="xl:col-span-3">
+        <div className={cn("grid grid-cols-1 gap-4 items-start", !historyCollapsed && "xl:grid-cols-4")}>
+            <div className={!historyCollapsed ? "xl:col-span-3" : ""}>
                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                     {isMobile ? (
                         <Select value={activeTab} onValueChange={setActiveTab}>
@@ -1000,14 +1014,26 @@ export default function KitchenPage() {
                     ))}
                  </Tabs>
             </div>
-            <div className="xl:col-span-1 space-y-4">
-                <HistoryView
-                  items={historyPreview}
-                  isLoading={isLoadingHistory}
-                  activeStationId={activeTab}
-                />
-            </div>
+            {!historyCollapsed && (
+                <div className="xl:col-span-1 space-y-4">
+                    <HistoryView
+                      items={historyPreview}
+                      isLoading={isLoadingHistory}
+                      activeStationId={activeTab}
+                      onCollapse={toggleHistoryCollapsed}
+                    />
+                </div>
+            )}
         </div>
+        {historyCollapsed && (
+            <Button
+                onClick={toggleHistoryCollapsed}
+                className="fixed bottom-6 right-6 z-40 h-14 px-5 gap-2 rounded-full text-base shadow-lg"
+                size="lg"
+            >
+                <History className="h-5 w-5" /> History
+            </Button>
+        )}
       {timelineSessionId && activeStore && (
         <SessionTimelineDrawer open={!!timelineSessionId} onOpenChange={(isOpen) => !isOpen && setTimelineSessionId(null)} storeId={activeStore.id} sessionId={timelineSessionId} />
        )}

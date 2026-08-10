@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
-import { ArrowLeft, ArrowRight, Clock, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, Loader2, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { formatDurationHuman as formatDuration } from "@/lib/utils/date";
 
@@ -16,14 +16,22 @@ interface HistoryViewProps {
     items: any[];
     isLoading: boolean;
     activeStationId: string;
+    onCollapse?: () => void;
 }
 
-export function HistoryView({ items, isLoading, activeStationId }: HistoryViewProps) {
+export function HistoryView({ items, isLoading, activeStationId, onCollapse }: HistoryViewProps) {
     return (
         <Card>
-            <CardHeader>
-                <CardTitle>Order History</CardTitle>
-                <CardDescription>Recently completed or cancelled items.</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
+                <div>
+                    <CardTitle>Order History</CardTitle>
+                    <CardDescription>Recently completed or cancelled items.</CardDescription>
+                </div>
+                {onCollapse && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onCollapse} aria-label="Collapse history">
+                        <ChevronRight className="h-4 w-4" />
+                    </Button>
+                )}
             </CardHeader>
             <CardContent>
                 {isLoading && items.length === 0 ? (
