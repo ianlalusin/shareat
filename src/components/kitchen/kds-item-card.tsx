@@ -109,7 +109,9 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
     const isAlaCarte = ticket.sessionMode === 'alacarte';
     const isPackage = ticket.type === 'package';
     const isOnline = !!ticket.onlineOrderId;
-    const tableLabel = isAlaCarte
+    const tableLabel = isOnline
+        ? (ticket.customerName || "Online Order")
+        : isAlaCarte
         ? (ticket.sessionLabel ?? (ticket.customerName || "Ala Carte"))
         : ((ticket as any).tableDisplayName || ticket.sessionLabel || `Table ${ticket.tableNumber}`);
     const paxCount = Number((ticket as any).guestCount ?? 0);
@@ -163,6 +165,8 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
         ? 'bg-gray-50 dark:bg-gray-900/20 border-gray-200'
         : isLate
         ? 'border-destructive border-2 bg-destructive/5'
+        : isOnline
+        ? 'bg-gradient-to-br from-green-50 to-white dark:from-green-950/40 dark:to-background border-green-300 dark:border-green-800'
         : '';
 
     return (
@@ -170,7 +174,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
             <Card className={cn("flex flex-col", statusColor)}>
                 <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-center gap-2">
-                        <p className="text-2xl font-bold text-destructive truncate">{identifier}</p>
+                        <p className={cn("text-2xl font-bold truncate", isOnline ? "text-green-700 dark:text-green-400" : "text-destructive")}>{identifier}</p>
                         <div className="flex items-center gap-2 shrink-0">
                             {isLate && (
                                 <Badge variant="destructive" className="gap-1 animate-pulse">
@@ -180,6 +184,11 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                             <TimeLapse elapsedMs={elapsedMs} isLate={isLate} />
                         </div>
                     </div>
+                    {isOnline && (
+                        <Badge className="mt-1.5 w-fit gap-1 bg-green-600 text-white hover:bg-green-600">
+                            ● Online
+                        </Badge>
+                    )}
                     <CardTitle className="text-xl leading-tight">{ticket.itemName}</CardTitle>
                     {(ticket as any).modifiersText && (
                       <p className="text-sm text-muted-foreground -mt-1 italic">
