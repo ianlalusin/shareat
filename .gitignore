@@ -51,3 +51,6 @@ ds-bundle/
 # Firestore emulator artifacts
 firestore-debug.log
 firebase-debug.log
+
+# local git worktrees (subagent-driven-development scratch workspaces)
+.worktrees/
