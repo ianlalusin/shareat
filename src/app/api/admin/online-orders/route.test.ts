@@ -648,4 +648,28 @@ describe("transition: accepted creates kitchen tickets", () => {
     expect(json.itemsSkipped).toBe(0);
     expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
   });
+
+  it("still accepts the order when ticket resolution throws on a malformed line", async () => {
+    // A null entry in `lines` makes resolveInventoryLookupId throw (it reads
+    // `.variantId`/`.productId` off the line) both during the lookup-read step
+    // and again during the ticket-build step. The accept must still go through.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      seedWithInventory(baseOrder({ status: "pending", lines: [null] }));
+
+      const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.ok).toBe(true);
+      expect(json.status).toBe("accepted");
+      expect(orderUpdate().status).toBe("accepted");
+      expect(json.ticketsCreated).toBe(0);
+      expect(json.itemsSkipped).toBe(1);
+      expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });

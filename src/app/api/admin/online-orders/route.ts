@@ -248,18 +248,25 @@ export async function POST(req: Request) {
       const orderLines: any[] = Array.isArray(order.lines) ? order.lines : [];
       const locationByInvId = new Map<string, { kitchenLocationId: string; kitchenLocationName?: string | null }>();
       if (accepting) {
-        const invIds = Array.from(new Set(orderLines.map((ln) => resolveInventoryLookupId(ln)).filter(Boolean)));
-        const invSnaps = await Promise.all(invIds.map((id) => tx.get(db.doc(`stores/${storeId}/inventory/${id}`))));
-        invSnaps.forEach((snap, i) => {
-          if (!snap.exists) return;
-          const data: any = snap.data();
-          if (data?.kitchenLocationId) {
-            locationByInvId.set(invIds[i], {
-              kitchenLocationId: String(data.kitchenLocationId),
-              kitchenLocationName: data.kitchenLocationName ?? null,
-            });
-          }
-        });
+        // A lookup failure here (transient read error, or a malformed line
+        // throwing during id resolution) must never block the accept itself —
+        // it just means this order ends up with 0 tickets, all lines skipped.
+        try {
+          const invIds = Array.from(new Set(orderLines.map((ln) => resolveInventoryLookupId(ln)).filter(Boolean)));
+          const invSnaps = await Promise.all(invIds.map((id) => tx.get(db.doc(`stores/${storeId}/inventory/${id}`))));
+          invSnaps.forEach((snap, i) => {
+            if (!snap.exists) return;
+            const data: any = snap.data();
+            if (data?.kitchenLocationId) {
+              locationByInvId.set(invIds[i], {
+                kitchenLocationId: String(data.kitchenLocationId),
+                kitchenLocationName: data.kitchenLocationName ?? null,
+              });
+            }
+          });
+        } catch (e) {
+          console.error("[online-orders] kitchen-location lookup failed; accepting with 0 tickets:", e);
+        }
       }
 
       let receiptRead: any = null;
@@ -439,24 +446,33 @@ export async function POST(req: Request) {
       }
 
       if (accepting) {
-        const built = buildOnlineOrderKitchenTicketWrites({
-          storeId,
-          orderId,
-          lines: orderLines,
-          customerName: order?.contact?.name ?? null,
-          actorUid,
-          locationByInvId,
-          nowMs: Date.now(),
-        });
-        ticketsCreated = built.ticketsCreated;
-        itemsSkipped = built.itemsSkipped;
-        for (const w of built.writes) {
-          const ref = db.doc(w.path);
-          if (w.merge) {
-            tx.set(ref, w.data, { merge: true });
-          } else {
-            tx.set(ref, w.data);
+        // Same containment as the lookup above: a bad line (or any other
+        // throw while building/writing tickets) degrades to "0 tickets,
+        // everything skipped" rather than failing the accept transition.
+        try {
+          const built = buildOnlineOrderKitchenTicketWrites({
+            storeId,
+            orderId,
+            lines: orderLines,
+            customerName: order?.contact?.name ?? null,
+            actorUid,
+            locationByInvId,
+            nowMs: Date.now(),
+          });
+          ticketsCreated = built.ticketsCreated;
+          itemsSkipped = built.itemsSkipped;
+          for (const w of built.writes) {
+            const ref = db.doc(w.path);
+            if (w.merge) {
+              tx.set(ref, w.data, { merge: true });
+            } else {
+              tx.set(ref, w.data);
+            }
           }
+        } catch (e) {
+          console.error("[online-orders] kitchen ticket build/write failed; accepting with 0 tickets:", e);
+          ticketsCreated = 0;
+          itemsSkipped = orderLines.length;
         }
       }
 
