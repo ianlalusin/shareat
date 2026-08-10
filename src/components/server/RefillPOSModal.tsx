@@ -284,11 +284,7 @@ function POSContent({
                     }
 
                     const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
-                    let finalNotes = item.notes.trim();
-                    if (selectedFlavorNames.length > 0) {
-                        const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
-                        finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
-                    }
+                    const flavorNote = selectedFlavorNames.length > 0 ? selectedFlavorNames.join(", ") : undefined;
 
                     await createKitchenTickets(
                         db,
@@ -306,7 +302,8 @@ function POSContent({
                         1, // Qty for refill ticket is always 1
                         actor,
                         { tx },
-                        finalNotes
+                        item.notes.trim(),
+                        { flavorNote }
                     );
                 }
                 // Other Refills tickets (grouped by kitchenLocationId)
@@ -363,11 +360,7 @@ function POSContent({
                 }
 
                 const selectedFlavorNames = item.flavorIds.map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id);
-                let finalNotes = item.notes.trim();
-                if (selectedFlavorNames.length > 0) {
-                    const flavorNote = `Flavors: ${selectedFlavorNames.join(", ")}`;
-                    finalNotes = finalNotes ? `${flavorNote}\n${finalNotes}` : flavorNote;
-                }
+                const flavorNote = selectedFlavorNames.length > 0 ? selectedFlavorNames.join(", ") : undefined;
 
                 const ticketPayload = await createKitchenTickets(
                     db,
@@ -385,7 +378,8 @@ function POSContent({
                     1, // Qty for refill ticket is always 1
                     actor,
                     { batch },
-                    finalNotes
+                    item.notes.trim(),
+                    { flavorNote }
                 );
                 if (ticketPayload) offlineTicketPayloads.push(ticketPayload);
             }
@@ -484,11 +478,9 @@ function POSContent({
           .map(id => storeFlavors.find(f => f.flavorId === id)?.flavorName || id)
           .filter(Boolean);
         
-        let notes = "";
-        if (flavorNames.length) notes = `Flavors: ${flavorNames.join(", ")}`;
-        const extraNotes = (activeCartItem?.notes || "").trim();
-        if (extraNotes) notes = notes ? `${notes}\n${extraNotes}` : extraNotes;
-        
+        const flavorNote = flavorNames.length ? flavorNames.join(", ") : undefined;
+        const notes = (activeCartItem?.notes || "").trim();
+
         const guestCount = session.guestCountFinal || session.guestCountCashierInitial || 1;
         const packageName = (currentPackage as any)?.packageName || (currentPackage as any)?.name || session.packageSnapshot?.name || "Package";
         const itemName = `REFILL - ${packageName}`;
@@ -512,7 +504,8 @@ function POSContent({
                     1,
                     actor,
                     { tx },
-                    notes
+                    notes,
+                    { flavorNote }
                 );
             });
         } else {
@@ -533,7 +526,8 @@ function POSContent({
                 1,
                 actor,
                 { batch },
-                notes
+                notes,
+                { flavorNote }
             );
             commitLocalFirst(batch, (err) => console.error("[RefillPOSModal] offline sync failed", err));
 

@@ -179,9 +179,9 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                         — {(ticket as any).modifiersText}
                       </p>
                     )}
-                    {(ticket as any).notes && (
+                    {(ticket as any).flavorNote && (
                       <p className="text-base font-semibold text-amber-700 leading-tight">
-                        📝 {(ticket as any).notes}
+                        📝 Flavors: {(ticket as any).flavorNote}
                       </p>
                     )}
 

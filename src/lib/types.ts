@@ -507,6 +507,13 @@ export type KitchenTicket = {
     kitchenLocationId: string;
     kitchenLocationName?: string;
     notes?: string;
+    // Flavor selection display line, kept separate from `notes` on purpose —
+    // they render in two different places on the KDS card (a compact "📝
+    // Flavors: …" flag vs. the full "Notes" box) and must never show the same
+    // text twice. Plain string (not the array-based initialFlavorNames used
+    // by package tickets), since refill tickets don't go through the
+    // session-based flavor-name enrichment package tickets use.
+    flavorNote?: string;
     qty: number;
     uom?: string;
     createdByUid: string;
