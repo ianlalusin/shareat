@@ -635,6 +635,8 @@ git commit -m "Show kitchen-ticket counts in the accept-order toast"
 - Modifies: `updateTicketStatus`'s signature gains a 5th param `opts?: { overrideAtMs?: number; silent?: boolean; source?: "online" }` and dispatches to `updateOnlineOrderTicketStatus` when `opts?.source === "online"`.
 - Modifies: `KdsItemCardProps.onUpdateStatus` gains the same optional 5th param.
 
+**CRITICAL — found during plan review, not in the original design doc:** `ticketsWithData` in `src/app/kitchen/page.tsx` (the memo that turns the raw `rtKdsTickets` projection into what the KDS actually renders) filters with `.filter(t => t && t.sessionId && !t.printedOffline)` (currently around line 436). An online-order ticket has **no** `sessionId` — only `onlineOrderId`. Left as-is, this filter would silently exclude every online ticket from the active queue, even though everything else in this plan (ticket creation, the projection fan-out, the card's visual treatment) would be working correctly — the tickets would exist in Firestore but never render anywhere. This task's Step 1 includes the one-line fix for this alongside the other edits; do not skip it.
+
 This path touches `runTransaction` against the real client SDK — the existing `updateTicketStatus` it mirrors has no unit test either (no Firestore-emulator harness exists for this file), so verification here follows that same precedent: manual, against a real dev store, in Step 2 below. The manual check is written out now so it's not improvised later:
 
 1. Seed one online order with an accepted status and one kitchen ticket (via Task 2's flow, or directly in Firestore) with `onlineOrderId` set and `status: "preparing"`.
@@ -650,7 +652,13 @@ This path touches `runTransaction` against the real client SDK — the existing 
 import { Loader, Send, History, X } from "lucide-react";
 ```
 
-2. Change `updateTicketStatus`'s signature (line 476-482) to accept and dispatch on `source`:
+2. **The critical fix** — in the same file, find `ticketsWithData`'s filter (currently `.filter(t => t && t.sessionId && !t.printedOffline)`, around line 436) and widen it to also accept online-order tickets:
+
+```ts
+      .filter(t => t && (t.sessionId || t.onlineOrderId) && !t.printedOffline);
+```
+
+3. Change `updateTicketStatus`'s signature (line 476-482) to accept and dispatch on `source`:
 
 ```ts
   const updateTicketStatus = async (
@@ -667,7 +675,7 @@ import { Loader, Send, History, X } from "lucide-react";
 
 (The rest of the existing function body is unchanged — this is a single new `if` block inserted at the top.)
 
-3. Add the new sibling function directly after `updateTicketStatus`'s closing brace (after line 631, before the "Auto-acknowledge tickets printed to the offline backup kitchen printer" comment on line 633):
+4. Add the new sibling function directly after `updateTicketStatus`'s closing brace (after line 631, before the "Auto-acknowledge tickets printed to the offline backup kitchen printer" comment on line 633):
 
 ```ts
   // Serve/cancel for an online-order ticket. Deliberately NOT a branch inside
@@ -749,7 +757,7 @@ import { Loader, Send, History, X } from "lucide-react";
   };
 ```
 
-4. In `src/components/kitchen/kds-item-card.tsx`, widen the prop type (line 74):
+5. In `src/components/kitchen/kds-item-card.tsx`, widen the prop type (line 74):
 
 ```ts
 interface KdsItemCardProps {
@@ -767,13 +775,13 @@ interface KdsItemCardProps {
 }
 ```
 
-5. Add an `isOnline` flag near the other derived booleans (after line 104, `const isPackage = ticket.type === 'package';`):
+6. Add an `isOnline` flag near the other derived booleans (after line 104, `const isPackage = ticket.type === 'package';`):
 
 ```ts
     const isOnline = !!ticket.onlineOrderId;
 ```
 
-6. Update the two `onUpdateStatus` call sites to pass the online source hint. In `handleCancel` (line 122):
+7. Update the two `onUpdateStatus` call sites to pass the online source hint. In `handleCancel` (line 122):
 
 ```ts
         if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId!, "cancelled", reason, isOnline ? { source: "online" } : undefined);
@@ -785,11 +793,11 @@ And the plain "Served" button (line 286):
                                     <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId!, 'served', undefined, isOnline ? { source: "online" } : undefined)}>
 ```
 
-- [ ] Make all six edits.
+- [ ] Make all seven edits.
 
 **Step 2: Manual verification**
 
-Run through the four steps written above (before Step 1) against a real dev store. Confirm both serve and cancel work, and that a SECOND click on an already-served/cancelled ticket is a no-op (matches the existing dine-in guard, reused verbatim).
+Run through the four steps written above (before Step 1) against a real dev store. Confirm both serve and cancel work, and that a SECOND click on an already-served/cancelled ticket is a no-op (matches the existing dine-in guard, reused verbatim). Specifically confirm step 2 of that list — the ticket actually appearing on the KDS screen at all — since that's exactly what the `ticketsWithData` filter fix above makes possible; if it's skipped, the ticket would silently never render and every later step in this list would have nothing to click.
 
 **Step 3: Run the full test suite and type-check**
 
