@@ -29,7 +29,7 @@ Dine-in orders already generate kitchen tickets that route to a per-store "kitch
 
 ### Non-goals
 - No auto-advancing online order status from ticket progress (explicitly deferred).
-- No printing changes — online-order tickets follow the exact same offline-backup-print gating as dine-in tickets, no new logic there.
+- No printing changes — online-order tickets are created server-side (the accept transition), so they never pass through the client-side offline-backup-print path at all; that gating simply doesn't apply to them. Accepting an online order already requires connectivity, so this has no practical effect.
 - No changes to `SyncKdsTicketsTool`'s query — verified it needs none (collection-group queries match by collection name regardless of parent path).
 - Not fixing the pre-existing gap where some newer "08XX"-range numbers/products or other unrelated edge cases exist elsewhere in the app — out of scope.
 
