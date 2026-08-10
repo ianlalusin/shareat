@@ -149,6 +149,19 @@ function seed(order: Record<string, any>) {
   });
 }
 
+function seedWithInventory(order: Record<string, any>, inventory: Record<string, any> = {}) {
+  const docs: Record<string, any> = {
+    [ORDER_PATH]: order,
+    [`stores/${STORE}/receiptSettings/main`]: { receiptNoFormat: "SELIP-######" },
+    [`stores/${STORE}/counters/receipts`]: { seq: 41 },
+    [`stores/${STORE}`]: { name: "Lipa" },
+  };
+  for (const [invId, data] of Object.entries(inventory)) {
+    docs[`stores/${STORE}/inventory/${invId}`] = data;
+  }
+  harness = makeHarness(docs);
+}
+
 beforeEach(() => {
   seed(baseOrder());
 });
@@ -524,5 +537,115 @@ describe("op dispatch", () => {
       methodLabel: "GCash",
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// --- transition: accepted creates kitchen tickets ---------------------------
+
+describe("transition: accepted creates kitchen tickets", () => {
+  it("creates a ticket + rtKdsTickets fan-out for each mapped line, and reports the counts", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [
+          { lineId: "l1", productId: "p1", name: "Unli Samgyup", category: "Mains", unitPrice: 500, qty: 1 },
+          { lineId: "l2", productId: "p2", name: "Iced Tea", category: "Drinks", unitPrice: 40, qty: 2 },
+        ],
+      }),
+      {
+        p1: { kitchenLocationId: "grill", kitchenLocationName: "Grill" },
+        p2: { kitchenLocationId: "drinks", kitchenLocationName: "Drinks" },
+      }
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ticketsCreated).toBe(2);
+    expect(json.itemsSkipped).toBe(0);
+
+    const ticketSets = harness.sets.filter((s) => s.path.includes("/kitchentickets/"));
+    expect(ticketSets).toHaveLength(2);
+    expect(ticketSets.map((s) => s.path).sort()).toEqual([
+      `stores/${STORE}/onlineOrders/${ORDER}/kitchentickets/${ORDER}_0`,
+      `stores/${STORE}/onlineOrders/${ORDER}/kitchentickets/${ORDER}_1`,
+    ]);
+
+    const fanoutSets = harness.sets.filter((s) => s.path.startsWith(`stores/${STORE}/rtKdsTickets/`));
+    expect(fanoutSets.map((s) => s.path).sort()).toEqual([
+      `stores/${STORE}/rtKdsTickets/drinks`,
+      `stores/${STORE}/rtKdsTickets/grill`,
+    ]);
+  });
+
+  it("still accepts the order and reports itemsSkipped when a line has no kitchen-location mapping", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [{ lineId: "l1", productId: "p1", name: "Unmapped Item", category: "Mains", unitPrice: 500, qty: 1 }],
+      }),
+      { p1: {} } // exists, but no kitchenLocationId
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(orderUpdate().status).toBe("accepted");
+    expect(json.ticketsCreated).toBe(0);
+    expect(json.itemsSkipped).toBe(1);
+    expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
+  });
+
+  it("still accepts the order when the inventory doc doesn't exist at all", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [{ lineId: "l1", productId: "does-not-exist", name: "Ghost Item", category: "Mains", unitPrice: 500, qty: 1 }],
+      })
+      // no inventory docs seeded at all
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(orderUpdate().status).toBe("accepted");
+    expect(json.ticketsCreated).toBe(0);
+    expect(json.itemsSkipped).toBe(1);
+  });
+
+  it("resolves the kitchen location via variantId, not productId, for a variant line", async () => {
+    seedWithInventory(
+      baseOrder({
+        status: "pending",
+        lines: [{ lineId: "l1", productId: "family1", variantId: "spicy_v1", name: "Kimbap (Spicy)", category: "Mains", unitPrice: 200, qty: 1 }],
+      }),
+      { spicy_v1: { kitchenLocationId: "grill" } }
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+
+    expect(json.ticketsCreated).toBe(1);
+    const ticketSet = harness.sets.find((s) => s.path.includes("/kitchentickets/"));
+    expect(ticketSet!.data.itemId).toBe("spicy_v1");
+  });
+
+  it("does not create tickets for a transition other than accepted", async () => {
+    seedWithInventory(
+      baseOrder({ status: "accepted", lines: [{ lineId: "l1", productId: "p1", name: "Item", category: "Mains", unitPrice: 500, qty: 1 }] }),
+      { p1: { kitchenLocationId: "grill" } }
+    );
+
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "preparing" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ticketsCreated).toBe(0);
+    expect(json.itemsSkipped).toBe(0);
+    expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
   });
 });

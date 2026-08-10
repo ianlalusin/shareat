@@ -10,6 +10,7 @@ import {
 } from "@/lib/server/notify-customer";
 import type { Receipt, ReceiptAnalyticsV2, SessionBillLine } from "@/lib/types";
 import { paymentLabel } from "@/lib/payment-label";
+import { buildOnlineOrderKitchenTicketWrites, resolveInventoryLookupId } from "@/lib/kitchen/online-order-tickets";
 
 export const runtime = "nodejs";
 
@@ -216,6 +217,8 @@ export async function POST(req: Request) {
     }
 
     let didComplete = false;
+    let ticketsCreated = 0;
+    let itemsSkipped = 0;
     // Captured inside the transaction, consumed only after it commits. Left null
     // for statuses the customer is never told about, so those transitions do no
     // extra work at all.
@@ -238,6 +241,25 @@ export async function POST(req: Request) {
       }
       if (toStatus === "out_for_delivery" && order?.fulfillment?.type !== "delivery") {
         throw new Error("out_for_delivery is only valid for delivery orders.");
+      }
+
+      // --- more reads: resolve each line's kitchen location, only when accepting ---
+      const accepting = toStatus === "accepted";
+      const orderLines: any[] = Array.isArray(order.lines) ? order.lines : [];
+      const locationByInvId = new Map<string, { kitchenLocationId: string; kitchenLocationName?: string | null }>();
+      if (accepting) {
+        const invIds = Array.from(new Set(orderLines.map((ln) => resolveInventoryLookupId(ln)).filter(Boolean)));
+        const invSnaps = await Promise.all(invIds.map((id) => tx.get(db.doc(`stores/${storeId}/inventory/${id}`))));
+        invSnaps.forEach((snap, i) => {
+          if (!snap.exists) return;
+          const data: any = snap.data();
+          if (data?.kitchenLocationId) {
+            locationByInvId.set(invIds[i], {
+              kitchenLocationId: String(data.kitchenLocationId),
+              kitchenLocationName: data.kitchenLocationName ?? null,
+            });
+          }
+        });
       }
 
       let receiptRead: any = null;
@@ -416,6 +438,28 @@ export async function POST(req: Request) {
         };
       }
 
+      if (accepting) {
+        const built = buildOnlineOrderKitchenTicketWrites({
+          storeId,
+          orderId,
+          lines: orderLines,
+          customerName: order?.contact?.name ?? null,
+          actorUid,
+          locationByInvId,
+          nowMs: Date.now(),
+        });
+        ticketsCreated = built.ticketsCreated;
+        itemsSkipped = built.itemsSkipped;
+        for (const w of built.writes) {
+          const ref = db.doc(w.path);
+          if (w.merge) {
+            tx.set(ref, w.data, { merge: true });
+          } else {
+            tx.set(ref, w.data);
+          }
+        }
+      }
+
       tx.update(orderRef, orderUpdate);
     });
 
@@ -464,7 +508,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, status: toStatus, completed: didComplete, analyticsApplied });
+    return NextResponse.json({ ok: true, status: toStatus, completed: didComplete, analyticsApplied, ticketsCreated, itemsSkipped });
   } catch (e: any) {
     const message = e?.message ?? "Unknown error";
     // Payment guards carry their own status. The regex below stays the fallback
