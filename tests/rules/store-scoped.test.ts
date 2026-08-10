@@ -155,6 +155,10 @@ beforeEach(async () => {
       doc(raw as any, "stores", STORE_B, "sessions", "s9", "kitchentickets", "k9"),
       { storeId: STORE_B, status: "preparing" }
     );
+    await setDoc(
+      doc(raw as any, "stores", STORE_A, "onlineOrders", "o1", "kitchentickets", "k1"),
+      { storeId: STORE_A, onlineOrderId: "o1", status: "preparing" }
+    );
     await setDoc(doc(raw as any, "stores", STORE_A, "serverProfiles", "p1"), { name: "Ana" });
     await setDoc(doc(raw as any, "stores", STORE_A, "serverProfileSecrets", "sec1"), {
       profileId: "p1",
@@ -226,6 +230,17 @@ describe("server-only collections are closed to every client", () => {
       });
     }
   }
+
+  // Regression test for C2: the KDS serve/cancel write for an online-order
+  // ticket must go through the server (see /api/admin/online-orders'
+  // "kitchen-ticket-status" op), never the client SDK — onlineOrders and its
+  // subcollections stay write-denied even for the kitchen role that operates
+  // the KDS screen.
+  it("denies the kitchen role writing an online order's kitchen ticket directly", async () => {
+    await assertFails(
+      setDoc(doc(db("kitchen"), "stores", STORE_A, "onlineOrders", "o1", "kitchentickets", "k1"), { status: "served" })
+    );
+  });
 });
 
 /**

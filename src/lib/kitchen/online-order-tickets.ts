@@ -73,6 +73,8 @@ export function buildOnlineOrderKitchenTicketWrites(params: BuildTicketsParams):
       id: ticketId,
       onlineOrderId: orderId,
       storeId,
+      // Deliberate, imperfect choice: online lines share the "addon" bucket in
+      // kitchen analytics rather than widening the closed OrderItemType union.
       type: "addon",
       itemId: invId,
       itemName: line.name,
@@ -91,10 +93,11 @@ export function buildOnlineOrderKitchenTicketWrites(params: BuildTicketsParams):
     writes.push({
       path: `stores/${storeId}/rtKdsTickets/${location.kitchenLocationId}`,
       data: {
-        [`tickets.${ticketId}`]: ticketData,
+        kitchenLocationId: location.kitchenLocationId,
+        tickets: { [ticketId]: ticketData },
         activeIds: FieldValue.arrayUnion(ticketId),
-        [`sessionIndex.${orderId}`]: FieldValue.arrayUnion(ticketId),
-        "meta.updatedAt": FieldValue.serverTimestamp(),
+        sessionIndex: { [orderId]: FieldValue.arrayUnion(ticketId) },
+        meta: { updatedAt: FieldValue.serverTimestamp() },
       },
       merge: true,
     });

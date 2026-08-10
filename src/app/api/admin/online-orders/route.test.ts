@@ -82,6 +82,12 @@ function makeHarness(docs: Record<string, any>) {
           data: () => docs[ref.path],
           id: ref.id,
         }),
+        getAll: async (...refs: any[]) =>
+          refs.map((ref) => ({
+            exists: docs[ref.path] !== undefined,
+            data: () => docs[ref.path],
+            id: ref.id,
+          })),
         update: (ref: any, data: any) => {
           updates.push({ path: ref.path, data });
         },

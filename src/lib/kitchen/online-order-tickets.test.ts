@@ -70,9 +70,26 @@ describe("buildOnlineOrderKitchenTicketWrites", () => {
     expect(fanoutWrites).toHaveLength(2);
     expect(fanoutWrites[0].path).toBe("stores/store1/rtKdsTickets/grill");
     expect(fanoutWrites[0].merge).toBe(true);
-    expect(fanoutWrites[0].data["tickets.ord_1_0"]).toMatchObject({ itemName: "Unli Samgyup" });
+    expect(fanoutWrites[0].data.kitchenLocationId).toBe("grill");
+    expect(fanoutWrites[0].data.tickets).toMatchObject({ ord_1_0: { itemName: "Unli Samgyup" } });
     expect(fanoutWrites[0].data.activeIds).toEqual({ __sentinel: "arrayUnion", values: ["ord_1_0"] });
-    expect(fanoutWrites[0].data["sessionIndex.ord_1"]).toEqual({ __sentinel: "arrayUnion", values: ["ord_1_0"] });
+    expect(fanoutWrites[0].data.sessionIndex).toEqual({ ord_1: { __sentinel: "arrayUnion", values: ["ord_1_0"] } });
+    expect(fanoutWrites[0].data.meta).toEqual({ updatedAt: { __sentinel: "serverTimestamp" } });
+  });
+
+  it("never uses a dotted string as a top-level key in the rtKdsTickets fan-out write (set(merge) does not parse dots as field paths — only update() does)", () => {
+    const result = buildOnlineOrderKitchenTicketWrites({
+      ...baseParams,
+      lines: [{ productId: "p1", name: "Unli Samgyup", qty: 1 }],
+      locationByInvId: new Map([["p1", { kitchenLocationId: "grill" }]]),
+    });
+    const fanoutWrites = result.writes.filter((w) => w.path.startsWith("stores/store1/rtKdsTickets/"));
+    expect(fanoutWrites).toHaveLength(1);
+    for (const write of fanoutWrites) {
+      for (const key of Object.keys(write.data)) {
+        expect(key.includes(".")).toBe(false);
+      }
+    }
   });
 
   it("uses variantId over productId to resolve the kitchen location", () => {

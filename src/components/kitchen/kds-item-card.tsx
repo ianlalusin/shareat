@@ -132,6 +132,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
     };
 
     const handleCancelRemaining = async (reason: string) => {
+        if (!ticket.sessionId) return;
         if (!reason) return;
         const confirmed = await confirm({
             title: `Cancel remaining ${qtyRemaining} of ${ticket.itemName}?`,
@@ -147,6 +148,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
     };
 
     const handleServeBatchConfirm = () => {
+        if (!ticket.sessionId) return;
         const qty = parseInt(serveQtyInput, 10);
         if (isNaN(qty) || qty <= 0 || qty > qtyRemaining) return;
         if (onServeBatch) onServeBatch({ ticketId: ticket.id, sessionId: ticket.sessionId ?? "", qtyToServe: qty });
