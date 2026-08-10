@@ -79,14 +79,17 @@ export function SyncKdsTicketsTool() {
             return acc;
         }, {} as Record<string, KitchenTicket>);
 
-        const sessionIndex = stationTickets.reduce((acc, ticket) => {
-            if(!acc[ticket.sessionId]) {
-                acc[ticket.sessionId] = [];
-            }
-            if(!acc[ticket.sessionId].includes(ticket.id)){
-                 acc[ticket.sessionId].push(ticket.id);
-            }
-            return acc;
+        const sessionIndex = stationTickets
+            .filter((t) => t.sessionId || t.onlineOrderId)
+            .reduce((acc, ticket) => {
+                const sessionKey = (ticket.sessionId || ticket.onlineOrderId) as string;
+                if(!acc[sessionKey]) {
+                    acc[sessionKey] = [];
+                }
+                if(!acc[sessionKey].includes(ticket.id)){
+                     acc[sessionKey].push(ticket.id);
+                }
+                return acc;
         }, {} as Record<string, string[]>);
 
         const newProjection: RtKdsStationDoc = {

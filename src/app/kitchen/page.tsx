@@ -442,7 +442,7 @@ export default function KitchenPage() {
     });
 
     return sortedTickets.map((ticket: KitchenTicket) => {
-        const session = sessionsMap.get(ticket.sessionId);
+        const session = ticket.sessionId ? sessionsMap.get(ticket.sessionId) : undefined;
         const flavorNames = ticket.type === 'package' 
             ? session?.initialFlavorIds?.map((id: string) => flavorsMap.get(id) || 'Unknown').filter(Boolean)
             : [];

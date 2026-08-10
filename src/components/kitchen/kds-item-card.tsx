@@ -119,7 +119,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
             destructive: true,
         });
         cleanupRadixOverlays();
-        if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId, "cancelled", reason);
+        if (confirmed) onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId || "", "cancelled", reason);
     };
 
     const handleCancelRemaining = async (reason: string) => {
@@ -132,15 +132,15 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
         });
         cleanupRadixOverlays();
         if (confirmed) {
-            if (onCancelRemaining) onCancelRemaining({ ticketId: ticket.id, sessionId: ticket.sessionId, reason });
-            else onUpdateStatus(ticket.id, ticket.sessionId, "cancelled", reason);
+            if (onCancelRemaining) onCancelRemaining({ ticketId: ticket.id, sessionId: ticket.sessionId || ticket.onlineOrderId || "", reason });
+            else onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId || "", "cancelled", reason);
         }
     };
 
     const handleServeBatchConfirm = () => {
         const qty = parseInt(serveQtyInput, 10);
         if (isNaN(qty) || qty <= 0 || qty > qtyRemaining) return;
-        if (onServeBatch) onServeBatch({ ticketId: ticket.id, sessionId: ticket.sessionId, qtyToServe: qty });
+        if (onServeBatch) onServeBatch({ ticketId: ticket.id, sessionId: ticket.sessionId || ticket.onlineOrderId || "", qtyToServe: qty });
         setServeBatchOpen(false);
         setServeQtyInput("1");
     };
@@ -283,7 +283,7 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                                         <Send className="h-5 w-5 mr-1.5" /> Serve ({qtyRemaining})
                                     </Button>
                                 ) : (
-                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId, 'served')}>
+                                    <Button className="h-11 px-4 text-base" onClick={() => onUpdateStatus(ticket.id, ticket.sessionId || ticket.onlineOrderId || '', 'served')}>
                                         <Send className="h-5 w-5 mr-1.5" /> Served
                                     </Button>
                                 )}

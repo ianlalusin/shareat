@@ -495,14 +495,18 @@ export type OrderItemType = "package" | "refill" | "addon";
 
 export type KitchenTicket = {
     id: string;
-    sessionId: string;
+    // A ticket has exactly one of sessionId (dine-in) or onlineOrderId
+    // (online order) set, never both. tableId/tableNumber/guestCount are
+    // dine-in-only and stay unset for an online-order ticket.
+    sessionId?: string;
+    onlineOrderId?: string;
     storeId: string;
-    tableId: string;
-    tableNumber: string;
+    tableId?: string;
+    tableNumber?: string;
     type: OrderItemType;
     itemId?: string;
     itemName: string;
-    guestCount: number;
+    guestCount?: number;
     status: OrderItemStatus;
     kitchenLocationId: string;
     kitchenLocationName?: string;
