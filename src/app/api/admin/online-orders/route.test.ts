@@ -26,6 +26,7 @@ vi.mock("firebase-admin/firestore", () => ({
   FieldValue: {
     serverTimestamp: () => ({ __sentinel: "serverTimestamp" }),
     arrayUnion: (...values: any[]) => ({ __sentinel: "arrayUnion", values }),
+    arrayRemove: (...values: any[]) => ({ __sentinel: "arrayRemove", values }),
     delete: () => ({ __sentinel: "delete" }),
   },
   Timestamp: {
@@ -44,6 +45,7 @@ vi.mock("@/lib/server/active-staff-check", () => ({
   requireActiveStaff: async () => ({
     isPlatformAdmin: false,
     assignedStoreIds: [STORE],
+    role: mockStaffRole,
   }),
 }));
 
@@ -66,6 +68,7 @@ type SetOp = { path: string; data: any };
 function makeHarness(docs: Record<string, any>) {
   const updates: Update[] = [];
   const sets: SetOp[] = [];
+  let autoIdCounter = 0;
 
   const makeRef = (path: string) => ({
     path,
@@ -75,6 +78,11 @@ function makeHarness(docs: Record<string, any>) {
 
   const db = {
     doc: (path: string) => makeRef(path),
+    // Only .doc() (auto-id) is exercised today, by the activity-log writes in
+    // op: kitchen-ticket-status.
+    collection: (path: string) => ({
+      doc: () => makeRef(`${path}/auto_${++autoIdCounter}`),
+    }),
     runTransaction: async (fn: (tx: any) => Promise<void>) => {
       const tx = {
         get: async (ref: any) => ({
@@ -105,6 +113,7 @@ function makeHarness(docs: Record<string, any>) {
 }
 
 let harness: ReturnType<typeof makeHarness>;
+let mockStaffRole: string | undefined;
 
 function post(body: Record<string, unknown>) {
   return POST(
@@ -170,6 +179,7 @@ function seedWithInventory(order: Record<string, any>, inventory: Record<string,
 
 beforeEach(() => {
   seed(baseOrder());
+  mockStaffRole = undefined;
 });
 
 // --- confirm-payment -------------------------------------------------------
@@ -543,6 +553,104 @@ describe("op dispatch", () => {
       methodLabel: "GCash",
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// The kitchen role is only on this route (requireActiveStaff widened to admit
+// it) so the KDS can serve/cancel its own tickets — it must not gain the
+// other ops as a side effect of that widening.
+describe("op dispatch — kitchen role is scoped to kitchen-ticket-status", () => {
+  it("denies a kitchen-role staffer calling transition", async () => {
+    mockStaffRole = "kitchen";
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a kitchen-role staffer calling confirm-payment", async () => {
+    mockStaffRole = "kitchen";
+    const res = await post({ op: "confirm-payment", storeId: STORE, orderId: ORDER, methodLabel: "GCash" });
+    expect(res.status).toBe(403);
+  });
+
+  it("denies a kitchen-role staffer calling unconfirm-payment", async () => {
+    mockStaffRole = "kitchen";
+    const res = await post({ op: "unconfirm-payment", storeId: STORE, orderId: ORDER, reason: "test" });
+    expect(res.status).toBe(403);
+  });
+
+  it("still allows a cashier through to transition (role gate is kitchen-specific)", async () => {
+    mockStaffRole = "cashier";
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("op: kitchen-ticket-status", () => {
+  const TICKET_PATH = `stores/${STORE}/onlineOrders/${ORDER}/kitchentickets/k1`;
+
+  function seedTicket(over: Record<string, any> = {}) {
+    harness.docs[TICKET_PATH] = {
+      id: "k1",
+      onlineOrderId: ORDER,
+      storeId: STORE,
+      status: "preparing",
+      itemName: "Unli Samgyup",
+      kitchenLocationId: "grill",
+      createdAtClientMs: Date.now() - 60_000,
+      ...over,
+    };
+  }
+
+  it("allows a kitchen-role staffer to serve a ticket", async () => {
+    mockStaffRole = "kitchen";
+    seedTicket();
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "served" });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true, status: "served", alreadyFinal: false });
+    const update = harness.updates.find((u) => u.path === TICKET_PATH)?.data;
+    expect(update).toMatchObject({ status: "served", servedByUid: ACTOR_UID });
+  });
+
+  it("removes the ticket from the rtKdsTickets fan-out and archives it", async () => {
+    seedTicket();
+    await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "served" });
+    const rtUpdate = harness.updates.find((u) => u.path === `stores/${STORE}/rtKdsTickets/grill`)?.data;
+    expect(rtUpdate).toBeTruthy();
+    expect(Object.keys(rtUpdate).some((k) => k.includes("k1"))).toBe(true);
+    const archived = harness.sets.find((s) => s.path === `stores/${STORE}/rtKdsTickets/grill/closedKdsTickets/k1`);
+    expect(archived).toBeTruthy();
+  });
+
+  it("requires a reason to cancel a ticket", async () => {
+    seedTicket();
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "cancelled" });
+    expect(res.status).toBe(400);
+  });
+
+  it("writes cancelReason onto the ticket when a reason is given", async () => {
+    seedTicket();
+    await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "cancelled", reason: "Out of stock" });
+    const update = harness.updates.find((u) => u.path === TICKET_PATH)?.data;
+    expect(update).toMatchObject({ status: "cancelled", cancelReason: "Out of stock" });
+  });
+
+  it("no-ops without error on an already-finalized ticket", async () => {
+    seedTicket({ status: "served" });
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "served" });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true, alreadyFinal: true });
+    expect(harness.updates.find((u) => u.path === TICKET_PATH)).toBeUndefined();
+  });
+
+  it("404s when the ticket doesn't exist", async () => {
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "missing", status: "served" });
+    expect(res.status).toBe(404);
+  });
+
+  it("400s on an unrecognized status value", async () => {
+    seedTicket();
+    const res = await post({ op: "kitchen-ticket-status", storeId: STORE, orderId: ORDER, ticketId: "k1", status: "preparing" });
+    expect(res.status).toBe(400);
   });
 });
 

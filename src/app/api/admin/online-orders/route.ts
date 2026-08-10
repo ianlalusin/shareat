@@ -74,6 +74,14 @@ export async function POST(req: Request) {
     if (op !== "transition" && op !== "confirm-payment" && op !== "unconfirm-payment" && op !== "kitchen-ticket-status") {
       return bad(`Unknown op: ${op}`, 400);
     }
+    // The kitchen role is only on this route to serve/cancel its own kitchen
+    // tickets. requireActiveStaff() above is a route-wide gate with no
+    // per-op awareness, so without this check widening it to admit "kitchen"
+    // would also hand that role transition/confirm-payment/unconfirm-payment —
+    // completing orders, minting receipts, and confirming arbitrary payments.
+    if (staff.role === "kitchen" && !staff.isPlatformAdmin && op !== "kitchen-ticket-status") {
+      return bad("Kitchen staff may only update kitchen ticket status.", 403);
+    }
     if (op === "transition") {
       if (!storeId || !orderId || !toStatus) return bad("storeId, orderId, toStatus required.", 400);
     } else if (!storeId || !orderId) {
