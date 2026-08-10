@@ -448,7 +448,12 @@ export default function OnlineOrdersClient() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
-      toast({ title: `Order ${STATUS_LABEL[toStatus] || toStatus}` });
+      const ticketNote =
+        typeof json.ticketsCreated === "number" && (json.ticketsCreated > 0 || json.itemsSkipped > 0)
+          ? ` — ${json.ticketsCreated} kitchen ticket${json.ticketsCreated === 1 ? "" : "s"} created` +
+            (json.itemsSkipped > 0 ? `, ${json.itemsSkipped} item${json.itemsSkipped === 1 ? "" : "s"} skipped (no station configured)` : "")
+          : "";
+      toast({ title: `Order ${STATUS_LABEL[toStatus] || toStatus}${ticketNote}` });
       setReasonFor(null);
       setReasonText("");
     } catch (e: any) {
