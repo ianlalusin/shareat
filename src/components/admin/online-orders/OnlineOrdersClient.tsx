@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon, MessageCircle } from "lucide-react";
 import { computeOnlineAvailability, type OnlineAvailabilityInput } from "@/lib/storefront/online-hours";
 import { OnlineAvailabilityControl } from "@/components/admin/online-orders/OnlineAvailabilityControl";
+import { DeliveryAvailabilityControl } from "@/components/admin/online-orders/DeliveryAvailabilityControl";
 import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
 import { normalizePhone } from "@/lib/phone";
 import { paymentLabel } from "@/lib/payment-label";
@@ -187,7 +188,10 @@ export default function OnlineOrdersClient() {
   const { activeStore } = useStoreContext();
   const { toast } = useToast();
   const storeId = activeStore?.id || "";
-  const canToggleAccepts = appUser?.role === "admin" || appUser?.role === "manager";
+  // Both switches below are day-to-day on/off flips (close early, pause
+  // delivery when no rider is around) — cashiers are allowed, same as the
+  // server-side gate in the storefront-catalog route.
+  const canToggleAvailability = appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier";
 
   const [orders, setOrders] = useState<OnlineOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -396,6 +400,53 @@ export default function OnlineOrdersClient() {
     }
   };
 
+  // Delivery pause switch — reads storefrontConfig/main.deliveryEnabled live.
+  // Absent doc/field defaults to true (mirrors the website's opt-out default;
+  // there is otherwise no admin UI at all that has ever written this field).
+  const [deliveryEnabled, setDeliveryEnabledState] = useState(true);
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  useEffect(() => {
+    if (!storeId) return;
+    const unsub = onSnapshot(
+      doc(db, `stores/${storeId}/storefrontConfig/main`),
+      (snap) => {
+        const d = (snap.data() as any) || {};
+        setDeliveryEnabledState(d.deliveryEnabled !== false);
+      },
+      () => {} // non-fatal: keep the last known value
+    );
+    return () => unsub();
+  }, [storeId]);
+
+  const setDeliveryEnabled = async (next: boolean) => {
+    if (savingDelivery || !storeId || next === deliveryEnabled) return;
+    setSavingDelivery(true);
+    setDeliveryEnabledState(next); // optimistic
+    try {
+      const u = user || getAuth().currentUser;
+      if (!u) throw new Error("Not signed in.");
+      const idToken = await u.getIdToken();
+      const res = await fetch("/api/admin/storefront-catalog", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "set-delivery-enabled", storeId, deliveryEnabled: next }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+      toast({
+        title: next ? "Delivery resumed" : "Delivery paused",
+        description: next
+          ? "This branch is offering delivery again on the website."
+          : "Pickup keeps working; delivery is hidden until you turn this back on.",
+      });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not change delivery availability", description: e?.message });
+      // the live snapshot will re-sync the true state
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
+
   useEffect(() => {
     if (!storeId) return;
     setIsLoading(true);
@@ -526,11 +577,19 @@ export default function OnlineOrdersClient() {
             <OnlineAvailabilityControl
               availability={availability}
               selectedMode={selectedMode}
-              canEdit={canToggleAccepts}
+              canEdit={canToggleAvailability}
               saving={savingAvail}
               openingTime={avail.openingTime}
               closingTime={avail.closingTime}
               onSelect={setAvailability}
+            />
+          )}
+          {storeId && (activeStore?.deliveryRadiusKm || 0) > 0 && (
+            <DeliveryAvailabilityControl
+              deliveryEnabled={deliveryEnabled}
+              canEdit={canToggleAvailability}
+              saving={savingDelivery}
+              onToggle={setDeliveryEnabled}
             />
           )}
           <ShoppingBag className="h-6 w-6 text-muted-foreground" />

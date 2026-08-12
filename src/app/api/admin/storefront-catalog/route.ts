@@ -10,7 +10,7 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-type Op = "get" | "rebuild" | "set-config" | "set-accepts" | "set-availability";
+type Op = "get" | "rebuild" | "set-config" | "set-accepts" | "set-availability" | "set-delivery-enabled";
 
 export async function POST(req: Request) {
   try {
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const decoded = await getAdminAuth().verifyIdToken(m[1]);
 
     const db = getAdminDb();
-    const staff = await requireActiveStaff(db, decoded, ["admin", "manager"]);
+    const staff = await requireActiveStaff(db, decoded, ["admin", "manager", "cashier"]);
 
     const body = await req.json().catch(() => ({}));
     const op = String(body?.op || "") as Op;
@@ -31,8 +31,17 @@ export async function POST(req: Request) {
       return bad("No access to this store.", 403);
     }
 
+    // Cashiers are only admitted to this route for the two day-to-day on/off
+    // switches below (set-availability, set-delivery-enabled) — e.g. closing
+    // early, or pausing delivery when no rider is on shift. Catalog rebuilds,
+    // the online-orders master enrollment switch, and pricing/fee config stay
+    // manager-and-up: widening the route's own role gate above would hand
+    // cashiers those too, not just the one op they were meant to get.
+    const isManagerOrAbove = staff.isPlatformAdmin || staff.role === "manager";
+
     switch (op) {
       case "get": {
+        if (!isManagerOrAbove) return bad("Manager access required for this action.", 403);
         const [catSnap, cfgSnap, storeSnap] = await Promise.all([
           db.doc(`stores/${storeId}/storefrontCatalog/main`).get(),
           db.doc(`stores/${storeId}/storefrontConfig/main`).get(),
@@ -51,11 +60,13 @@ export async function POST(req: Request) {
       }
 
       case "rebuild": {
+        if (!isManagerOrAbove) return bad("Manager access required for this action.", 403);
         const result = await rebuildStorefrontCatalog(db, storeId);
         return NextResponse.json({ ok: true, ...result });
       }
 
       case "set-config": {
+        if (!isManagerOrAbove) return bad("Manager access required for this action.", 403);
         const c = body?.config ?? {};
         const config: Record<string, any> = {
           pickupEnabled: c.pickupEnabled !== false,
@@ -72,6 +83,7 @@ export async function POST(req: Request) {
       }
 
       case "set-accepts": {
+        if (!isManagerOrAbove) return bad("Manager access required for this action.", 403);
         await db.doc(`stores/${storeId}`).set(
           { acceptsOnlineOrders: !!body?.acceptsOnlineOrders },
           { merge: true }
@@ -94,6 +106,17 @@ export async function POST(req: Request) {
         };
         if (mode === "manual") patch.onlineOrderManualOpen = !!body?.manualOpen;
         await db.doc(`stores/${storeId}`).set(patch, { merge: true });
+        return NextResponse.json({ ok: true });
+      }
+
+      // Pause/resume delivery independent of pickup — e.g. no rider on shift
+      // right now. Only touches this one field (merge:true), unlike
+      // set-config above which reconstructs the whole config document.
+      case "set-delivery-enabled": {
+        await db.doc(`stores/${storeId}/storefrontConfig/main`).set(
+          { deliveryEnabled: !!body?.deliveryEnabled, updatedAt: FieldValue.serverTimestamp() },
+          { merge: true }
+        );
         return NextResponse.json({ ok: true });
       }
 
