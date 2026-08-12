@@ -176,6 +176,34 @@ export type ProductRequest = {
   updatedAt: Timestamp;
 };
 
+export type ProductPhotoStatus = "pending" | "approved" | "rejected";
+
+/**
+ * A manager's local photo upload for an item at their store, awaiting (or
+ * having received) an admin decision on whether to promote it to be the
+ * item's photo for every store. See
+ * docs/superpowers/specs/2026-08-12-item-photo-local-global-design.md.
+ *
+ * id is `${storeId}_${productId}` — deterministic, so there is at most one
+ * active request per (store, product) pair; resubmitting overwrites it
+ * rather than accumulating history.
+ */
+export type ProductPhotoRequest = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  productId: string;
+  productName: string;
+  status: ProductPhotoStatus;
+  imageUrl: string;
+  submittedByUid: string;
+  submittedByName: string;
+  submittedAt: Timestamp;
+  reviewedByUid?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: Timestamp | null;
+};
+
 /**
  * A reusable, global option group attached to one or more Products.
  * At order time the cashier and customer modifier pickers iterate the
