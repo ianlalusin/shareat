@@ -58,6 +58,20 @@ service cloud.firestore {
     // QR, but adding or editing one changes which account receives money, so it
     // is a manager/admin decision.
     //
+    // storeConfig is the denormalized cache the cashier UI actually reads at
+    // checkout (discounts/charges/modesOfPayment/packages — rebuildStoreConfig()
+    // in src/lib/manager/dataManagement.ts writes stores/{id}/storeConfig/current
+    // from the manager-gated source collections above). It was missing from this
+    // list, which let any store-scoped staffer setDoc a forged 100%-off discount
+    // straight into the cache and apply it at the register — see the finding in
+    // docs/superpowers/plans/2026-08-12-admin-manager-security-audit.md.
+    // Because {coll} only ever binds to the FIRST path segment, gating
+    // 'storeConfig' here also covers stores/{id}/storeConfig/current/tables/{t} —
+    // an OPERATIONAL live-table-status cache cashiers legitimately write on the
+    // checkout path (session start/payment/void). That subcollection is carved
+    // back open via its own dedicated match block right after stores/{storeId}
+    // below, the same OR-semantics technique used elsewhere in this file.
+    //
     // Deliberately NOT listed here: paymentProofs and qrWalletEvents. Cashiers
     // write both on their critical path, and locking them would surface as
     // silent offline data loss (see the note in tests/rules/store-scoped.test.ts).
@@ -65,7 +79,7 @@ service cloud.firestore {
       return coll in ['inventory', 'storeDiscounts', 'storeCharges', 'storeModesOfPayment',
                       'storePackages', 'storeRefills', 'storeFlavors', 'menuSchedules',
                       'kitchenLocations', 'receiptSettings', 'salesTargets', 'optionOverrides',
-                      'savedQrCodes'];
+                      'savedQrCodes', 'storeConfig'];
     }
 
     function hasStoreAccess(storeId) {
@@ -218,8 +232,27 @@ service cloud.firestore {
 
     // The store document itself (kept separate so the collection-scoped rule
     // below can inspect the top-level collection name as a plain string).
+    // Write/delete require isManagerOrAdmin(): this doc holds taxRatePct, tin,
+    // isActive, acceptsOnlineOrders/acceptsReservations, loyaltyConfig and
+    // forecastConfig — hasStoreAccess() alone let any cashier/server/kitchen
+    // assigned to the store rewrite or delete it straight from a devtools
+    // console (RoleGuard on /admin/stores and /manager/store-settings is
+    // UI-only). See docs/superpowers/plans/2026-08-12-admin-manager-security-audit.md.
     match /stores/{storeId} {
-      allow read, write, delete: if hasStoreAccess(storeId);
+      allow read: if hasStoreAccess(storeId);
+      allow write, delete: if hasStoreAccess(storeId) && isManagerOrAdmin();
+    }
+
+    // Carve-out for the operational live-table-status cache nested under the
+    // now-manager/admin-gated storeConfig collection (see isConfigCollection()
+    // above) — cashiers update this on session start/payment/void
+    // (src/components/cashier/firestore.ts, offlinePayment.ts, offlineVoid.ts)
+    // and it's rebuilt wholesale by rebuildStoreConfig() alongside
+    // storeConfig/current. Only this exact subpath is reopened; storeConfig/current
+    // itself (the pricing/discount/charge cache) stays manager/admin-only via the
+    // catch-all below.
+    match /stores/{storeId}/storeConfig/current/tables/{tableId} {
+      allow read, write: if hasStoreAccess(storeId);
     }
 
     // Store scoped (everything else). Analytics rollups

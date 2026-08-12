@@ -20,10 +20,11 @@ export async function POST(req: Request) {
     const decoded = await getAdminAuth().verifyIdToken(m[1]);
 
     const db = getAdminDb();
-    const staff = await requireActiveStaff(db, decoded, ["admin"]);
-    if (!staff.isPlatformAdmin && staff.role !== "admin") {
-      return bad("Only platform admins can merge products.", 403);
-    }
+    // requireActiveStaff(["admin"]) below already requires staff.role==="admin"
+    // (or the platformAdmin claim) to reach this point, so a second role check
+    // here would be unreachable — see the reset-password route for what
+    // happens when that dead-code shape is mistaken for a real gate.
+    await requireActiveStaff(db, decoded, ["admin"]);
 
     const body = (await req.json().catch(() => ({}))) as {
       mode?: MergeMode;

@@ -32,9 +32,6 @@ export async function POST(req: Request) {
 
     const db = getAdminDb();
     const staff = await requireActiveStaff(db, decoded, ["admin"]);
-    if (!staff.isPlatformAdmin) {
-      return bad("Not allowed: only platform admins can reset passwords.", 403);
-    }
 
     const body = await req.json().catch(() => ({}));
     const uid = String(body?.uid || "").trim();
@@ -50,6 +47,20 @@ export async function POST(req: Request) {
     const targetSnap = await db.doc(`staff/${uid}`).get();
     if (!targetSnap.exists) return bad("That user has no staff profile.", 404);
     const target = targetSnap.data() as any;
+
+    // Resetting another admin's password is a platform-admin (custom-claim)
+    // action, not a regular admin-role one. requireActiveStaff(["admin"])
+    // above already lets in anyone with staffData().role === "admin", and
+    // that role trivially satisfies isPlatformAdmin too (it's defined as
+    // decoded.platformAdmin===true || role==="admin"), so checking
+    // staff.isPlatformAdmin here would always be true and never actually
+    // restrict anything — checking decoded.platformAdmin directly is what
+    // makes this a real hierarchy check. Without it, any compromised or
+    // malicious admin-role staff account could take over every other admin
+    // account (this also revokes the target's sessions below).
+    if (String(target?.role || "") === "admin" && decoded.platformAdmin !== true) {
+      return bad("Only a platform admin can reset another admin's password.", 403);
+    }
 
     let targetAuth;
     try {

@@ -48,6 +48,13 @@ const CONFIG_COLLECTIONS = [
   // QR wallet. Any staffer may DISPLAY a saved QR, but adding or editing one
   // changes which account receives money.
   "savedQrCodes",
+  // The denormalized checkout cache (discounts/charges/modesOfPayment/packages) —
+  // was missing from this list, which let any store-scoped staffer setDoc a forged
+  // 100%-off discount straight into storeConfig/current and apply it at the
+  // register. See docs/superpowers/plans/2026-08-12-admin-manager-security-audit.md.
+  // The nested storeConfig/current/tables/{t} live-table cache stays operational —
+  // see the dedicated test below and the carve-out match block in firestore.rules.
+  "storeConfig",
 ] as const;
 
 /** Written by cashier/server/kitchen during a normal shift — must stay open. */
@@ -56,7 +63,6 @@ const OPEN_COLLECTIONS = [
   "receipts",
   "counters",
   "tables",
-  "storeConfig",
   "rtKdsTickets",
   "activeSessions",
   "closedSessions",
@@ -203,6 +209,22 @@ describe("§1 operational collections stay open to the shift roles", () => {
     await assertSucceeds(
       setDoc(doc(db("cashier"), "stores", STORE_A, "storeConfig", "current", "tables", "t1"), {
         status: "occupied",
+      })
+    );
+  });
+
+  it("denies a cashier forging a discount straight into storeConfig/current", async () => {
+    await assertFails(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "storeConfig", "current"), {
+        discounts: [{ id: "forged", name: "forged", type: "percent", value: 100, isEnabled: true }],
+      })
+    );
+  });
+
+  it("allows a manager to rebuild storeConfig/current", async () => {
+    await assertSucceeds(
+      setDoc(doc(db("manager"), "stores", STORE_A, "storeConfig", "current"), {
+        discounts: [],
       })
     );
   });

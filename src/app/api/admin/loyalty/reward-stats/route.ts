@@ -30,7 +30,14 @@ export async function GET(req: Request) {
 
   const db = getAdminDb();
   try {
-    await requireActiveStaff(db, decoded, ["admin", "manager"]);
+    // Admin-only: the query below is platform-wide (every store's redemptions
+    // for this rewardId, including customer phone numbers), not store-scoped,
+    // and the admin Loyalty Rewards page that calls this route is itself
+    // RoleGuard allow={["admin"]}. Admitting "manager" here (as the UI never
+    // does) let any manager's token pull cross-store redemption data and PII
+    // for stores they aren't assigned to — see
+    // docs/superpowers/plans/2026-08-12-admin-manager-security-audit.md.
+    await requireActiveStaff(db, decoded, ["admin"]);
   } catch (e: any) {
     return bad(e?.message || "Not authorized.", 403);
   }

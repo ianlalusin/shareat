@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { requireActiveStaff } from "@/lib/server/active-staff-check";
+import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 
 export const runtime = "nodejs";
 
@@ -9,13 +9,13 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-async function authStore(req: Request) {
+async function authStore(req: Request, storeId: string) {
   const authz = req.headers.get("authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   if (!m) throw new Error("Missing Authorization Bearer token.");
   const decoded = await getAdminAuth().verifyIdToken(m[1]);
   const db = getAdminDb();
-  await requireActiveStaff(db, decoded, ["admin", "manager"]);
+  await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager"]);
   return db;
 }
 
@@ -25,10 +25,10 @@ async function authStore(req: Request) {
  */
 export async function GET(req: Request) {
   try {
-    const db = await authStore(req);
     const url = new URL(req.url);
     const storeId = String(url.searchParams.get("storeId") || "").trim();
     if (!storeId) return bad("storeId is required.");
+    const db = await authStore(req, storeId);
 
     const snap = await db.doc(`stores/${storeId}/optionOverrides/main`).get();
     const d = (snap.exists ? snap.data() : {}) as any;
@@ -39,17 +39,17 @@ export async function GET(req: Request) {
     });
   } catch (e: any) {
     const message = e?.message ?? "Unknown error";
-    const status = /not allowed|admin|staff|token/i.test(message) ? 403 : 500;
+    const status = /not allowed|no access|not a staff|not active|token/i.test(message) ? 403 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    const db = await authStore(req);
     const body = await req.json().catch(() => ({}));
     const storeId = String(body?.storeId || "").trim();
     if (!storeId) return bad("storeId is required.");
+    const db = await authStore(req, storeId);
 
     const disabledGroupIds = Array.from(
       new Set((Array.isArray(body?.disabledGroupIds) ? body.disabledGroupIds : []).map((x: any) => String(x)))
@@ -68,7 +68,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ ok: true, disabledGroupIds, disabledValueKeys });
   } catch (e: any) {
     const message = e?.message ?? "Unknown error";
-    const status = /not allowed|admin|staff|token/i.test(message) ? 403 : 500;
+    const status = /not allowed|no access|not a staff|not active|token/i.test(message) ? 403 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

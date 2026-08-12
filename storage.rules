@@ -20,6 +20,10 @@ service firebase.storage {
       return role == 'admin' || role == 'manager';
     }
 
+    function isAdmin(uid) {
+      return getUserRole(uid) == 'admin';
+    }
+
     // Store-scoped variants. The role-only helper above is fine for global
     // assets (product images, loyalty rewards) but not for per-store uploads:
     // without the membership check, a manager at one branch could write into
@@ -69,9 +73,14 @@ service firebase.storage {
       allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
     }
 
-    // Loyalty reward photos — managers/admins only.
+    // Loyalty reward photos — admin only, matching loyaltyRewards' own
+    // create/update/delete gate in firestore.rules (isAdmin() there, not
+    // isManagerOrAdmin()). This used to be isManagerOrAdmin(), which let a
+    // manager upload images under any (including nonexistent) rewardId even
+    // though they can never attach one to a real reward via the UI — see
+    // docs/superpowers/plans/2026-08-12-admin-manager-security-audit.md.
     match /loyaltyRewardImages/{rewardId}/{fileName} {
-      allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
+      allow write: if request.auth != null && isAdmin(request.auth.uid);
     }
 
     // Proposed product photos attached to a product-registration request.
