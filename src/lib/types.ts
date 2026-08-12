@@ -1046,10 +1046,18 @@ export type Store = {
   /**
    * Online-delivery service radius in km. A storefront buyer is offered DELIVERY
    * from this store only when within this distance (server-enforced in placeOrder).
-   * 0/absent ⇒ pickup only. Pickup ignores this radius entirely. Distance is
-   * measured from the store's `geo` geotag (declared below).
+   * 0/absent ⇒ pickup only. Distance is measured from the store's `geo` geotag
+   * (declared below). Adjustable via the slider in Store Management, admin/manager only.
    */
   deliveryRadiusKm?: number;
+  /**
+   * Online-pickup service radius in km. The storefront only lists this store for
+   * PICKUP when the buyer is within this distance. 0/absent ⇒ unlimited (any
+   * distance) — kept as the default so existing stores aren't affected until a
+   * manager sets one. Distance is measured from the store's `geo` geotag.
+   * Adjustable via the slider in Store Management, admin/manager only.
+   */
+  pickupRadiusKm?: number;
   tin?: string;
   logoUrl?: string | null;
   vatType?: "VAT" | "NON_VAT"; // Deprecated

@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { RoleGuard } from "@/components/guards/RoleGuard";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Store } from "@/lib/types";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -30,7 +32,8 @@ const formSchema = z.object({
   address: z.string().min(5, "Address is required."),
   geoLat: z.string().optional(),
   geoLng: z.string().optional(),
-  deliveryRadiusKmInput: z.string().optional(),
+  deliveryRadiusKm: z.number().min(0).max(50).default(0),
+  pickupRadiusKm: z.number().min(0).max(50).default(0),
   tin: z.string().optional(),
   taxType: z.enum(["VAT_INCLUSIVE", "VAT_EXCLUSIVE", "NON_VAT"]).optional(),
   taxRatePct: z.coerce.number().min(0).max(30).optional(),
@@ -99,7 +102,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
   const form = useForm<StoreFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
+      name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKm: 0, pickupRadiusKm: 0, isActive: true,
       acceptsReservations: false,
       acceptsWebsiteChat: false,
       acceptsOnlineOrders: false,
@@ -141,7 +144,8 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: store.name, code: store.code, address: store.address,
         geoLat: store.geo?.lat != null ? String(store.geo.lat) : "",
         geoLng: store.geo?.lng != null ? String(store.geo.lng) : "",
-        deliveryRadiusKmInput: store.deliveryRadiusKm != null ? String(store.deliveryRadiusKm) : "",
+        deliveryRadiusKm: store.deliveryRadiusKm ?? 0,
+        pickupRadiusKm: store.pickupRadiusKm ?? 0,
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
         acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
@@ -160,7 +164,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       });
     } else {
       form.reset({
-        name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKmInput: "", isActive: true,
+        name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKm: 0, pickupRadiusKm: 0, isActive: true,
         acceptsReservations: false,
         acceptsWebsiteChat: false,
         acceptsOnlineOrders: false,
@@ -194,13 +198,11 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
 
 
   const onSubmit = (data: StoreFormValues) => {
-    const { geoLat, geoLng, deliveryRadiusKmInput, ...rest } = data;
+    const { geoLat, geoLng, ...rest } = data;
     const lat = geoLat && geoLat.trim() !== "" ? Number(geoLat) : NaN;
     const lng = geoLng && geoLng.trim() !== "" ? Number(geoLng) : NaN;
     const geo = !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : undefined;
-    const radiusNum = deliveryRadiusKmInput && deliveryRadiusKmInput.trim() !== "" ? Number(deliveryRadiusKmInput) : NaN;
-    const radius = Number.isFinite(radiusNum) && radiusNum >= 0 ? radiusNum : undefined;
-    onSave({ ...rest, ...(geo ? { geo } : {}), ...(radius != null ? { deliveryRadiusKm: radius } : {}) } as any);
+    onSave({ ...rest, ...(geo ? { geo } : {}) } as any);
   };
 
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>, field: any) => {
@@ -257,22 +259,6 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                   <FormDescription>Pin the branch on the map (or paste coordinates) so weather is fetched for the right location.</FormDescription>
                 </FormItem>
 
-                <FormField
-                  control={form.control}
-                  name="deliveryRadiusKmInput"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Online delivery radius (km)</FormLabel>
-                      <FormControl>
-                        <Input inputMode="decimal" placeholder="e.g. 5" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        Buyers within this distance of the branch can order delivery online. Leave blank for pickup-only. Pickup ignores this.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField control={form.control} name="contactNumber" render={({ field }) => ( <FormItem><FormLabel>Contact Number</FormLabel><FormControl><Input placeholder="e.g., +1 234 567 890" {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="email" render={({ field }) => ( <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" placeholder="e.g., contact@store.com" {...field} /></FormControl><FormMessage /></FormItem> )} />
@@ -410,6 +396,72 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                 )}
                 <FormField control={form.control} name="acceptsWebsiteChat" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Website Chat</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's live chat; messages go to this store's cashier inbox. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="acceptsOnlineOrders" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Orders</FormLabel><FormDescription className="text-xs"> Master switch — enrolls this branch in online ordering on shareat.net. Also needs the geotag above and to be marked open on the Online Orders page to actually show up for customers. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+
+                <RoleGuard allow={["admin", "manager"]} hideOnDeny>
+                  <div className="rounded-lg border p-3 shadow-sm space-y-4">
+                    <div className="space-y-0.5">
+                      <FormLabel>Online order service radius</FormLabel>
+                      <FormDescription className="text-xs">
+                        How far from this branch's geotag each fulfillment type is offered on shareat.net. Forwarded to the website on save.
+                      </FormDescription>
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="deliveryRadiusKm"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <FormLabel className="text-xs">Delivery radius</FormLabel>
+                            <span className="text-xs text-muted-foreground">
+                              {field.value > 0 ? `${field.value} km` : "Off (pickup only)"}
+                            </span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              value={[field.value ?? 0]}
+                              onValueChange={(v) => field.onChange(v[0])}
+                              min={0}
+                              max={50}
+                              step={1}
+                            />
+                          </FormControl>
+                          <FormDescription className="text-xs">
+                            Buyers within this distance can order delivery. 0 = delivery off, pickup only.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="pickupRadiusKm"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <FormLabel className="text-xs">Pickup radius</FormLabel>
+                            <span className="text-xs text-muted-foreground">
+                              {field.value > 0 ? `${field.value} km` : "Unlimited"}
+                            </span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              value={[field.value ?? 0]}
+                              onValueChange={(v) => field.onChange(v[0])}
+                              min={0}
+                              max={50}
+                              step={1}
+                            />
+                          </FormControl>
+                          <FormDescription className="text-xs">
+                            Only list this branch for pickup within this distance. 0 = unlimited (any distance).
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </RoleGuard>
+
                 <FormField control={form.control} name="offersUnlimited" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Unlimited (Dine-in)</FormLabel><FormDescription className="text-xs"> Package dine-in sessions. Turn off for take-out-only kiosks. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="offersAlaCarte" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Offers Ala Carte</FormLabel><FormDescription className="text-xs"> Ala carte / take-out sessions. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 <FormField control={form.control} name="aiEnabled" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>AI features</FormLabel><FormDescription className="text-xs"> Master switch for all Google AI for this store — daily insights, sales forecasts, and AI briefings. Off = no AI generated (saves cost / avoids errors on low-data stores). </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
