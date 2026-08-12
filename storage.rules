@@ -83,6 +83,24 @@ service firebase.storage {
       allow write: if request.auth != null && isAdmin(request.auth.uid);
     }
 
+    // Local per-store item photos, pending admin review (see
+    // /api/product-photo-requests). Path is store-scoped so two stores
+    // uploading a photo for the same product never collide on one object;
+    // promoting one just points products/{id}.imageUrl at this same URL,
+    // no file copy needed.
+    //
+    // Storage Rules path segments can't mix a wildcard capture with a literal
+    // suffix — `{storeId}.webp` in one segment fails to parse ("Missing
+    // 'match' keyword before path"). Matched on {fileName} instead and
+    // recovered storeId via split(), which keeps the exact
+    // productPhotos/{productId}/{storeId}.webp path other tasks build against.
+    match /productPhotos/{productId}/{fileName} {
+      allow write: if request.auth != null
+        && fileName.matches('.+[.]webp')
+        && isStoreManagerOrAdmin(request.auth.uid, fileName.split('[.]')[0])
+        && isImageUnder(4);
+    }
+
     // Proposed product photos attached to a product-registration request.
     // Uploaded by the requesting manager before the request doc exists, under a
     // client-generated requestId; the approve op copies the resulting download
