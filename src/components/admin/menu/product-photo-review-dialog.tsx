@@ -14,9 +14,16 @@ interface ProductPhotoReviewDialogProps {
   onClose: () => void;
   productName: string;
   requests: ProductPhotoRequest[];
+  /**
+   * Called after a successful promote/reject. Both ops write
+   * products/{id}.imageUrl, which the published catalog snapshots carry — so
+   * the caller republishes, exactly as it already does after an image edit in
+   * the product form.
+   */
+  onReviewed?: () => void;
 }
 
-export function ProductPhotoReviewDialog({ isOpen, onClose, productName, requests }: ProductPhotoReviewDialogProps) {
+export function ProductPhotoReviewDialog({ isOpen, onClose, productName, requests, onReviewed }: ProductPhotoReviewDialogProps) {
   const { toast } = useToast();
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
@@ -31,9 +38,13 @@ export function ProductPhotoReviewDialog({ isOpen, onClose, productName, request
         headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ op, requestId }),
       });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || `Failed to ${op}.`);
+      // Check the status before trusting the body: a framework-level failure
+      // returns HTML, and json() would then throw a parse error the admin sees
+      // instead of the real message.
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed to ${op} (${res.status}).`);
       toast({ title: op === "promote" ? "Promoted to global" : "Rejected" });
+      onReviewed?.();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Action failed", description: err?.message || "Something went wrong." });
     } finally {

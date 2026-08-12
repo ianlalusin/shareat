@@ -132,6 +132,10 @@ export default function ProductManagementPage() {
   }, [appUser, toast]);
 
   useEffect(() => {
+    // Same guard as the products listener above: without it this subscribes
+    // before sign-in resolves and the rules check fails on an anonymous read.
+    if (!appUser) return;
+
     const q = query(collection(db, "productPhotoRequests"), where("status", "==", "pending"));
     const unsub = onSnapshot(q, (snapshot) => {
       const byProduct = new Map<string, ProductPhotoRequest[]>();
@@ -142,9 +146,12 @@ export default function ProductManagementPage() {
         byProduct.set(r.productId, list);
       });
       setPendingPhotosByProduct(byProduct);
+    }, (error) => {
+      console.error("Failed to fetch pending product photos:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not fetch pending store photos." });
     });
     return unsub;
-  }, []);
+  }, [appUser, toast]);
 
   const { groupedAndSortedProducts, archivedRows } = useMemo(() => {
     const filteredProducts = debouncedSearchTerm
@@ -1132,6 +1139,10 @@ export default function ProductManagementPage() {
           onClose={() => setReviewingProduct(null)}
           productName={reviewingProduct.name}
           requests={pendingPhotosByProduct.get(reviewingProduct.id) || []}
+          // Promote/reject both write products/{id}.imageUrl, which the
+          // storefront snapshot carries — same reason a product save
+          // republishes, so the same debounced publish.
+          onReviewed={autoPublishStorefront}
         />
       )}
 
