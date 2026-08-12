@@ -70,7 +70,16 @@ export async function POST(req: Request) {
         const c = body?.config ?? {};
         const config: Record<string, any> = {
           pickupEnabled: c.pickupEnabled !== false,
-          deliveryEnabled: !!c.deliveryEnabled,
+          // Opt-OUT, exactly like pickupEnabled above and like every READER of
+          // this doc: Shareat Website functions/index.js:1541,
+          // DeliveryPricingSettings.tsx and OnlineOrdersClient.tsx all use
+          // `!== false`, so an ABSENT field means ENABLED. This was `!!`, the
+          // opt-IN reading — because set-config rebuilds the whole document
+          // rather than patching it, any caller that omitted the field would
+          // have silently paused delivery for the branch. `set-delivery-enabled`
+          // below deliberately keeps `!!`: that op IS the explicit on/off
+          // switch, and its caller always sends a concrete boolean.
+          deliveryEnabled: c.deliveryEnabled !== false,
           deliveryFee: Math.max(0, Number(c.deliveryFee ?? 0)) || 0,
           minOrder: Math.max(0, Number(c.minOrder ?? 0)) || 0,
           prepEtaMinutes: Math.max(0, Number(c.prepEtaMinutes ?? 0)) || 0,
