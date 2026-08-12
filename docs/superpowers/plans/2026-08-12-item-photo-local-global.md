@@ -115,7 +115,9 @@ git commit -m "Add productPhotoRequests Firestore rules (client-read-only, API-o
 - Modify: `storage.rules:84-85` (insert new match block between the `loyaltyRewardImages` block and the `productRequestImages` comment)
 
 **Interfaces:**
-- Produces: `productPhotos/{productId}/{storeId}.webp` writable by `isStoreManagerOrAdmin(uid, storeId)`, public read (via the existing root `{allPaths=**} { allow read; }` rule — no change needed there).
+- Produces: `productPhotos/{productId}/{storeId}/{fileName}` writable by `isStoreManagerOrAdmin(uid, storeId)`, public read (via the existing root `{allPaths=**} { allow read; }` rule — no change needed there).
+
+> **Shipped deviation (recorded 2026-08-12):** Tasks 2 and 12 below were written against a deterministic `…/{storeId}.webp` object name. The code that shipped uses a per-upload `crypto.randomUUID()` filename (`storage.rules:98`, `src/lib/firebase/client.ts:63`) so that replacing a local photo after promotion cannot overwrite the object every store's global `products/{id}.imageUrl` points at. The snippets below have been corrected to match what shipped.
 
 - [ ] **Step 1: Add the rule**
 
@@ -127,7 +129,7 @@ In `storage.rules`, insert immediately after line 84 (the closing `}` of the `lo
     // uploading a photo for the same product never collide on one object;
     // promoting one just points products/{id}.imageUrl at this same URL,
     // no file copy needed.
-    match /productPhotos/{productId}/{storeId}.webp {
+    match /productPhotos/{productId}/{storeId}/{fileName} {
       allow write: if request.auth != null
         && isStoreManagerOrAdmin(request.auth.uid, storeId)
         && isImageUnder(4);
@@ -682,7 +684,7 @@ In `src/lib/firebase/client.ts`, insert immediately after line 40 (the `}` closi
 
 /**
  * Uploads a manager's local photo for an item at their own store to
- * productPhotos/{productId}/{storeId}.webp. Does NOT write any Firestore
+ * productPhotos/{productId}/{storeId}/{uuid}.webp. Does NOT write any Firestore
  * field itself — callers must follow up with POST /api/product-photo-requests
  * { op: "submit", storeId, productId, imageUrl } so the submission is
  * recorded and reviewable, not just silently applied.
@@ -692,7 +694,7 @@ export async function uploadItemPhotoLocal(productId: string, storeId: string, f
         throw new Error("Product ID and store ID are required to upload a photo.");
     }
 
-    const storageRef = ref(storage, `productPhotos/${productId}/${storeId}.webp`);
+    const storageRef = ref(storage, `productPhotos/${productId}/${storeId}/${crypto.randomUUID()}.webp`);
     await uploadBytes(storageRef, file);
     return getDownloadURL(storageRef);
 }
