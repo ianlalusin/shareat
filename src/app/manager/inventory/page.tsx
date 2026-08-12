@@ -754,6 +754,7 @@ export default function InventoryManagementPage() {
             isOpen={isEditOpen}
             onClose={() => setIsEditOpen(false)}
             item={selectedItem}
+            storeId={activeStore!.id}
             kitchenLocations={kitchenLocations}
             onSave={handleEditItem}
             onToggle={handleToggle}
