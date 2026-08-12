@@ -61,11 +61,13 @@ type ProductPhotoRequest = {
 
 ## 3. Storage
 
-New path: `productPhotos/{productId}/{storeId}.webp`.
+New path: `productPhotos/{productId}/{storeId}/{fileName}`, where `{fileName}` is a per-upload `crypto.randomUUID()` + `.webp` (see `uploadItemPhotoLocal` in `src/lib/firebase/client.ts`).
+
+> **Shipped deviation (recorded 2026-08-12):** this section originally specified a deterministic `productPhotos/{productId}/{storeId}.webp`. That was changed during the final fix wave: once an admin promotes a store's photo, `products/{id}.imageUrl` points at that exact object, so a manager re-uploading over a deterministic name would have hijacked (and on delete, broken) the global image for every store. A unique filename per upload makes replacement land on a new object.
 
 `storage.rules`: mirrors the existing store-scoped pattern (`qrWallet`, store logo):
 ```
-match /productPhotos/{productId}/{storeId}.webp {
+match /productPhotos/{productId}/{storeId}/{fileName} {
   allow write: if request.auth != null
     && isStoreManagerOrAdmin(request.auth.uid, storeId)
     && isImageUnder(4);
@@ -81,7 +83,7 @@ The client uploads the file directly to this path via the Storage SDK (same patt
 
 | op | Who | Behavior |
 |---|---|---|
-| `submit` | `requireStaffStoreAccess(db, decoded, storeId, ["admin","manager"])` | Client has already uploaded to `productPhotos/{productId}/{storeId}.webp`. Route does, in one write: upsert `productPhotoRequests/{storeId}_{productId}` to `{status: "pending", imageUrl, submittedByUid, submittedByName, submittedAt}` (clearing any prior `reviewedBy*`/`reviewedAt`), and set `stores/{storeId}/inventory/{itemId}.imageUrl` to the same URL. Covers first upload and "change" (resubmission just overwrites both). |
+| `submit` | `requireStaffStoreAccess(db, decoded, storeId, ["admin","manager"])` | Client has already uploaded to `productPhotos/{productId}/{storeId}/{uuid}.webp`. Route does, in one write: upsert `productPhotoRequests/{storeId}_{productId}` to `{status: "pending", imageUrl, submittedByUid, submittedByName, submittedAt}` (clearing any prior `reviewedBy*`/`reviewedAt`), and set `stores/{storeId}/inventory/{itemId}.imageUrl` to the same URL. Covers first upload and "change" (resubmission just overwrites both). |
 | `remove` | `requireStaffStoreAccess(db, decoded, storeId, ["admin","manager"])` | Clears `stores/{storeId}/inventory/{itemId}.imageUrl` (back to `null`, so display falls back to `product.imageUrl` if any) and **deletes** the `productPhotoRequests/{storeId}_{productId}` doc, regardless of its current status. Covers "delete." Does **not** touch `product.imageUrl` even if this request was `approved` — revoking a global promotion is an admin-only decision (see `reject` below). |
 | `promote` | admin only (`requireActiveStaff(db, decoded, ["admin"])`) | Reads `productPhotoRequests/{requestId}` **server-side** (never trusts a client-passed URL). Sets `products/{productId}.imageUrl` to `request.imageUrl`. Marks the request `approved`, `reviewedByUid`/`reviewedByName`/`reviewedAt`. |
 | `reject` | admin only | Reads the request server-side. If `status === "approved"`, also clears `products/{productId}.imageUrl` (only if it still equals this request's `imageUrl` — an intervening different promotion is not clobbered). Always clears `stores/{storeId}/inventory/{itemId}.imageUrl` for the *originating* store. Marks the request `rejected`. |
