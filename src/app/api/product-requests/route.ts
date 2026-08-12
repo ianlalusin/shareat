@@ -399,7 +399,16 @@ export async function POST(req: Request) {
           subCategory: subCategory || "",
           uom,
           barcode: r.barcode || null,
-          imageUrl: r.imageUrl || null,
+          // Deliberately null, NOT a copy of (a)'s imageUrl above.
+          // `inventory.imageUrl` is a PURE per-store override: null means "this
+          // store has no photo of its own, show the global
+          // products/{id}.imageUrl", which every display surface now resolves
+          // (`inventoryItem.imageUrl ?? product.imageUrl`). Seeding a copy here
+          // makes the row look like a deliberate local choice, so it keeps
+          // winning over the global photo after an admin promotes or clears it
+          // — and, because the admin's own upload path writes a deterministic
+          // Items/{productId}.webp, the stale copy's URL eventually 404s.
+          imageUrl: null,
           cost: Number(r.cost ?? 0),
           sellingPrice: Number(r.suggestedPrice ?? 0),
           isActive: true,
