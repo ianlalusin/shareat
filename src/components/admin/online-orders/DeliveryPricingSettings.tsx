@@ -51,7 +51,12 @@ export function DeliveryPricingSettings({
 }) {
   const { user } = useAuthContext();
   const { toast } = useToast();
-  const [loading, setLoading] = useState(false);
+  // Starts true (not false) so the very first render of a freshly-opened
+  // dialog shows the spinner, not a one-frame flash of EMPTY defaults or a
+  // previous store's leftover config before the load effect below has had a
+  // chance to run. See the effect's `!open` branch for how this stays
+  // correctly armed across close/reopen and store switches too.
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<FullConfig>(EMPTY);
@@ -61,7 +66,20 @@ export function DeliveryPricingSettings({
   // form to a clean slate first, so a second open can never show — or submit —
   // values left over from a previous open of a different store.
   useEffect(() => {
-    if (!open || !storeId) return;
+    if (!open || !storeId) {
+      // Dialog is closed (or has no store yet) — Radix doesn't mount
+      // DialogContent while `open` is false, so nothing is visibly shown
+      // regardless of `loading` here. But pre-arm `loading` back to true
+      // now, while nothing is on screen, rather than waiting for the next
+      // open to do it: `storeId` can change while this dialog stays closed
+      // (e.g. an admin switches stores via the store picker without this
+      // component unmounting), and if we waited for the branch below to
+      // reset on open, the very first paint after the NEXT open would still
+      // show the previous store's stale config/loading=false for one frame
+      // before this effect re-runs. Setting it here closes that window.
+      setLoading(true);
+      return;
+    }
     let cancelled = false;
     setConfig(EMPTY);
     setForm(EMPTY_FORM);
@@ -122,9 +140,34 @@ export function DeliveryPricingSettings({
       const u = user || getAuth().currentUser;
       if (!u) throw new Error("Not signed in.");
       const idToken = await u.getIdToken();
-      // Full object, including the two fields this dialog never shows — see
-      // the FullConfig comment above for why that's required.
-      const payload: FullConfig = { ...config, ...clean };
+
+      // Re-read pickupEnabled/deliveryEnabled immediately before writing,
+      // instead of trusting the `config` this dialog loaded when it first
+      // opened. That `config` can go stale: e.g. a cashier flips the
+      // separate "pause delivery" switch on the Online Orders page while
+      // this dialog is still open (no rider on shift), then this manager
+      // finishes editing the fee and clicks Save. set-config rebuilds the
+      // whole document from the request body, so submitting the dialog's
+      // load-time boolean here would silently re-enable delivery over the
+      // cashier's change. A failed re-fetch aborts the save rather than
+      // falling back to the stale `config` state — see catch below.
+      const freshRes = await fetch("/api/admin/storefront-catalog", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "get", storeId }),
+      });
+      const freshJson = await freshRes.json().catch(() => ({}));
+      if (!freshRes.ok || !freshJson?.ok) {
+        throw new Error(freshJson?.error || `Could not confirm current settings before saving (${freshRes.status}).`);
+      }
+      const freshConfig: Partial<FullConfig> = freshJson.config || {};
+      // Same opt-out `!== false` reading used everywhere else in this file
+      // (see the FullConfig / EMPTY comments above) — never `!!`.
+      const payload: FullConfig = {
+        pickupEnabled: freshConfig.pickupEnabled !== false,
+        deliveryEnabled: freshConfig.deliveryEnabled !== false,
+        ...clean,
+      };
       const res = await fetch("/api/admin/storefront-catalog", {
         method: "POST",
         headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
