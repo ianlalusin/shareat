@@ -116,8 +116,13 @@ export type ProductRequest = {
   barcode?: string | null;
   /**
    * Uploaded to productRequestImages/{requestId}/... before submit. Copied
-   * verbatim onto products.imageUrl and the store's inventory record on
-   * approval — the file is never moved to the canonical Items/ path.
+   * verbatim onto products.imageUrl on approval — the file is never moved to
+   * the canonical Items/ path.
+   *
+   * Deliberately NOT copied onto the auto-imported inventory row:
+   * `inventory.imageUrl` is a pure per-store override where null means "show
+   * the global photo", and every display surface resolves
+   * `inventoryItem.imageUrl ?? product.imageUrl`. See /api/product-requests.
    */
   imageUrl?: string | null;
 
