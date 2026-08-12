@@ -18,10 +18,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon, MessageCircle } from "lucide-react";
+import { Loader2, ShoppingBag, MapPin, Phone, Mail, Truck, Store as StoreIcon, MessageCircle, Settings2 } from "lucide-react";
 import { computeOnlineAvailability, type OnlineAvailabilityInput } from "@/lib/storefront/online-hours";
 import { OnlineAvailabilityControl } from "@/components/admin/online-orders/OnlineAvailabilityControl";
 import { DeliveryAvailabilityControl } from "@/components/admin/online-orders/DeliveryAvailabilityControl";
+import { DeliveryPricingSettings } from "@/components/admin/online-orders/DeliveryPricingSettings";
 import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
 import { normalizePhone } from "@/lib/phone";
 import { paymentLabel } from "@/lib/payment-label";
@@ -192,8 +193,10 @@ export default function OnlineOrdersClient() {
   // delivery when no rider is around) — cashiers are allowed, same as the
   // server-side gate in the storefront-catalog route.
   const canToggleAvailability = appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier";
+  const isManagerOrAbove = appUser?.role === "admin" || appUser?.role === "manager";
 
   const [orders, setOrders] = useState<OnlineOrder[]>([]);
+  const [pricingOpen, setPricingOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("new");
   const [selected, setSelected] = useState<OnlineOrder | null>(null);
@@ -592,6 +595,11 @@ export default function OnlineOrdersClient() {
               onToggle={setDeliveryEnabled}
             />
           )}
+          {storeId && isManagerOrAbove && (
+            <Button variant="outline" size="sm" onClick={() => setPricingOpen(true)}>
+              <Settings2 className="mr-2 h-4 w-4" /> Delivery & Pricing
+            </Button>
+          )}
           <ShoppingBag className="h-6 w-6 text-muted-foreground" />
         </PageHeader>
 
@@ -895,6 +903,10 @@ export default function OnlineOrdersClient() {
           )}
         </DialogContent>
       </Dialog>
+
+      {storeId && (
+        <DeliveryPricingSettings storeId={storeId} open={pricingOpen} onClose={() => setPricingOpen(false)} />
+      )}
     </RoleGuard>
   );
 }
