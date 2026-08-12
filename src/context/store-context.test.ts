@@ -38,9 +38,18 @@ import {
   resolveProductImages,
 } from "./store-context";
 
-/** Shapes a fake products/{id} snapshot the way getDocs returns it. */
-function productDocs(entries: Record<string, unknown>) {
+/**
+ * Shapes a fake products/{id} snapshot the way getDocs returns it.
+ *
+ * `metadata.fromCache` is load-bearing, not decoration: getDocs does NOT reject
+ * when the client is offline (only getDocsFromServer does), it resolves from
+ * the local cache — normally EMPTY on a till, since the cashier path never
+ * otherwise reads `products`. `fromCache` is the only signal that separates
+ * "the server says this product does not exist" from "we could not check".
+ */
+function productDocs(entries: Record<string, unknown>, fromCache = false) {
   return {
+    metadata: { fromCache },
     docs: Object.entries(entries).map(([id, data]) => ({ id, data: () => data })),
   };
 }
@@ -175,8 +184,10 @@ describe("resolveProductImages", () => {
     expect(cache.get("p3")).toBeNull();
   });
 
-  it("caches null for a requested product that does not exist, so it is not re-queried", async () => {
-    mockGetDocs.mockResolvedValue(productDocs({ p1: { imageUrl: "https://example.com/global-1.webp" } }));
+  it("caches null for a SERVER-CONFIRMED missing product, so it is not re-queried", async () => {
+    mockGetDocs.mockResolvedValue(
+      productDocs({ p1: { imageUrl: "https://example.com/global-1.webp" } }, /* fromCache */ false)
+    );
     const cache = new Map<string, string | null>();
 
     await resolveProductImages(cache, ["p1", "ghost"]);
@@ -184,6 +195,52 @@ describe("resolveProductImages", () => {
     expect(cache.has("ghost")).toBe(true);
     expect(cache.get("ghost")).toBeNull();
     expect(collectMissingImageProductIds([{ id: "x", productId: "ghost", imageUrl: null }], cache)).toEqual([]);
+  });
+
+  describe("offline / cache-only results", () => {
+    it("does not cache an absence it could not confirm, so the ids stay retryable", async () => {
+      // The offline shape on a real till: getDocs RESOLVES from an empty local
+      // cache. Caching null here would permanently blank those add-ons for the
+      // rest of the session, silently and with no error anywhere.
+      mockGetDocs.mockResolvedValue(productDocs({}, /* fromCache */ true));
+      const cache = new Map<string, string | null>();
+
+      await resolveProductImages(cache, ["p1", "p2"]);
+
+      expect(cache.size).toBe(0);
+      const rows = [
+        { id: "a", productId: "p1", imageUrl: null },
+        { id: "b", productId: "p2", imageUrl: null },
+      ];
+      expect(collectMissingImageProductIds(rows, cache)).toEqual(["p1", "p2"]);
+    });
+
+    it("still caches documents the local cache did return, but not the missing ones", async () => {
+      mockGetDocs.mockResolvedValue(
+        productDocs({ p1: { imageUrl: "https://example.com/global-1.webp" }, p2: { imageUrl: null } }, true)
+      );
+      const cache = new Map<string, string | null>();
+
+      await resolveProductImages(cache, ["p1", "p2", "p3"]);
+
+      // Real documents — a possibly-stale photo beats a blank tile.
+      expect(cache.get("p1")).toBe("https://example.com/global-1.webp");
+      expect(cache.get("p2")).toBeNull();
+      // Never seen; absence is unconfirmed, so it must remain retryable.
+      expect(cache.has("p3")).toBe(false);
+    });
+
+    it("resolves the same ids properly once a server-confirmed result arrives", async () => {
+      const cache = new Map<string, string | null>();
+      mockGetDocs.mockResolvedValueOnce(productDocs({}, true));
+      await resolveProductImages(cache, ["p1"]);
+      expect(cache.size).toBe(0);
+
+      mockGetDocs.mockResolvedValueOnce(productDocs({ p1: { imageUrl: "https://example.com/g.webp" } }, false));
+      await resolveProductImages(cache, collectMissingImageProductIds([{ id: "a", productId: "p1" }], cache));
+
+      expect(cache.get("p1")).toBe("https://example.com/g.webp");
+    });
   });
 
   it("rejects when the query fails, and caches nothing for that chunk so it retries", async () => {

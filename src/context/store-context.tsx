@@ -109,13 +109,30 @@ export function applyInheritedImages(
  * @internal Exported for tests.
  *
  * Batch-resolves global photos for `productIds` into `cache`, in chunks of
- * `PRODUCT_IMAGE_CHUNK_SIZE`. Every requested id is recorded — including ids
- * the query returned nothing for — so a deleted or photo-less product is not
- * re-queried on every snapshot.
+ * `PRODUCT_IMAGE_CHUNK_SIZE`.
  *
- * A chunk whose `getDocs` rejects writes nothing to the cache, so it is retried
- * on the next snapshot rather than being poisoned with wrong nulls. Callers
- * must handle rejection (see fetchStoreAddons).
+ * OFFLINE BEHAVIOUR — the subtle part. `getDocs` does NOT reject when the
+ * client is offline. Verified against this repo's installed SDK
+ * (@firebase/firestore/dist/index.esm2017.js): the shared listener helper only
+ * rejects on `snapshot.fromCache && source === "server"`, and `getDocs` passes
+ * no source at all (only `getDocsFromServer` sets it). So offline it RESOLVES
+ * from the local cache — and since the cashier path never otherwise reads
+ * `products`, that cache is normally EMPTY, i.e. an empty snapshot that looks
+ * exactly like "none of these products exist".
+ *
+ * Caching a `null` for those would permanently mark every add-on pictureless
+ * for the rest of the session (the cache deliberately never re-queries a
+ * resolved id), silently and with no error anywhere. So absence is only
+ * trusted when the SERVER confirmed it — `metadata.fromCache === false`.
+ * Anything not resolved is left uncached and stays eligible for a retry.
+ *
+ * A document the cache DID return is a real value and is cached as-is, even on
+ * a `fromCache` result: a possibly-stale real photo beats a blank tile, and
+ * refreshStoreAddons drops the whole cache if staff need to force a re-read.
+ *
+ * A rejection (a real error — permissions, a malformed query) still propagates;
+ * nothing is cached for that chunk. Callers must handle it (see
+ * fetchStoreAddons).
  */
 export async function resolveProductImages(
   cache: Map<string, string | null>,
@@ -123,12 +140,24 @@ export async function resolveProductImages(
 ): Promise<void> {
   for (const chunk of chunkIds(productIds)) {
     const snapshot = await getDocs(query(collection(db, "products"), where(documentId(), "in", chunk)));
+    // An offline / cache-only result cannot prove a product is absent.
+    const canTrustAbsence = snapshot.metadata?.fromCache === false;
+
     const found = new Map<string, string | null>();
     snapshot.docs.forEach((d) => {
       const url = (d.data() as any)?.imageUrl;
       found.set(d.id, typeof url === "string" && url ? url : null);
     });
-    for (const id of chunk) cache.set(id, found.get(id) ?? null);
+
+    for (const id of chunk) {
+      const url = found.get(id);
+      if (url !== undefined) {
+        cache.set(id, url); // a real document, cached or not
+      } else if (canTrustAbsence) {
+        cache.set(id, null); // the server confirmed: no such product
+      }
+      // else: leave uncached so the next enrichment run retries it.
+    }
   }
 }
 
@@ -300,13 +329,15 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
           try {
             await resolveProductImages(productImageCacheRef.current, missing);
           } catch (error) {
-            // Non-fatal by design, and expected on a till with no connection:
-            // this POS runs offline-first (persistentLocalCache in
-            // lib/firebase/client), and getDocs may reject when it cannot reach
-            // the server and has nothing cached for the query. Those rows just
-            // keep showing no inherited picture; prices, availability and the
-            // whole ordering flow are untouched. Nothing is cached for a failed
-            // chunk, so the next snapshot retries it.
+            // Non-fatal by design. This is NOT the offline path — getDocs
+            // resolves (from the local cache) rather than rejecting when the
+            // till has no connection; resolveProductImages handles that case by
+            // declining to cache unconfirmed absences. This catch is for a real
+            // error (permissions, a malformed query), and exists so one failed
+            // photo lookup can never take down the add-on subscription or throw
+            // an unhandled rejection. Those rows just keep showing no inherited
+            // picture; prices, availability and the whole ordering flow are
+            // untouched. Nothing is cached for a failed chunk, so it retries.
             console.error("Failed to resolve inherited add-on photos:", error);
           }
           // Re-derive from THIS snapshot's rows, and only while it is still the
@@ -336,6 +367,22 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       return () => { unsub(); }
   }, [addonsEnabled, fetchStoreAddons])
 
+  /**
+   * The add-on picker's manual "Refresh" button (AddonsPOSModal). Drops the
+   * resolved-photo cache before re-subscribing, which is the staff-facing
+   * recovery path for every case the cache cannot recover from on its own:
+   *  - a till that resolved photos while offline, where a product could not be
+   *    confirmed and was left unresolved — the add-ons subscription does not
+   *    re-fire on reconnect alone (it has no includeMetadataChanges), so
+   *    without this there is nothing to trigger a retry until a page reload;
+   *  - an admin promoting or rejecting a global photo mid-shift, which the
+   *    session cache otherwise would not pick up.
+   */
+  const refreshStoreAddons = useCallback(() => {
+      productImageCacheRef.current.clear();
+      return fetchStoreAddons();
+  }, [fetchStoreAddons]);
+
   const enableStoreAddons = useCallback(() => {
       setAddonsEnabled((prev) => prev || true);
   }, []);
@@ -359,10 +406,10 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       refreshStoresOnce: loadStoresOnce,
       storeAddons,
       storeAddonsLoading,
-      refreshStoreAddons: fetchStoreAddons,
+      refreshStoreAddons,
       enableStoreAddons,
     }),
-    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce, storeAddons, storeAddonsLoading, fetchStoreAddons, enableStoreAddons]
+    [stores, activeStore, loading, setActiveStoreById, loadStoresOnce, storeAddons, storeAddonsLoading, refreshStoreAddons, enableStoreAddons]
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
