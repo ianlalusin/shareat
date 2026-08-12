@@ -39,6 +39,23 @@ export async function uploadProductImage(productId: string, file: File): Promise
     return downloadURL;
 }
 
+/**
+ * Uploads a manager's local photo for an item at their own store to
+ * productPhotos/{productId}/{storeId}.webp. Does NOT write any Firestore
+ * field itself — callers must follow up with POST /api/product-photo-requests
+ * { op: "submit", storeId, productId, imageUrl } so the submission is
+ * recorded and reviewable, not just silently applied.
+ */
+export async function uploadItemPhotoLocal(productId: string, storeId: string, file: File): Promise<string> {
+    if (!productId || !storeId) {
+        throw new Error("Product ID and store ID are required to upload a photo.");
+    }
+
+    const storageRef = ref(storage, `productPhotos/${productId}/${storeId}.webp`);
+    await uploadBytes(storageRef, file);
+    return getDownloadURL(storageRef);
+}
+
 export async function uploadUserAvatar(userId: string, file: File): Promise<string> {
     const user = auth.currentUser;
     if (!user || user.uid !== userId) {
