@@ -8,34 +8,63 @@
  * own photo." Every display surface now resolves
  * `inventoryItem.imageUrl ?? product.imageUrl`, so nothing needs to be copied.
  *
- * Two old code paths in /manager/inventory violated that and are now removed:
- *   - handleAddItems seeded `imageUrl: product.imageUrl || null` when a product
- *     was added to a store's inventory;
- *   - handleBackfill ("Backfill Data") copied the global photo into every
- *     inventory row that was missing one.
+ * Three old code paths violated that and are now removed/fixed:
+ *   - /manager/inventory handleAddItems seeded `imageUrl: product.imageUrl ||
+ *     null` when a product was added to a store's inventory;
+ *   - /manager/inventory handleBackfill ("Backfill Data") copied the global
+ *     photo into every inventory row that was missing one;
+ *   - /api/product-requests approve seeded the auto-imported inventory row with
+ *     the request's own `productRequestImages/...` upload — the same value it
+ *     writes onto the new products/{id} doc.
  *
- * Rows written by either path look identical to a deliberate local choice, so
+ * Rows written by any of those look identical to a deliberate local choice, so
  * they survive an admin promoting a different photo or rejecting the current
  * one — the store stays frozen on a stale picture nobody can see they "chose".
  * This script removes them.
  *
- * HEURISTIC — read this before running: a copy is identified as
- * `inventory.imageUrl === products/{productId}.imageUrl` (exact string match
- * against the CURRENT global value). That is the best available signal, because
- * it is exactly what the copy paths wrote. Consequences, both accepted:
- *   - a store that deliberately uploaded a photo which was later promoted to
- *     global is reset to "inherits the global photo" — the picture it displays
- *     does not change, only the reason it displays it, and it goes back to
- *     tracking the global photo (which is what promotion means);
- *   - a copy made BEFORE the global photo was later changed no longer matches
- *     and is left alone. Those rows are indistinguishable from a real local
- *     choice and are not guessed at.
+ * HEURISTIC — read this before running. A row is cleared when EITHER holds:
  *
- * Rows whose imageUrl is empty/absent, or whose product is missing, are skipped.
- * `productPhotoRequests` docs are never touched — a row with a real pending or
- * approved submission has an imageUrl under productPhotos/, which never equals
- * the global value unless that same submission was promoted (the first case
- * above, which is correct to reset).
+ *   (1) `inventory.imageUrl` is not a `productPhotos/...` Storage URL.
+ *       `productPhotos/{productId}/{storeId}/{uuid}.webp` (see
+ *       uploadItemPhotoLocal in src/lib/firebase/client.ts) is the ONLY path a
+ *       manager's deliberate local photo can come from — before that feature
+ *       existed there was no manager photo-upload path at all. Every other
+ *       value in this field was therefore written by one of the three copy
+ *       paths above (`Items/...` from the admin's global upload, or
+ *       `productRequestImages/...` from an approval), and is a copy regardless
+ *       of whether it still matches the current global value.
+ *
+ *   (2) `inventory.imageUrl === products/{productId}.imageUrl` (exact match
+ *       against the CURRENT global value) — the original heuristic, kept as
+ *       belt-and-suspenders. It is what catches a genuine `productPhotos/`
+ *       upload that was later PROMOTED to global: the store goes back to
+ *       inheriting, which is exactly what promotion means. The displayed
+ *       picture does not change, only the reason it displays it.
+ *
+ * (1) is the broadening, and it exists because leaving a stale copy behind is
+ * no longer harmless. Two things changed under it:
+ *   - the display fallback is now `inventoryItem.imageUrl ?? product.imageUrl`,
+ *     so a local value WINS. A stale copy therefore overrides the global photo
+ *     on the public storefront and in the customer app instead of falling back
+ *     to it — the store shows an old picture nobody chose and no admin action
+ *     can dislodge;
+ *   - the admin's global upload path (uploadProductImage) writes a
+ *     DETERMINISTIC `Items/{productId}.webp` and overwrites it in place on
+ *     re-upload. A copy taken from an earlier global photo points at that same
+ *     object, so once the admin changes the photo the copy either silently
+ *     becomes the new picture or, if the object is ever removed, 404s into a
+ *     broken image. Exact-match cannot catch these: by definition a stale copy
+ *     no longer equals the current global value.
+ *
+ * Kept (NOT cleared): a `productPhotos/...` URL that differs from the current
+ * global value — a manager's own photo, pending review or simply never
+ * promoted. That is the one case this field is actually for.
+ *
+ * Rows whose imageUrl is empty/absent are skipped (already "no photo of its
+ * own"). Rows whose product doc is missing are still cleared under (1) if their
+ * URL is not a productPhotos/ one — a copy with no surviving product to inherit
+ * from is still a copy, and null is the honest value.
+ * `productPhotoRequests` docs are never touched.
  *
  * DRY RUN BY DEFAULT. Nothing is written without --apply.
  *
@@ -86,6 +115,20 @@ function initAdmin() {
 initAdmin();
 const db = getFirestore();
 
+/**
+ * True when the URL points into the `productPhotos/` Storage path — i.e. it was
+ * uploaded by a manager through the local item-photo feature
+ * (uploadItemPhotoLocal → `productPhotos/{productId}/{storeId}/{uuid}.webp`).
+ *
+ * Both URL shapes the app accepts are matched: firebasestorage.googleapis.com
+ * download URLs percent-encode the path separators (`productPhotos%2F...`),
+ * while storage.googleapis.com URLs keep them literal. `productPhotos` itself
+ * is matched case-sensitively because Storage object names are.
+ */
+function isManagerUploadedPhoto(url: string): boolean {
+  return /productPhotos(\/|%2[Ff])/.test(url);
+}
+
 async function main() {
   console.log(APPLY ? "MODE: APPLY (writes)" : "MODE: DRY RUN (no writes) — pass --apply to write");
 
@@ -108,12 +151,16 @@ async function main() {
 
   let grandTotal = 0;
   let grandKept = 0;
+  let grandNotProductPhotos = 0;
+  let grandMatchesGlobal = 0;
 
   for (const store of stores) {
     const invSnap = await db.collection(`stores/${store.id}/inventory`).get();
 
-    const toClear: { ref: FirebaseFirestore.DocumentReference; name: string }[] = [];
+    const toClear: { ref: FirebaseFirestore.DocumentReference; name: string; why: string }[] = [];
     let keptLocal = 0;
+    let notProductPhotos = 0;
+    let matchesGlobal = 0;
 
     for (const d of invSnap.docs) {
       const x = d.data() as any;
@@ -122,25 +169,41 @@ async function main() {
 
       const productId = String(x?.productId || "");
       const global = productId ? globalImageById.get(productId) : undefined;
+      const name = String(x?.name || d.id);
 
-      if (global && local === global) {
-        toClear.push({ ref: d.ref, name: String(x?.name || d.id) });
-      } else {
-        // A genuine local photo (or a stale copy we cannot prove is a copy).
-        keptLocal++;
+      // (1) Not a productPhotos/ URL → provably a copy from one of the removed
+      //     copy paths, whether or not it still matches the global value.
+      if (!isManagerUploadedPhoto(local)) {
+        notProductPhotos++;
+        toClear.push({ ref: d.ref, name, why: "not a productPhotos/ URL" });
+        continue;
       }
+
+      // (2) A real local upload that has since been promoted to global — put
+      //     the store back on the global photo it is now tracking.
+      if (global && local === global) {
+        matchesGlobal++;
+        toClear.push({ ref: d.ref, name, why: "promoted (equals the global photo)" });
+        continue;
+      }
+
+      // A genuine, distinct local photo. This is what the field is for.
+      keptLocal++;
     }
 
-    const name = (store.data() as any)?.name || store.id;
+    const storeName = (store.data() as any)?.name || store.id;
     console.log(
-      `  ${name} (${store.id}): ${toClear.length} copied of ${invSnap.size} rows` +
+      `  ${storeName} (${store.id}): ${toClear.length} copied of ${invSnap.size} rows` +
+        ` (${notProductPhotos} not-productPhotos, ${matchesGlobal} promoted)` +
         ` — ${keptLocal} row(s) keep a distinct local photo`
     );
-    for (const t of toClear.slice(0, 10)) console.log(`      · ${t.name}`);
+    for (const t of toClear.slice(0, 10)) console.log(`      · ${t.name} — ${t.why}`);
     if (toClear.length > 10) console.log(`      · ...and ${toClear.length - 10} more`);
 
     grandTotal += toClear.length;
     grandKept += keptLocal;
+    grandNotProductPhotos += notProductPhotos;
+    grandMatchesGlobal += matchesGlobal;
 
     if (!APPLY || toClear.length === 0) continue;
 
@@ -155,11 +218,15 @@ async function main() {
     console.log(`    committed ${toClear.length}`);
   }
 
+  const breakdown =
+    `\n  ${grandNotProductPhotos} not a productPhotos/ URL (copied by an old copy-on-add / backfill / approval path)` +
+    `\n  ${grandMatchesGlobal} equal to the current global photo (a local upload that was promoted)`;
+
   console.log(
     APPLY
-      ? `\nDone. ${grandTotal} copied photo(s) cleared; ${grandKept} distinct local photo(s) left alone.` +
+      ? `\nDone. ${grandTotal} copied photo(s) cleared; ${grandKept} distinct local photo(s) left alone.${breakdown}` +
           `\nRemember to republish the affected stores' storefront / customer catalogs.`
-      : `\nDry run complete. ${grandTotal} copied photo(s) WOULD be cleared; ${grandKept} distinct local photo(s) would be left alone.` +
+      : `\nDry run complete. ${grandTotal} copied photo(s) WOULD be cleared; ${grandKept} distinct local photo(s) would be left alone.${breakdown}` +
           `\nRe-run with --apply to write.`
   );
 }
