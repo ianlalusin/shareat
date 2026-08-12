@@ -20,6 +20,8 @@ import { db, uploadItemPhotoLocal } from "@/lib/firebase/client";
 import { getAuth } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 import type { Product, ProductPhotoRequest } from "@/lib/types";
+import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
+import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
 import Image from "next/image";
 
 const formSchema = z.object({
@@ -220,6 +222,24 @@ function AvailabilitySwitch({
 function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
   const { toast } = useToast();
   const [globalImageUrl, setGlobalImageUrl] = React.useState<string | null>(null);
+  /**
+   * The store's OWN photo, read live from Firestore rather than from the
+   * `item` prop.
+   *
+   * The parent captures `selectedItem` once when the dialog opens and never
+   * re-derives it from the live inventory list, so right after a successful
+   * upload or remove the prop still holds the pre-write value — the preview,
+   * the "Upload" vs "Replace" label and the Remove button would all stay wrong
+   * for the rest of the dialog session even though the write succeeded.
+   * Subscribing to the inventory doc directly (same pattern as the
+   * productPhotoRequests listener below) fixes that without reaching into the
+   * parent page's state management.
+   *
+   * Seeded from the prop so there's no blank flash before the first snapshot
+   * arrives — safe because the parent unmounts the whole dialog on close, so
+   * this component never outlives the item it was opened for.
+   */
+  const [localImageUrl, setLocalImageUrl] = React.useState<string | null>(item.imageUrl ?? null);
   const [request, setRequest] = React.useState<ProductPhotoRequest | null>(null);
   const [isUploading, setIsUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -236,15 +256,45 @@ function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
   }, [item.productId]);
 
   React.useEffect(() => {
-    const reqId = `${storeId}_${item.productId}`;
-    const unsub = onSnapshot(doc(db, "productPhotoRequests", reqId), (snap) => {
-      setRequest(snap.exists() ? ({ id: snap.id, ...snap.data() } as ProductPhotoRequest) : null);
-    });
+    const unsub = onSnapshot(
+      doc(db, "stores", storeId, "inventory", item.productId),
+      (snap) => setLocalImageUrl(snap.exists() ? ((snap.data() as InventoryItem).imageUrl ?? null) : null),
+      (err) => console.error("Failed to watch this item's local photo:", err)
+    );
     return unsub;
   }, [storeId, item.productId]);
 
-  const effectiveImageUrl = item.imageUrl ?? globalImageUrl;
-  const isLocal = !!item.imageUrl;
+  React.useEffect(() => {
+    const reqId = `${storeId}_${item.productId}`;
+    const unsub = onSnapshot(
+      doc(db, "productPhotoRequests", reqId),
+      (snap) => {
+        setRequest(snap.exists() ? ({ id: snap.id, ...snap.data() } as ProductPhotoRequest) : null);
+      },
+      (err) => console.error("Failed to watch this item's photo request:", err)
+    );
+    return unsub;
+  }, [storeId, item.productId]);
+
+  // Local override wins; otherwise the item inherits the global catalog photo.
+  const effectiveImageUrl = localImageUrl ?? globalImageUrl;
+  const isLocal = !!localImageUrl;
+
+  // A photo change alters what this store's published catalogs carry, exactly
+  // like the price/availability writes on /manager/inventory — same debounced
+  // republish, same notifications.
+  const notifyStorefrontPublish = (r: StorefrontPublishResult) => {
+    if (r.ok) toast({ title: "Storefront updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the website.` });
+    else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
+  };
+  const notifyCustomerPublish = (r: CustomerCatalogPublishResult) => {
+    if (r.ok) toast({ title: "Customer app updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the customer app.` });
+    else toast({ variant: "destructive", title: "Customer app auto-publish failed", description: r.error });
+  };
+  const republishBothChannels = () => {
+    scheduleStorefrontAutoPublish(storeId, notifyStorefrontPublish);
+    scheduleCustomerCatalogAutoPublish(storeId, notifyCustomerPublish);
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -262,9 +312,13 @@ function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
         headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ op: "submit", storeId, productId: item.productId, imageUrl }),
       });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "Failed to submit photo.");
+      // Check the status before trusting the body: a framework-level failure
+      // returns HTML, and json() would then throw a parse error the manager
+      // sees instead of a real message.
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed to submit photo (${res.status}).`);
       toast({ title: "Photo submitted", description: "Sent for admin review. It's already showing at your store." });
+      republishBothChannels();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Upload failed", description: err?.message || "Something went wrong." });
     } finally {
@@ -283,9 +337,10 @@ function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
         headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ op: "remove", storeId, productId: item.productId }),
       });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || "Failed to remove photo.");
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed to remove photo (${res.status}).`);
       toast({ title: "Photo removed" });
+      republishBothChannels();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Remove failed", description: err?.message || "Something went wrong." });
     } finally {
