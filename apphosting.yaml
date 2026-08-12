@@ -13,6 +13,16 @@ env:
     availability:
       - BUILD
       - RUNTIME
+  # Google Maps geotag picker (admin/stores edit modal, src/components/admin/
+  # store-geo-picker.tsx). Client-side NEXT_PUBLIC_* var — same rule as above,
+  # needs BUILD availability to get inlined. Was only ever in local .env.local,
+  # so the deployed bundle shipped with an empty key and the picker silently
+  # fell back to plain lat/lng inputs.
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    value: AIzaSyA7qSg5QpBKLYUapW2EmougwrJPiYab__U
+    availability:
+      - BUILD
+      - RUNTIME
   # Genkit Google GenAI plugin looks for GEMINI_API_KEY (or GOOGLE_API_KEY)
   - variable: GEMINI_API_KEY
     secret: GEMINI_API_KEY
