@@ -460,6 +460,29 @@ describe("global catalog writes remain admin-only", () => {
     await assertFails(setDoc(doc(db("manager"), "productRequests", "pr1"), { status: "approved" }));
   });
 
+  it("denies a manager writing productPhotoRequests directly (API-only)", async () => {
+    await assertFails(
+      setDoc(doc(db("manager"), "productPhotoRequests", "storeA_p1"), { status: "approved" })
+    );
+  });
+
+  it("denies an admin writing productPhotoRequests directly (API-only)", async () => {
+    await assertFails(
+      setDoc(doc(db("admin"), "productPhotoRequests", "storeA_p1"), { status: "approved" })
+    );
+  });
+
+  it("allows staff to read productPhotoRequests", async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore() as any, "productPhotoRequests", "storeA_p1"), {
+        storeId: STORE_A,
+        productId: "p1",
+        status: "pending",
+      });
+    });
+    await assertSucceeds(getDoc(doc(db("cashier"), "productPhotoRequests", "storeA_p1")));
+  });
+
   it("allows an active admin to create a product", async () => {
     await assertSucceeds(setDoc(doc(db("admin"), "products", "p1"), { name: "x" }));
   });

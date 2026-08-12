@@ -427,6 +427,22 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // -----------------------------
+    // PRODUCT PHOTO REQUESTS (item photo local/global review workflow)
+    // A manager uploads a photo for an item at their store; an admin promotes
+    // it to be every store's default (products/{id}.imageUrl) or rejects it.
+    // requestId is `${storeId}_${productId}` — one active request per pair.
+    //
+    // EVERY write goes through POST /api/product-photo-requests (Admin SDK,
+    // bypasses these rules) — clients are strictly read-only here, same as
+    // productRequests just above. Review fields (status, reviewedBy*) must
+    // never be forgeable by a direct client write.
+    // -----------------------------
+    match /productPhotoRequests/{requestId} {
+      allow read, list: if isActiveStaff();
+      allow create, update, delete: if false;
+    }
+
     // Legacy user profiles can be read only by admins for migration tools.
     match /users/{userId} {
       allow read, list: if isAdmin();
