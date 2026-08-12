@@ -92,6 +92,43 @@ export default function InventoryManagementPage() {
     };
   }, [activeStore, toast, showArchived]);
 
+  /**
+   * Global catalog photos, keyed by productId — the other half of the
+   * local-overrides-global display rule (`inventoryItem.imageUrl ??
+   * product.imageUrl`).
+   *
+   * `inventory.imageUrl` is a PURE per-store override: null/absent means "this
+   * store has no photo of its own", and is deliberately never populated with a
+   * copy of the product photo (see handleAddItems / handleBackfill below). So
+   * the rows have to join the two collections themselves, or an item the store
+   * hasn't photographed shows a blank tile even when the catalog has a picture.
+   *
+   * One-shot read, not a listener: the global catalog changes rarely and this
+   * page is opened many times a day. An admin promoting a photo while this page
+   * is already open shows up on the next load. The same fetch already happens
+   * on demand in handleBackfill and in the "Add Products" dialog.
+   */
+  const [productImageById, setProductImageById] = useState<Map<string, string | null>>(new Map());
+
+  useEffect(() => {
+    if (!appUser) return;
+    let cancelled = false;
+    getDocs(collection(db, "products"))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setProductImageById(new Map(snapshot.docs.map((d) => [d.id, (d.data() as Product).imageUrl ?? null])));
+      })
+      .catch((error) => {
+        // Non-fatal: rows fall back to no picture for items with no local
+        // photo. Pricing and availability, what this page is actually for, are
+        // unaffected, so this must not block the page or nag the manager.
+        console.error("Failed to fetch global product photos:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [appUser]);
+
   const filteredInventory = useMemo(() => {
     if (!debouncedSearchTerm) {
       return inventory;
@@ -156,8 +193,8 @@ export default function InventoryManagementPage() {
     if (!activeStore || !appUser) return;
 
     const confirmed = await confirm({
-        title: "Backfill Inventory Data?",
-        description: "This will scan all inventory items and copy missing image URLs and barcodes from the global product catalog. This action is safe to run multiple times.",
+        title: "Backfill Missing Barcodes?",
+        description: "This will scan all inventory items and copy missing barcodes from the global product catalog. Photos are not copied — an item with no photo of its own already shows the global catalog photo automatically. Safe to run multiple times.",
         confirmText: "Yes, Backfill",
     });
 
@@ -185,11 +222,15 @@ export default function InventoryManagementPage() {
                 const updatePayload: Partial<InventoryItem> = {};
                 let needsUpdate = false;
 
-                if (globalProduct.imageUrl && !inventoryItem.imageUrl) {
-                    updatePayload.imageUrl = globalProduct.imageUrl;
-                    needsUpdate = true;
-                }
-                
+                // Photos are deliberately NOT backfilled any more. `imageUrl`
+                // on an inventory record is a pure per-store override: null
+                // means "no photo of our own", and every display surface falls
+                // back to products/{id}.imageUrl for it. Copying the global
+                // photo in here made every store look like it had deliberately
+                // chosen that exact picture, so it then survived an admin
+                // replacing or rejecting the global one — the store was stuck
+                // on a stale photo nobody could see they had "chosen".
+
                 if (globalProduct.barcode && !inventoryItem.barcode) {
                     updatePayload.barcode = globalProduct.barcode;
                     needsUpdate = true;
@@ -204,9 +245,9 @@ export default function InventoryManagementPage() {
 
         if (updatedCount > 0) {
             await batch.commit();
-            toast({ title: "Backfill Complete", description: `${updatedCount} inventory items were updated with missing data.` });
+            toast({ title: "Backfill Complete", description: `${updatedCount} inventory item(s) were given a missing barcode.` });
         } else {
-            toast({ title: "No Updates Needed", description: "All inventory items are already up-to-date." });
+            toast({ title: "No Updates Needed", description: "Every inventory item already has its barcode." });
         }
 
     } catch (error: any) {
@@ -242,7 +283,12 @@ export default function InventoryManagementPage() {
         subCategory: product.subCategory || "",
         uom: normalizeUom(product.uom),
         barcode: product.barcode || null,
-        imageUrl: product.imageUrl || null,
+        // NOT a copy of product.imageUrl. This field is a pure per-store
+        // override — null means "this store has no photo of its own", and the
+        // row/POS/storefront display falls back to the global catalog photo
+        // for it. Seeding it with a copy would freeze the store on whatever
+        // the global photo happened to be on the day the item was added.
+        imageUrl: null,
         cost: 0,
         sellingPrice: 0,
         isActive: true,
@@ -444,14 +490,16 @@ export default function InventoryManagementPage() {
   const renderItemRow = (item: InventoryItem, indent = false) => {
     const displayLabel = indent ? `↳ ${getEffectiveVariantLabel(item) || item.name}` : getDisplayName(item);
     const ariaLabel = getDisplayName(item);
+    // The store's own photo wins; otherwise show the global catalog photo.
+    const effectiveImageUrl = item.imageUrl ?? productImageById.get(item.productId) ?? null;
     const online = item.onlineEnabled === true;
     const customer = item.customerEnabled === true;
     return (
       <TableRow key={item.id} className={cn(!item.isActive && !showArchived && "opacity-60", indent && "bg-muted/20")}>
         <TableCell>
             <div className={cn("rounded-md bg-muted flex items-center justify-center relative", indent ? "ml-6 w-10 h-10" : "w-12 h-12")}>
-                {item.imageUrl ? (
-                    <Image src={item.imageUrl} alt={ariaLabel} fill style={{objectFit:"cover"}} className="rounded-md" />
+                {effectiveImageUrl ? (
+                    <Image src={effectiveImageUrl} alt={ariaLabel} fill style={{objectFit:"cover"}} className="rounded-md" />
                 ) : (
                     <Package className={cn("text-muted-foreground", indent ? "h-5 w-5" : "h-6 w-6")}/>
                 )}
@@ -644,7 +692,7 @@ export default function InventoryManagementPage() {
       <div className="mb-4 flex justify-end gap-2">
             <Button onClick={handleBackfill} variant="outline" disabled={isBackfilling}>
                 {isBackfilling ? <Loader className="animate-spin mr-2"/> : <RefreshCw className="mr-2" />}
-                Backfill Data
+                Backfill Barcodes
             </Button>
             <Button onClick={() => setIsAddDialogOpen(true)}>
               <PlusCircle className="mr-2" />
