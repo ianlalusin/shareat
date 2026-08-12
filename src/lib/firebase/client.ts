@@ -41,17 +41,26 @@ export async function uploadProductImage(productId: string, file: File): Promise
 
 /**
  * Uploads a manager's local photo for an item at their own store to
- * productPhotos/{productId}/{storeId}.webp. Does NOT write any Firestore
- * field itself — callers must follow up with POST /api/product-photo-requests
- * { op: "submit", storeId, productId, imageUrl } so the submission is
- * recorded and reviewable, not just silently applied.
+ * productPhotos/{productId}/{storeId}/{uuid}.webp. Does NOT write any
+ * Firestore field itself — callers must follow up with POST
+ * /api/product-photo-requests { op: "submit", storeId, productId, imageUrl }
+ * so the submission is recorded and reviewable, not just silently applied.
+ *
+ * The file name is a fresh crypto.randomUUID() per submission (same
+ * convention as paymentProofs — see storage.rules), NOT a deterministic
+ * `{storeId}.webp`. A deterministic name breaks the moment an admin promotes
+ * the photo: products/{id}.imageUrl then points at that exact object, so a
+ * manager replacing their own local photo would overwrite the file every
+ * store's global picture resolves to — silently changing (or blanking) the
+ * global photo without any review. A new object per upload keeps the promoted
+ * URL immutable, so promote/reject stay the only ways the global photo moves.
  */
 export async function uploadItemPhotoLocal(productId: string, storeId: string, file: File): Promise<string> {
     if (!productId || !storeId) {
         throw new Error("Product ID and store ID are required to upload a photo.");
     }
 
-    const storageRef = ref(storage, `productPhotos/${productId}/${storeId}.webp`);
+    const storageRef = ref(storage, `productPhotos/${productId}/${storeId}/${crypto.randomUUID()}.webp`);
     await uploadBytes(storageRef, file);
     return getDownloadURL(storageRef);
 }

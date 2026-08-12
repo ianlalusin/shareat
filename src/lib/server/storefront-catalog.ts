@@ -175,6 +175,20 @@ export async function rebuildStorefrontCatalog(
     if (!Number.isFinite(sp) || sp <= 0) return null;
     return sp;
   }
+  /**
+   * This store's LOCAL photo override for a product, or null.
+   *
+   * `inventory.imageUrl` is a pure override: absent/null means "this store has
+   * no photo of its own, use the global catalog photo" — it is never populated
+   * as a copy of `products/{id}.imageUrl`. So the display rule everywhere is
+   * `inventoryItem.imageUrl ?? product.imageUrl`, local first. See
+   * docs/superpowers/specs/2026-08-12-item-photo-local-global-design.md.
+   *
+   * NOTE for readers: in this file `p` and `v` are documents from the GLOBAL
+   * `products` collection (including `v`, a variant product — its `imageUrl`
+   * is that variant's global photo, not a per-store value). The only per-store
+   * image in scope is this function's.
+   */
   function invImage(productId: string): string | null {
     const inv = invByProductId.get(String(productId));
     return inv?.imageUrl ?? null;
@@ -254,7 +268,10 @@ export async function rebuildStorefrontCatalog(
           variantLabel: String(v.variantLabel || v.variant || ""),
           displayName: displayNameFor(p.name, v.variantLabel || v.variant),
           price,
-          imageUrl: v.imageUrl ?? invImage(v.id) ?? p.imageUrl ?? null,
+          // Local override first, then the variant's own global photo, then
+          // the family root's. Was `v.imageUrl ?? invImage(v.id) ?? ...`,
+          // which let the global photo beat a store's own upload.
+          imageUrl: invImage(v.id) ?? v.imageUrl ?? p.imageUrl ?? null,
         };
         if (familyUsesVariantCopy) {
           // Fall back to the root so switching tiers never blanks the panel.
@@ -269,7 +286,13 @@ export async function rebuildStorefrontCatalog(
         name: String(p.name || ""),
         displayName: String(p.name || ""),
         subCategory,
-        imageUrl: p.imageUrl ?? null,
+        // Same local-first rule as the variants above. A family root normally
+        // has no inventory row of its own (a store carries the variants, not
+        // the group — see groupIntoFamilies in src/lib/products/variants.ts),
+        // so this resolves to the global photo in practice; it is here so a
+        // store that DOES carry a root row is not silently ignored, and so
+        // every image site in this file reads identically.
+        imageUrl: invImage(p.id) ?? p.imageUrl ?? null,
         kind: "group",
         price: variants[0].price,
         variants,
@@ -287,7 +310,10 @@ export async function rebuildStorefrontCatalog(
         name: String(p.name || ""),
         displayName: displayNameFor(p.name, p.variant),
         subCategory,
-        imageUrl: p.imageUrl ?? invImage(p.id) ?? null,
+        // Local override first. Was `p.imageUrl ?? invImage(p.id)`, which
+        // meant a store's own photo only ever showed for a product that had
+        // no global photo at all.
+        imageUrl: invImage(p.id) ?? p.imageUrl ?? null,
         kind: "single",
         price,
       };
