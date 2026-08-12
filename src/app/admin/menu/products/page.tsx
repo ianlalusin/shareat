@@ -14,7 +14,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle, RefreshCw, Archive, ArchiveRestore } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Upload, Download, Package, Search, ArrowLeft, ChevronRight, ChevronDown, GitMerge, AlertTriangle, RefreshCw, Archive, ArchiveRestore, Camera } from "lucide-react";
 import { getAuth } from "firebase/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -23,13 +23,14 @@ import { ProductEditDialog, type ProductFormValues } from "@/components/admin/pr
 import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { ProductMergeDialog } from "@/components/admin/product-merge-dialog";
 import { slugify } from "@/lib/utils/slugify";
-import type { Product } from "@/lib/types";
+import type { Product, ProductPhotoRequest } from "@/lib/types";
 import { uploadProductImage } from "@/lib/firebase/client";
 import { getKind, getDisplayName } from "@/lib/products/variants";
 import { scheduleStorefrontAutoPublish, publishStorefrontNow, getStorefrontStoreId, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { read, utils } from "xlsx";
 import { ProductImportPreviewDialog } from "@/components/admin/product-import-preview-dialog";
+import { ProductPhotoReviewDialog } from "@/components/admin/menu/product-photo-review-dialog";
 import { normalizeUom } from "@/lib/uom";
 import Image from "next/image";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -46,6 +47,8 @@ export default function ProductManagementPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [pendingPhotosByProduct, setPendingPhotosByProduct] = useState<Map<string, ProductPhotoRequest[]>>(new Map());
+  const [reviewingProduct, setReviewingProduct] = useState<Product | null>(null);
   const { confirm, Dialog } = useConfirmDialog();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -126,6 +129,28 @@ export default function ProductManagementPage() {
     });
 
     return () => unsubscribe();
+  }, [appUser, toast]);
+
+  useEffect(() => {
+    // Same guard as the products listener above: without it this subscribes
+    // before sign-in resolves and the rules check fails on an anonymous read.
+    if (!appUser) return;
+
+    const q = query(collection(db, "productPhotoRequests"), where("status", "==", "pending"));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const byProduct = new Map<string, ProductPhotoRequest[]>();
+      snapshot.docs.forEach((d) => {
+        const r = { id: d.id, ...d.data() } as ProductPhotoRequest;
+        const list = byProduct.get(r.productId) || [];
+        list.push(r);
+        byProduct.set(r.productId, list);
+      });
+      setPendingPhotosByProduct(byProduct);
+    }, (error) => {
+      console.error("Failed to fetch pending product photos:", error);
+      toast({ variant: "destructive", title: "Error", description: "Could not fetch pending store photos." });
+    });
+    return unsub;
   }, [appUser, toast]);
 
   const { groupedAndSortedProducts, archivedRows } = useMemo(() => {
@@ -773,6 +798,15 @@ export default function ProductManagementPage() {
                                                     <AlertTriangle className="h-3 w-3" /> Orphan variant
                                                   </Badge>
                                                 )}
+                                                {pendingPhotosByProduct.has(p.id) && (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="text-xs gap-1 cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); setReviewingProduct(p); }}
+                                                  >
+                                                    <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(p.id)!.length} pending
+                                                  </Badge>
+                                                )}
                                             </div>
                                         </TableCell>
                                         <TableCell>{p.uom}</TableCell>
@@ -831,7 +865,18 @@ export default function ProductManagementPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="font-medium pl-6 text-sm">
-                                            ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                            <div className="flex items-center gap-2">
+                                                <span>↳ {v.variantLabel || v.variant || "(unlabeled)"}</span>
+                                                {pendingPhotosByProduct.has(v.id) && (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="text-xs gap-1 cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); setReviewingProduct(v); }}
+                                                  >
+                                                    <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(v.id)!.length} pending
+                                                  </Badge>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell>{v.uom}</TableCell>
                                         <TableCell>{v.barcode || '—'}</TableCell>
@@ -952,6 +997,15 @@ export default function ProductManagementPage() {
                                   {p.subCategory && (
                                     <Badge variant="outline" className="text-xs text-muted-foreground">{p.subCategory}</Badge>
                                   )}
+                                  {pendingPhotosByProduct.has(p.id) && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs gap-1 cursor-pointer"
+                                      onClick={(e) => { e.stopPropagation(); setReviewingProduct(p); }}
+                                    >
+                                      <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(p.id)!.length} pending
+                                    </Badge>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>{p.uom}</TableCell>
@@ -987,9 +1041,20 @@ export default function ProductManagementPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="font-medium pl-6 text-sm">
-                                  <span className="line-through decoration-muted-foreground/60">
-                                    ↳ {v.variantLabel || v.variant || "(unlabeled)"}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="line-through decoration-muted-foreground/60">
+                                      ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                    </span>
+                                    {pendingPhotosByProduct.has(v.id) && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs gap-1 cursor-pointer"
+                                        onClick={(e) => { e.stopPropagation(); setReviewingProduct(v); }}
+                                      >
+                                        <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(v.id)!.length} pending
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </TableCell>
                                 <TableCell>{v.uom}</TableCell>
                                 <TableCell>{v.barcode || '—'}</TableCell>
@@ -1065,6 +1130,19 @@ export default function ProductManagementPage() {
             clearSelection();
             setMergeDialogOpen(false);
           }}
+        />
+      )}
+
+      {reviewingProduct && (
+        <ProductPhotoReviewDialog
+          isOpen={!!reviewingProduct}
+          onClose={() => setReviewingProduct(null)}
+          productName={reviewingProduct.name}
+          requests={pendingPhotosByProduct.get(reviewingProduct.id) || []}
+          // Promote/reject both write products/{id}.imageUrl, which the
+          // storefront snapshot carries — same reason a product save
+          // republishes, so the same debounced publish.
+          onReviewed={autoPublishStorefront}
         />
       )}
 

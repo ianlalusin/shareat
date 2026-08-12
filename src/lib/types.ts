@@ -116,8 +116,13 @@ export type ProductRequest = {
   barcode?: string | null;
   /**
    * Uploaded to productRequestImages/{requestId}/... before submit. Copied
-   * verbatim onto products.imageUrl and the store's inventory record on
-   * approval — the file is never moved to the canonical Items/ path.
+   * verbatim onto products.imageUrl on approval — the file is never moved to
+   * the canonical Items/ path.
+   *
+   * Deliberately NOT copied onto the auto-imported inventory row:
+   * `inventory.imageUrl` is a pure per-store override where null means "show
+   * the global photo", and every display surface resolves
+   * `inventoryItem.imageUrl ?? product.imageUrl`. See /api/product-requests.
    */
   imageUrl?: string | null;
 
@@ -174,6 +179,34 @@ export type ProductRequest = {
 
   createdAt: Timestamp;
   updatedAt: Timestamp;
+};
+
+export type ProductPhotoStatus = "pending" | "approved" | "rejected";
+
+/**
+ * A manager's local photo upload for an item at their store, awaiting (or
+ * having received) an admin decision on whether to promote it to be the
+ * item's photo for every store. See
+ * docs/superpowers/specs/2026-08-12-item-photo-local-global-design.md.
+ *
+ * id is `${storeId}_${productId}` — deterministic, so there is at most one
+ * active request per (store, product) pair; resubmitting overwrites it
+ * rather than accumulating history.
+ */
+export type ProductPhotoRequest = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  productId: string;
+  productName: string;
+  status: ProductPhotoStatus;
+  imageUrl: string;
+  submittedByUid: string;
+  submittedByName: string;
+  submittedAt: Timestamp;
+  reviewedByUid?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: Timestamp | null;
 };
 
 /**

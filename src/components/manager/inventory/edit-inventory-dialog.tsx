@@ -14,7 +14,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Info } from "lucide-react";
+import { Info, Camera, Trash2, Loader2 } from "lucide-react";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { db, uploadItemPhotoLocal } from "@/lib/firebase/client";
+import { getAuth } from "firebase/auth";
+import { useToast } from "@/hooks/use-toast";
+import type { Product, ProductPhotoRequest } from "@/lib/types";
+import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
+import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
+import Image from "next/image";
 
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
@@ -57,6 +65,7 @@ interface EditInventoryDialogProps {
   isOpen: boolean;
   onClose: () => void;
   item: InventoryItem;
+  storeId: string;
   kitchenLocations: KitchenLocation[];
   onSave: (item: InventoryItem, data: any) => void;
   onToggle: (item: InventoryItem, field: ToggleField) => void;
@@ -210,7 +219,176 @@ function AvailabilitySwitch({
   );
 }
 
-export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
+function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
+  const { toast } = useToast();
+  const [globalImageUrl, setGlobalImageUrl] = React.useState<string | null>(null);
+  /**
+   * The store's OWN photo, read live from Firestore rather than from the
+   * `item` prop.
+   *
+   * The parent captures `selectedItem` once when the dialog opens and never
+   * re-derives it from the live inventory list, so right after a successful
+   * upload or remove the prop still holds the pre-write value — the preview,
+   * the "Upload" vs "Replace" label and the Remove button would all stay wrong
+   * for the rest of the dialog session even though the write succeeded.
+   * Subscribing to the inventory doc directly (same pattern as the
+   * productPhotoRequests listener below) fixes that without reaching into the
+   * parent page's state management.
+   *
+   * Seeded from the prop so there's no blank flash before the first snapshot
+   * arrives — safe because the parent unmounts the whole dialog on close, so
+   * this component never outlives the item it was opened for.
+   */
+  const [localImageUrl, setLocalImageUrl] = React.useState<string | null>(item.imageUrl ?? null);
+  const [request, setRequest] = React.useState<ProductPhotoRequest | null>(null);
+  const [isUploading, setIsUploading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getDoc(doc(db, "products", item.productId)).then((snap) => {
+      if (cancelled) return;
+      setGlobalImageUrl(snap.exists() ? ((snap.data() as Product).imageUrl ?? null) : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item.productId]);
+
+  React.useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "stores", storeId, "inventory", item.productId),
+      (snap) => setLocalImageUrl(snap.exists() ? ((snap.data() as InventoryItem).imageUrl ?? null) : null),
+      (err) => console.error("Failed to watch this item's local photo:", err)
+    );
+    return unsub;
+  }, [storeId, item.productId]);
+
+  React.useEffect(() => {
+    const reqId = `${storeId}_${item.productId}`;
+    const unsub = onSnapshot(
+      doc(db, "productPhotoRequests", reqId),
+      (snap) => {
+        setRequest(snap.exists() ? ({ id: snap.id, ...snap.data() } as ProductPhotoRequest) : null);
+      },
+      (err) => console.error("Failed to watch this item's photo request:", err)
+    );
+    return unsub;
+  }, [storeId, item.productId]);
+
+  // Local override wins; otherwise the item inherits the global catalog photo.
+  const effectiveImageUrl = localImageUrl ?? globalImageUrl;
+  const isLocal = !!localImageUrl;
+
+  // A photo change alters what this store's published catalogs carry, exactly
+  // like the price/availability writes on /manager/inventory — same debounced
+  // republish, same notifications.
+  const notifyStorefrontPublish = (r: StorefrontPublishResult) => {
+    if (r.ok) toast({ title: "Storefront updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the website.` });
+    else toast({ variant: "destructive", title: "Storefront auto-publish failed", description: r.error });
+  };
+  const notifyCustomerPublish = (r: CustomerCatalogPublishResult) => {
+    if (r.ok) toast({ title: "Customer app updated", description: `${r.itemCount} item${r.itemCount === 1 ? "" : "s"} live on the customer app.` });
+    else toast({ variant: "destructive", title: "Customer app auto-publish failed", description: r.error });
+  };
+  const republishBothChannels = () => {
+    scheduleStorefrontAutoPublish(storeId, notifyStorefrontPublish);
+    scheduleCustomerCatalogAutoPublish(storeId, notifyCustomerPublish);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Not signed in.");
+      const imageUrl = await uploadItemPhotoLocal(item.productId, storeId, file);
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/product-photo-requests", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "submit", storeId, productId: item.productId, imageUrl }),
+      });
+      // Check the status before trusting the body: a framework-level failure
+      // returns HTML, and json() would then throw a parse error the manager
+      // sees instead of a real message.
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed to submit photo (${res.status}).`);
+      toast({ title: "Photo submitted", description: "Sent for admin review. It's already showing at your store." });
+      republishBothChannels();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Upload failed", description: err?.message || "Something went wrong." });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    setIsUploading(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Not signed in.");
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/product-photo-requests", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "remove", storeId, productId: item.productId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Failed to remove photo (${res.status}).`);
+      toast({ title: "Photo removed" });
+      republishBothChannels();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Remove failed", description: err?.message || "Something went wrong." });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const statusLabel = !request
+    ? null
+    : request.status === "pending"
+      ? "Pending admin review"
+      : request.status === "approved"
+        ? "Live for every store"
+        : "Rejected by admin — upload a different photo?";
+
+  return (
+    <div className="space-y-4">
+      <div className="w-32 h-32 rounded-md bg-muted flex items-center justify-center relative mx-auto overflow-hidden">
+        {effectiveImageUrl ? (
+          <Image src={effectiveImageUrl} alt={item.name} fill style={{ objectFit: "cover" }} />
+        ) : (
+          <Camera className="h-8 w-8 text-muted-foreground" />
+        )}
+      </div>
+      {effectiveImageUrl && !isLocal && (
+        <p className="text-xs text-center text-muted-foreground">Inherited from the global catalog photo.</p>
+      )}
+      {statusLabel && <p className="text-xs text-center font-medium">{statusLabel}</p>}
+      <div className="flex justify-center gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={isUploading} onClick={() => fileInputRef.current?.click()}>
+          {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+          {isLocal ? "Replace photo" : "Upload photo"}
+        </Button>
+        {isLocal && (
+          <Button type="button" variant="ghost" size="sm" disabled={isUploading} onClick={handleRemove}>
+            <Trash2 className="mr-2 h-4 w-4" /> Remove
+          </Button>
+        )}
+      </div>
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+      <p className="text-xs text-muted-foreground text-center">
+        This photo shows at your store immediately. An admin can promote it to be every store's default, or reject it.
+      </p>
+    </div>
+  );
+}
+
+export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, onToggle, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(refinedFormSchema),
     defaultValues: {
@@ -266,11 +444,12 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} id="edit-item-form">
             <Tabs defaultValue="setup" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="setup">Setup</TabsTrigger>
                 <TabsTrigger value="in-store">In-Store</TabsTrigger>
                 <TabsTrigger value="online">Online</TabsTrigger>
                 <TabsTrigger value="customer">Customer</TabsTrigger>
+                <TabsTrigger value="photo">Photo</TabsTrigger>
               </TabsList>
 
               <TabsContent value="setup" className="space-y-4">
@@ -350,6 +529,10 @@ export function EditInventoryDialog({ isOpen, onClose, item, onSave, onToggle, i
                 <p className="text-xs text-muted-foreground">
                   Always charges the store price (₱{Number(form.watch("sellingPrice") ?? item.sellingPrice ?? 0).toFixed(2)}) — there's no separate customer app price, so it can never drift from the counter.
                 </p>
+              </TabsContent>
+
+              <TabsContent value="photo" className="space-y-4">
+                <PhotoTab item={item} storeId={storeId} />
               </TabsContent>
             </Tabs>
           </form>

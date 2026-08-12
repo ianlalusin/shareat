@@ -83,6 +83,24 @@ service firebase.storage {
       allow write: if request.auth != null && isAdmin(request.auth.uid);
     }
 
+    // Local per-store item photos, pending admin review (see
+    // /api/product-photo-requests). Path is store-scoped so two stores
+    // uploading a photo for the same product never collide on one object;
+    // promoting one just points products/{id}.imageUrl at this same URL,
+    // no file copy needed.
+    //
+    // {fileName} is a per-submission crypto.randomUUID() (same convention as
+    // paymentProofs below), NOT a deterministic name. That matters: once an
+    // admin promotes a store's photo, products/{id}.imageUrl points at this
+    // exact object, so a manager replacing their local photo must land on a
+    // NEW object — otherwise the replacement would silently overwrite (and
+    // hijack) every store's global picture.
+    match /productPhotos/{productId}/{storeId}/{fileName} {
+      allow write: if request.auth != null
+        && isStoreManagerOrAdmin(request.auth.uid, storeId)
+        && isImageUnder(4);
+    }
+
     // Proposed product photos attached to a product-registration request.
     // Uploaded by the requesting manager before the request doc exists, under a
     // client-generated requestId; the approve op copies the resulting download

@@ -298,6 +298,63 @@ describe("per-branch online availability (onlineEnabled) is the ONLY gate", () =
   });
 });
 
+/**
+ * `inventory.imageUrl` is a per-store LOCAL OVERRIDE of the global
+ * `products/{id}.imageUrl`, never a copy of it — so every image the snapshot
+ * carries must resolve local-first. Before this suite, two of the three sites
+ * preferred the global photo, which meant a manager's own upload never reached
+ * the public menu for any product that already had a catalog picture.
+ */
+describe("item photos: the store's local override wins over the global product photo", () => {
+  const LOCAL = "https://firebasestorage.googleapis.com/v0/b/x/o/productPhotos%2Fs1%2FSTORE_X%2Fuuid.webp";
+  const GLOBAL = "https://firebasestorage.googleapis.com/v0/b/x/o/Items%2Fs1.webp";
+
+  it("a single SKU shows the store's photo, not the global one", async () => {
+    const cat = await build({
+      products: [{ id: "s1", name: "Unli Pork", kind: "single", isActive: true, subCategory: "Unli", imageUrl: GLOBAL }],
+      inventory: [inv("s1", 249, { imageUrl: LOCAL })],
+    });
+    expect(onlyItem(cat).imageUrl).toBe(LOCAL);
+  });
+
+  it("a single SKU with no local photo inherits the global one", async () => {
+    const cat = await build({
+      products: [{ id: "s1", name: "Unli Pork", kind: "single", isActive: true, subCategory: "Unli", imageUrl: GLOBAL }],
+      inventory: [inv("s1", 249)], // no imageUrl at all — the normal state
+    });
+    expect(onlyItem(cat).imageUrl).toBe(GLOBAL);
+  });
+
+  it("a variant shows its store photo over both its own and the family's global photo", async () => {
+    const f = family({
+      root: { imageUrl: "https://firebasestorage.googleapis.com/v0/b/x/o/Items%2Fgrp.webp" },
+      variants: [
+        { id: "v1", name: "Kimbap", kind: "variant", groupId: "grp", variantLabel: "Veggies", isActive: true, imageUrl: GLOBAL },
+        { id: "v2", name: "Kimbap", kind: "variant", groupId: "grp", variantLabel: "Signature", isActive: true, imageUrl: GLOBAL },
+      ],
+    });
+    f.inventory = [inv("v1", 1111, { imageUrl: LOCAL }), inv("v2", 2222)];
+
+    const item = onlyItem(await build(f));
+    expect(item.variants!.find((v) => v.productId === "v1")!.imageUrl).toBe(LOCAL);
+    // The sibling with no local photo still inherits its own global one.
+    expect(item.variants!.find((v) => v.productId === "v2")!.imageUrl).toBe(GLOBAL);
+  });
+
+  it("a variant with neither a local nor its own global photo falls back to the family root's", async () => {
+    const ROOT = "https://firebasestorage.googleapis.com/v0/b/x/o/Items%2Fgrp.webp";
+    const f = family({ root: { imageUrl: ROOT } });
+    const item = onlyItem(await build(f));
+    for (const v of item.variants!) expect(v.imageUrl).toBe(ROOT);
+  });
+
+  it("the family tile itself carries the root's global photo (a store carries no row for the group)", async () => {
+    const ROOT = "https://firebasestorage.googleapis.com/v0/b/x/o/Items%2Fgrp.webp";
+    const f = family({ root: { imageUrl: ROOT } });
+    expect(onlyItem(await build(f)).imageUrl).toBe(ROOT);
+  });
+});
+
 describe("per-branch online price (onlinePrice)", () => {
   it("charges the online price when one is set, not the dine-in price", async () => {
     const cat = await build(oneSingle({ onlinePrice: 299 }, 249));
