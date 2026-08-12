@@ -858,7 +858,18 @@ export default function ProductManagementPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="font-medium pl-6 text-sm">
-                                            ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                            <div className="flex items-center gap-2">
+                                                <span>↳ {v.variantLabel || v.variant || "(unlabeled)"}</span>
+                                                {pendingPhotosByProduct.has(v.id) && (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="text-xs gap-1 cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); setReviewingProduct(v); }}
+                                                  >
+                                                    <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(v.id)!.length} pending
+                                                  </Badge>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell>{v.uom}</TableCell>
                                         <TableCell>{v.barcode || '—'}</TableCell>
@@ -979,6 +990,15 @@ export default function ProductManagementPage() {
                                   {p.subCategory && (
                                     <Badge variant="outline" className="text-xs text-muted-foreground">{p.subCategory}</Badge>
                                   )}
+                                  {pendingPhotosByProduct.has(p.id) && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs gap-1 cursor-pointer"
+                                      onClick={(e) => { e.stopPropagation(); setReviewingProduct(p); }}
+                                    >
+                                      <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(p.id)!.length} pending
+                                    </Badge>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>{p.uom}</TableCell>
@@ -1014,9 +1034,20 @@ export default function ProductManagementPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="font-medium pl-6 text-sm">
-                                  <span className="line-through decoration-muted-foreground/60">
-                                    ↳ {v.variantLabel || v.variant || "(unlabeled)"}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="line-through decoration-muted-foreground/60">
+                                      ↳ {v.variantLabel || v.variant || "(unlabeled)"}
+                                    </span>
+                                    {pendingPhotosByProduct.has(v.id) && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs gap-1 cursor-pointer"
+                                        onClick={(e) => { e.stopPropagation(); setReviewingProduct(v); }}
+                                      >
+                                        <Camera className="h-3 w-3" /> {pendingPhotosByProduct.get(v.id)!.length} pending
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </TableCell>
                                 <TableCell>{v.uom}</TableCell>
                                 <TableCell>{v.barcode || '—'}</TableCell>
