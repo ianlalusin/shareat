@@ -15,7 +15,12 @@ function fakeDb(opts: { products: any[]; inventory: any[] }) {
       return coll([]);
     },
     doc(path: string) {
-      return { set: async (data: any) => { written.push({ path, data }); } };
+      return {
+        // Always a cold cache (getStoreInventoryRows' inventoryCache doc) —
+        // every test exercises a fresh scan, matching pre-cache behaviour.
+        get: async () => ({ exists: false, data: () => undefined, get: () => undefined }),
+        set: async (data: any) => { written.push({ path, data }); },
+      };
     },
   };
   return { db, written };
@@ -46,9 +51,11 @@ const product = (id: string, over: Record<string, any> = {}) => ({
 async function build(opts: Parameters<typeof fakeDb>[0]): Promise<{ items: CustomerCatalogItem[]; itemCount: number }> {
   const { db, written } = fakeDb(opts);
   await rebuildCustomerCatalog(db, STORE);
-  expect(written).toHaveLength(1);
-  expect(written[0].path).toBe(`stores/${STORE}/catalogCache/main`);
-  return written[0].data;
+  // Also writes stores/{STORE}/inventoryCache/main (the shared inventory-scan
+  // cache from getStoreInventoryRows) — filter to the doc this suite tests.
+  const catalogWrite = written.find((w) => w.path === `stores/${STORE}/catalogCache/main`);
+  expect(catalogWrite).toBeDefined();
+  return catalogWrite!.data;
 }
 
 describe("rebuildCustomerCatalog", () => {
