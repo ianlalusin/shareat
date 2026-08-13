@@ -11,6 +11,7 @@ import {
   topAddonsFrom,
   presetRanges,
 } from "@/lib/analytics/backfill-core";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 
 // Admin-SDK backfill, the server home of the admin maintenance rebuilds. Reads
 // receipts/tickets/sessions, aggregates via the shared core, and overwrites the
@@ -314,11 +315,11 @@ export async function rebuildDashboardPresetsForAllStores(
   db: Firestore,
   now: Date = new Date(),
 ): Promise<{ totalStores: number; presets: number; results: Array<{ storeId: string; presets: number }> }> {
-  const stores = await db.collection("stores").where("isActive", "==", true).get();
+  const stores = await getActiveStores(db);
   const results: Array<{ storeId: string; presets: number }> = [];
-  for (const s of stores.docs) {
+  for (const s of stores) {
     const r = await rebuildDashboardPresetsServer(db, s.id, now);
     results.push({ storeId: s.id, presets: r.presets });
   }
-  return { totalStores: stores.size, presets: results.reduce((n, r) => n + r.presets, 0), results };
+  return { totalStores: stores.length, presets: results.reduce((n, r) => n + r.presets, 0), results };
 }

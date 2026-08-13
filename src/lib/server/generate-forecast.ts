@@ -2,6 +2,7 @@ import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
 import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { format, addDays, subDays } from "date-fns";
@@ -322,19 +323,16 @@ export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?:
   results: { storeId: string; ok: boolean; error?: string; forecastsWritten?: number }[];
 }> {
   const db = getAdminDb();
-  const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
+  const activeStores = await getActiveStores(db);
 
-  const stores: StoreData[] = storesSnap.docs.map(d => {
-    const data = d.data();
-    return {
-      id: d.id,
-      address: data.address,
-      isActive: data.isActive,
-      aiEnabled: data.aiEnabled,
-      forecastConfig: data.forecastConfig,
-    };
+  const stores: StoreData[] = activeStores.map((s) => ({
+    id: s.id,
+    address: s.address,
+    isActive: s.isActive,
+    aiEnabled: s.aiEnabled,
+    forecastConfig: s.forecastConfig as ForecastConfig | undefined,
   // Only AI-enabled stores are forecast (no Gemini for disabled stores).
-  }).filter((s) => s.aiEnabled === true);
+  })).filter((s) => s.aiEnabled === true);
 
   // Skip stores already forecast today (tracked in the cron log), then cap the
   // batch so each fire stays a small burst.
@@ -362,22 +360,22 @@ export async function updateAccuracyForAllActiveStores(): Promise<{
   results: { storeId: string; ok: boolean; error?: string }[];
 }> {
   const db = getAdminDb();
-  const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
+  const activeStores = await getActiveStores(db);
   const now = new Date();
 
   const results = await Promise.all(
-    storesSnap.docs.map(async (d) => {
+    activeStores.map(async (s) => {
       try {
-        await backfillRecentAccuracy(d.id, now, 7);
-        return { storeId: d.id, ok: true };
+        await backfillRecentAccuracy(s.id, now, 7);
+        return { storeId: s.id, ok: true };
       } catch (err: any) {
-        console.error(`[updateAccuracy] store=${d.id} failed:`, err);
-        return { storeId: d.id, ok: false, error: err.message || String(err) };
+        console.error(`[updateAccuracy] store=${s.id} failed:`, err);
+        return { storeId: s.id, ok: false, error: err.message || String(err) };
       }
     }),
   );
 
-  return { totalStores: storesSnap.size, results };
+  return { totalStores: activeStores.length, results };
 }
 
 /* ------------------------------------------------------------------ */

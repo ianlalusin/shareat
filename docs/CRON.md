@@ -1,5 +1,29 @@
 # Scheduled Jobs
 
+## Active-store list caching
+
+`reconcile-analytics` and `holiday-calendar` both fire every 15 minutes, and
+`log-weather` hourly — each of them (plus `generate-forecast`,
+`update-accuracy`, `rebuild-presets`, `generate-daily-insight`, and the
+external `/api/external/stores` API) used to independently run
+`stores` WHERE `isActive == true` to get the active-store list. That query
+pattern was the top hit in Firestore's index usage panel purely from this
+fan-out — none of these jobs process enough stores for the query itself to be
+expensive, it was just firing ~230+ times/day combined.
+
+All of them now call `getActiveStores(db)`
+(`src/lib/server/active-stores-cache.ts`), which caches the full active-store
+list in `system/activeStoresCache` for 15 minutes. Whichever job fires first
+after the cache expires pays for the real collection scan and repopulates it;
+every job that fires within the next 15 minutes reads one cheap doc instead.
+The TTL matches the tightest existing cron cadence, so no job waits longer for
+a store activation/deactivation to take effect than it already implicitly did
+before this cache existed. The cache is self-healing (a missing or expired doc
+just triggers a fresh scan) and server-only — `system/*` is excluded from the
+client catch-all in `firestore.rules`, so it's never reachable from the app.
+
+## The scheduled endpoints
+
 The dashboard's forecast + accuracy cards depend on two endpoints that run on a
 daily schedule. The endpoints live in this Next.js app under `src/app/api/cron/`
 and are deployed alongside the rest of the backend on **Firebase App Hosting**.
