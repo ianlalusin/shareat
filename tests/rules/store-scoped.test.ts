@@ -95,6 +95,13 @@ const SERVER_ONLY_COLLECTIONS = [
   "storefrontConfig",
   "onlineOrders",
   "paymentIntents",
+  // catalogCache: CUSTOMER app's per-store menu/price cache
+  // (rebuildCustomerCatalog, customer-catalog.ts) — was missing from this
+  // list until 2026-08-13, found while adding inventoryCache below.
+  "catalogCache",
+  // inventoryCache: shared inventory-scan cache both rebuildCustomerCatalog
+  // and rebuildStorefrontCatalog read from (store-inventory-cache.ts).
+  "inventoryCache",
 ] as const;
 
 const STAFF = {

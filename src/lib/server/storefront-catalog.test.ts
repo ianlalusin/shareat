@@ -22,10 +22,16 @@ function fakeDb(opts: {
     },
     doc(path: string) {
       return {
-        get: async () => ({
-          exists: /optionOverrides/.test(path) && !!opts.optionOverrides,
-          data: () => opts.optionOverrides,
-        }),
+        get: async () => {
+          if (/optionOverrides/.test(path)) {
+            const exists = !!opts.optionOverrides;
+            return { exists, data: () => opts.optionOverrides, get: (f: string) => opts.optionOverrides?.[f] };
+          }
+          // Everything else (notably stores/{id}/inventoryCache/main, the
+          // shared inventory-scan cache from getStoreInventoryRows) is always
+          // a cold cache here — every test exercises a fresh scan.
+          return { exists: false, data: () => undefined, get: () => undefined };
+        },
         set: async (data: any) => { written.push({ path, data }); },
       };
     },
@@ -57,9 +63,11 @@ function family(over: { root?: any; variants?: any[] } = {}) {
 async function build(opts: Parameters<typeof fakeDb>[0]): Promise<StorefrontCatalog> {
   const { db, written } = fakeDb(opts);
   await rebuildStorefrontCatalog(db, STORE);
-  expect(written).toHaveLength(1);
-  expect(written[0].path).toBe(`stores/${STORE}/storefrontCatalog/main`);
-  return written[0].data as StorefrontCatalog;
+  // Also writes stores/{STORE}/inventoryCache/main (the shared inventory-scan
+  // cache from getStoreInventoryRows) — filter to the doc this suite tests.
+  const catalogWrite = written.find((w) => w.path === `stores/${STORE}/storefrontCatalog/main`);
+  expect(catalogWrite).toBeDefined();
+  return catalogWrite!.data as StorefrontCatalog;
 }
 
 const onlyItem = (cat: StorefrontCatalog) => cat.categories[0].items[0];

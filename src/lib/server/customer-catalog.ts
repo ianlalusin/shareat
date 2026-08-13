@@ -1,4 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { getStoreInventoryRows } from "./store-inventory-cache";
 
 export type CustomerCatalogItem = {
   id: string; // POS productId — the CUSTOMER app only uses this as a display key.
@@ -41,11 +42,11 @@ export async function rebuildCustomerCatalog(
   const productsSnap = await db.collection("products").get();
   const productById = new Map(productsSnap.docs.map((d) => [d.id, d.data() as any]));
 
-  const invSnap = await db.collection(`stores/${storeId}/inventory`).get();
+  const invRows = await getStoreInventoryRows(db, storeId);
 
   const items: CustomerCatalogItem[] = [];
-  for (const d of invSnap.docs) {
-    const inv = d.data() as any;
+  for (const row of invRows) {
+    const inv = row.data as any;
     if (inv?.isActive === false) continue;
     if (inv?.isArchived === true) continue;
     if (inv?.customerEnabled !== true) continue;

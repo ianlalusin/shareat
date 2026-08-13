@@ -301,8 +301,22 @@ service cloud.firestore {
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
         && coll != 'serverProfileSecrets'
+        // catalogCache (CUSTOMER app menu/price cache, written by
+        // rebuildCustomerCatalog) and inventoryCache (the internal shared
+        // inventory-scan cache both rebuildCustomerCatalog and
+        // rebuildStorefrontCatalog read from — see
+        // src/lib/server/store-inventory-cache.ts) are added here alongside
+        // their sibling storefrontCatalog: all three are server-derived caches
+        // that feed either a paying customer's menu or another cache, so a
+        // client write to any of them would let a lower-privilege store role
+        // (cashier/server/kitchen — hasStoreAccess() alone, not
+        // isManagerOrAdmin()) inject fake items/prices past every server-side
+        // validation rebuildCustomerCatalog/rebuildStorefrontCatalog apply.
+        // catalogCache was a pre-existing gap here (missing since it was
+        // introduced) — found while adding inventoryCache to this same list.
         && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets', 'dailySessions',
-                      'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents'])
+                      'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents',
+                      'catalogCache', 'inventoryCache'])
         && (!isConfigCollection(coll) || isManagerOrAdmin());
     }
 

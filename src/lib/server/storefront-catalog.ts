@@ -1,5 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { loadOptionOverrides, valueKey } from "./option-overrides";
+import { getStoreInventoryRows } from "./store-inventory-cache";
 
 /**
  * Builds the public SharEat website storefront catalog snapshot for one store.
@@ -132,10 +133,10 @@ export async function rebuildStorefrontCatalog(
   }
 
   // --- Per-store inventory keyed by productId: price + availability source. ---
-  const invSnap = await db.collection(`stores/${storeId}/inventory`).get();
+  const invRows = await getStoreInventoryRows(db, storeId);
   const invByProductId = new Map<string, any>();
-  for (const d of invSnap.docs) {
-    const x = d.data() as any;
+  for (const row of invRows) {
+    const x = row.data as any;
     if (x?.isActive === false) continue;
     if (x?.isArchived === true) continue;
     // The online gate. Opt-in and per-branch: only an explicit `true`
