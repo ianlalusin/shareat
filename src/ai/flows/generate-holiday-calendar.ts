@@ -34,7 +34,7 @@ export async function generateHolidayCalendar(input: HolidayCalendarFlowInput): 
 
 const prompt = ai.definePrompt({
   name: 'holidayCalendarPrompt',
-  model: 'googleai/gemini-2.5-flash',
+  model: 'googleai/gemini-3.6-flash',
   input: { schema: InputSchema },
   output: { schema: OutputSchema },
   prompt: `You build a sales-relevant holiday & special-occasion calendar for a restaurant located in {{{locale}}}.

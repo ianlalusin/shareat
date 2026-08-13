@@ -10,7 +10,7 @@ import { isoWeekKey, pickDueStore, yearsToGenerate } from "@/lib/holidays/holida
 import { recomputeHolidayEffectsForStore } from "@/lib/server/holiday-effects";
 import type { HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
 
-const MODEL = "googleai/gemini-2.5-flash";
+const MODEL = "googleai/gemini-3.6-flash";
 const HOLIDAY_CRON_LOG = "system/holidayCronLog";
 
 /** One Gemini call → per-year `holidayCalendar/{YYYY}` docs (deep-merged). */
