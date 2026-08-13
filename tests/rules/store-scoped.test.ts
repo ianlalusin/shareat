@@ -316,6 +316,24 @@ describe("system collection is server-only, closed to every client", () => {
   }
 });
 
+/**
+ * Regression test for a bug the `system` exclusion work above turned up:
+ * the deep catch-all (`/{collection}/{docId}/{docPath=**}`) matches
+ * collection/docId itself too ({docPath=**} allows zero segments), so it
+ * needs the SAME exclusion list as the shallow catch-all — an explicit
+ * `allow read: if false` elsewhere does not block a grant from this fallback
+ * (rules OR together; a narrower deny cannot subtract a broader allow).
+ * Before the fix, any active staff member could read paymongoIntentIndex
+ * docs through this fallback despite the explicit deny at its own match block.
+ */
+describe("paymongoIntentIndex is server-only, closed to every client via both catch-alls", () => {
+  for (const who of ["cashier", "server", "kitchen", "manager", "admin"] as const) {
+    it(`denies ${who} reading a paymongoIntentIndex doc`, async () => {
+      await assertFails(getDoc(doc(db(who), "paymongoIntentIndex", "pi_1")));
+    });
+  }
+});
+
 describe("cross-store access", () => {
   it("denies a manager of store A writing store B config", async () => {
     await assertFails(setDoc(doc(db("manager"), "stores", STORE_B, "inventory", "x"), { v: 1 }));

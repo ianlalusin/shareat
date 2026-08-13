@@ -85,7 +85,7 @@ export async function runHolidayCalendarForDueStore(): Promise<{
   for (const s of activeStores) {
     if (s.aiEnabled !== true) continue;
     aiStoreIds.push(s.id);
-    storeById.set(s.id, { id: s.id, address: s.address });
+    storeById.set(s.id, { id: s.id, address: s.address ?? undefined });
   }
 
   const dueId = pickDueStore(aiStoreIds, doneStoreIds);

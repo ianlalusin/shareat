@@ -25,6 +25,10 @@ export async function GET(request: Request) {
       stores = stores.filter((s) => allow.has(s.id));
     }
 
+    // Matches the cap the direct query used to carry before it moved to the
+    // shared active-stores cache (src/lib/server/active-stores-cache.ts).
+    stores = stores.slice(0, 500);
+
     return NextResponse.json({ stores });
   } catch (err: any) {
     console.error("[external/stores] failed:", err);
