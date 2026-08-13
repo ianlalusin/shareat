@@ -13,14 +13,23 @@ expensive, it was just firing ~230+ times/day combined.
 
 All of them now call `getActiveStores(db)`
 (`src/lib/server/active-stores-cache.ts`), which caches the full active-store
-list in `system/activeStoresCache` for 15 minutes. Whichever job fires first
-after the cache expires pays for the real collection scan and repopulates it;
-every job that fires within the next 15 minutes reads one cheap doc instead.
-The TTL matches the tightest existing cron cadence, so no job waits longer for
-a store activation/deactivation to take effect than it already implicitly did
-before this cache existed. The cache is self-healing (a missing or expired doc
-just triggers a fresh scan) and server-only — `system/*` is excluded from the
-client catch-all in `firestore.rules`, so it's never reachable from the app.
+list in `system/activeStoresCache` for 20 minutes — deliberately above the
+15-minute cadence, not equal to it, so a refresh is guaranteed to be reused by
+the next same-cadence fire regardless of scan duration or Cloud Scheduler
+jitter. A job that fires within the window reads one cheap doc instead of
+scanning. The cache is self-healing (a missing or expired doc just triggers a
+fresh scan) and server-only — `system/*` is excluded from both client
+catch-alls in `firestore.rules`, so it's never reachable from the app.
+
+**Known gap:** `reconcile-analytics` and `holiday-calendar` run on the exact
+same `*/15 * * * *` schedule, so on a refresh tick both can still miss the
+cache and scan concurrently — there's no lock, just a TTL. That's an accepted
+tradeoff (a harmless duplicate scan+write once every couple of cycles) rather
+than a distributed lock for a background read-cost optimization. Every other
+consumer isn't aligned to that same instant and gets a real cache hit most of
+the time. Offsetting one of the two schedules (e.g. `holiday-calendar` to
+`7-59/15 * * * *`) would remove even that overlap, at the cost of a Cloud
+Scheduler change outside this repo — not done here.
 
 ## The scheduled endpoints
 

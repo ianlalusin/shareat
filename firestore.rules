@@ -478,7 +478,17 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
-      allow read: if isActiveStaff() && collection != 'stores' && collection != 'system';
+      // `{docPath=**}` matches zero-or-more segments (rules_version '2'), so
+      // this block also matches collection/docId ITSELF, not just subpaths —
+      // it must carry every exclusion the block above does, or a doc denied
+      // by an explicit `allow read: if false` elsewhere (paymongoIntentIndex)
+      // stays reachable through this fallback via OR-semantics. Confirmed via
+      // emulator: without this exclusion, an active staff member's getDoc on
+      // paymongoIntentIndex/{id} succeeds despite the explicit deny below.
+      allow read: if isActiveStaff()
+        && collection != 'paymongoIntentIndex'
+        && collection != 'stores'
+        && collection != 'system';
       allow create, update, delete: if false;
     }
   }

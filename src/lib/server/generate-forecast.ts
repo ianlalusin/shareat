@@ -327,10 +327,10 @@ export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?:
 
   const stores: StoreData[] = activeStores.map((s) => ({
     id: s.id,
-    address: s.address,
-    isActive: s.isActive,
-    aiEnabled: s.aiEnabled,
-    forecastConfig: s.forecastConfig as ForecastConfig | undefined,
+    address: s.address ?? undefined,
+    isActive: s.isActive ?? undefined,
+    aiEnabled: s.aiEnabled ?? undefined,
+    forecastConfig: (s.forecastConfig ?? undefined) as ForecastConfig | undefined,
   // Only AI-enabled stores are forecast (no Gemini for disabled stores).
   })).filter((s) => s.aiEnabled === true);
 

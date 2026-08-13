@@ -537,7 +537,7 @@ export async function computeDailyMetricsForAllActiveStores(opts: { batchSize?: 
   const activeStores = await getActiveStores(db);
   // Every active store — no longer gated by `aiEnabled` (that flag now only
   // gates the AI features POS still owns: forecasting and holiday calendars).
-  const stores: StoreData[] = activeStores.map((s) => ({ id: s.id, name: s.name, isActive: s.isActive }));
+  const stores: StoreData[] = activeStores.map((s) => ({ id: s.id, name: s.name ?? undefined, isActive: s.isActive ?? undefined }));
   if (stores.length === 0) return { totalStores: 0, pending: 0, processed: 0, remaining: 0, results: [] as Awaited<ReturnType<typeof computeDailyMetricsForStore>>[] };
 
   // Skip stores already done today (output doc ok/no_data).
