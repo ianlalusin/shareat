@@ -7,7 +7,7 @@ import { RefreshCw, Loader2 } from 'lucide-react';
 import { useAuthContext } from '@/context/auth-context';
 import { useStoreContext } from '@/context/store-context';
 import { useToast } from '@/hooks/use-toast';
-import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp, collectionGroup } from 'firebase/firestore';
+import { collection, query, where, getDocs, writeBatch, doc, serverTimestamp, collectionGroup, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { RoleGuard } from '../guards/RoleGuard';
 import type { KitchenTicket, RtKdsStationDoc } from '@/lib/types';
@@ -28,12 +28,24 @@ export function SyncKdsTicketsTool() {
     toast({ title: 'KDS Sync started...', description: 'Fetching all active kitchen tickets.' });
 
     try {
-      // 1. Get all active kitchen tickets using a collectionGroup query
+      // 1. Get all active kitchen tickets using a collectionGroup query.
+      // Bounded to the last 3 calendar days (today + 2 prior) — this tool
+      // exists to catch a ticket stuck in preparing/ready because the
+      // rtKdsTickets projection drifted from source, not to re-scan the
+      // collection group back to the start of time on every click. A ticket
+      // older than 3 days and still not served/cancelled is already a
+      // separate stuck-ticket problem this resync can't fix by rebuilding
+      // the projection anyway.
+      const threeDayWindowStart = new Date();
+      threeDayWindowStart.setHours(0, 0, 0, 0);
+      threeDayWindowStart.setDate(threeDayWindowStart.getDate() - 2);
+
       const ticketsRef = collectionGroup(db, 'kitchentickets');
       const q = query(
         ticketsRef,
         where('storeId', '==', activeStore.id),
-        where('status', 'in', ['preparing', 'ready'])
+        where('status', 'in', ['preparing', 'ready']),
+        where('createdAt', '>=', Timestamp.fromDate(threeDayWindowStart))
       );
       const activeTicketsSnap = await getDocs(q);
       const activeTickets = activeTicketsSnap.docs.map(d => d.data() as KitchenTicket);
