@@ -4,6 +4,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { fetchOwmForecast, mapOwmIdToCondition, summarizeDays, type DaySummary } from "@/lib/weather/owm";
 import type { DailyWeatherForecast } from "@/lib/types";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 
 export type StoreLogResult = {
   storeId: string;
@@ -123,11 +124,13 @@ export async function logWeatherForStore(store: {
 
 export async function logWeatherForAllActiveStores(): Promise<{ totalStores: number; results: StoreLogResult[] }> {
   const db = getAdminDb();
-  const snap = await db.collection("stores").where("isActive", "==", true).get();
-  const stores = snap.docs.map((d) => {
-    const data = d.data() as any;
-    return { id: d.id, geo: data.geo ?? null, openingTime: data.openingTime ?? null, closingTime: data.closingTime ?? null };
-  });
+  const activeStores = await getActiveStores(db);
+  const stores = activeStores.map((s) => ({
+    id: s.id,
+    geo: s.geo ?? null,
+    openingTime: s.openingTime ?? null,
+    closingTime: s.closingTime ?? null,
+  }));
   const results = await Promise.all(stores.map(logWeatherForStore));
   return { totalStores: stores.length, results };
 }

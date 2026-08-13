@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { resolveExternalKeyScope } from "@/lib/server/external-auth";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 
 export const runtime = "nodejs";
 
@@ -10,16 +11,13 @@ export async function GET(request: Request) {
 
   try {
     const db = getAdminDb();
-    const snap = await db.collection("stores").where("isActive", "==", true).limit(500).get();
+    const activeStores = await getActiveStores(db);
 
-    let stores = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        name: data.name ?? "",
-        address: data.address ?? "",
-      };
-    });
+    let stores = activeStores.map((s) => ({
+      id: s.id,
+      name: s.name ?? "",
+      address: s.address ?? "",
+    }));
 
     // A scoped key only sees its own stores; the global key sees all.
     if (scope.allowedStoreIds !== null) {

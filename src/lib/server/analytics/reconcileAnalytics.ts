@@ -3,6 +3,7 @@ import "server-only";
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import type { Receipt } from "@/lib/types";
 import { applyAnalyticsDeltaServer } from "./applyAnalyticsDeltaServer";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 
 // Durable backstop for receipt analytics: if the server-first endpoint call ever
 // fails for a receipt (after client retries), the receipt is left with a pending
@@ -90,13 +91,13 @@ export async function reconcileAnalyticsForStore(db: Firestore, storeId: string)
 export async function reconcileAnalyticsForAllStores(
   db: Firestore,
 ): Promise<{ totalStores: number; applied: number; reversed: number; results: Array<{ storeId: string; applied: number; reversed: number }> }> {
-  const stores = await db.collection("stores").where("isActive", "==", true).get();
+  const stores = await getActiveStores(db);
   const results: Array<{ storeId: string; applied: number; reversed: number }> = [];
-  for (const s of stores.docs) {
+  for (const s of stores) {
     results.push(await reconcileAnalyticsForStore(db, s.id));
   }
   return {
-    totalStores: stores.size,
+    totalStores: stores.length,
     applied: results.reduce((n, r) => n + r.applied, 0),
     reversed: results.reduce((n, r) => n + r.reversed, 0),
     results,

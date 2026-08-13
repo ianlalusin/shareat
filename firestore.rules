@@ -460,14 +460,25 @@ service cloud.firestore {
     // sessions and analytics. Store data is governed by the store-scoped blocks
     // above; admins still reach every store because isAdmin() short-circuits
     // hasStoreAccess().
+    //
+    // 'system' is excluded for the same reason: it holds server-only cron
+    // bookkeeping (forecastCronLog, dailyMetricsCronLog, holidayCronLog,
+    // activeStoresCache) written exclusively by the Admin SDK, which bypasses
+    // these rules entirely. No client ever needs to read it, and
+    // activeStoresCache in particular mirrors the full active-store directory
+    // (name/address/geo/hours) that the 'stores' exclusion above deliberately
+    // keeps scoped to hasStoreAccess() — leaving 'system' open here would have
+    // let any active staff member read every other store's info through the
+    // cache doc, regardless of store assignment.
     match /{collection}/{docId} {
       allow read: if isActiveStaff()
         && collection != 'paymongoIntentIndex'
-        && collection != 'stores';
+        && collection != 'stores'
+        && collection != 'system';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
-      allow read: if isActiveStaff() && collection != 'stores';
+      allow read: if isActiveStaff() && collection != 'stores' && collection != 'system';
       allow create, update, delete: if false;
     }
   }

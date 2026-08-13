@@ -296,6 +296,26 @@ describe("serverProfileSecrets is server-only, read included", () => {
   });
 });
 
+/**
+ * `system/*` holds cron bookkeeping written only via the Admin SDK
+ * (forecastCronLog, dailyMetricsCronLog, holidayCronLog, activeStoresCache).
+ * activeStoresCache in particular mirrors the full active-store directory
+ * (name/address/geo/hours) — without this exclusion the generic catch-all
+ * would leak it to any active staff member regardless of store assignment,
+ * defeating the same hasStoreAccess() scoping the 'stores' exclusion protects.
+ */
+describe("system collection is server-only, closed to every client", () => {
+  for (const who of ["cashier", "server", "kitchen", "manager", "admin"] as const) {
+    it(`denies ${who} reading a system doc`, async () => {
+      await assertFails(getDoc(doc(db(who), "system", "activeStoresCache")));
+    });
+
+    it(`denies ${who} writing a system doc`, async () => {
+      await assertFails(setDoc(doc(db(who), "system", "activeStoresCache"), { v: 1 }));
+    });
+  }
+});
+
 describe("cross-store access", () => {
   it("denies a manager of store A writing store B config", async () => {
     await assertFails(setDoc(doc(db("manager"), "stores", STORE_B, "inventory", "x"), { v: 1 }));

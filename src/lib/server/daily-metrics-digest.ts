@@ -3,6 +3,7 @@ import "server-only";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { DailyMetricsDigest, InsightMetric } from "@/lib/types";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 
 /**
  * Deterministic daily performance digest — no AI involved.
@@ -533,10 +534,10 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 export async function computeDailyMetricsForAllActiveStores(opts: { batchSize?: number } = {}) {
   const db = getAdminDb();
   const dayId = getMetricsDayId();
-  const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
+  const activeStores = await getActiveStores(db);
   // Every active store — no longer gated by `aiEnabled` (that flag now only
   // gates the AI features POS still owns: forecasting and holiday calendars).
-  const stores: StoreData[] = storesSnap.docs.map((d) => ({ id: d.id, name: d.data().name, isActive: d.data().isActive }));
+  const stores: StoreData[] = activeStores.map((s) => ({ id: s.id, name: s.name, isActive: s.isActive }));
   if (stores.length === 0) return { totalStores: 0, pending: 0, processed: 0, remaining: 0, results: [] as Awaited<ReturnType<typeof computeDailyMetricsForStore>>[] };
 
   // Skip stores already done today (output doc ok/no_data).

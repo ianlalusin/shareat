@@ -4,6 +4,7 @@ import "server-only";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
+import { getActiveStores } from "@/lib/server/active-stores-cache";
 import { generateHolidayCalendar } from "@/ai/flows/generate-holiday-calendar";
 import { isoWeekKey, pickDueStore, yearsToGenerate } from "@/lib/holidays/holiday-cron";
 import { recomputeHolidayEffectsForStore } from "@/lib/server/holiday-effects";
@@ -78,14 +79,13 @@ export async function runHolidayCalendarForDueStore(): Promise<{
     ? (logSnap.data()?.weeks?.[weekKey]?.doneStoreIds ?? [])
     : [];
 
-  const storesSnap = await db.collection("stores").where("isActive", "==", true).get();
+  const activeStores = await getActiveStores(db);
   const aiStoreIds: string[] = [];
   const storeById = new Map<string, { id: string; address?: string }>();
-  for (const d of storesSnap.docs) {
-    const data = d.data();
-    if (data.aiEnabled !== true) continue;
-    aiStoreIds.push(d.id);
-    storeById.set(d.id, { id: d.id, address: data.address });
+  for (const s of activeStores) {
+    if (s.aiEnabled !== true) continue;
+    aiStoreIds.push(s.id);
+    storeById.set(s.id, { id: s.id, address: s.address });
   }
 
   const dueId = pickDueStore(aiStoreIds, doneStoreIds);
