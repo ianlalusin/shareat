@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, orderBy, query, limit as qLimit } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -43,7 +41,12 @@ type Customer = {
   passwordResetAtMs: number | null;
 };
 
-export function CustomersAdmin() {
+/** Strip a PH number to its local subscriber digits so +63917…, 0917… and 917… all compare equal. */
+function toLocalDigits(value: string): string {
+  return value.replace(/\D/g, "").replace(/^63/, "").replace(/^0/, "");
+}
+
+export function CustomersAdmin({ storeId }: { storeId?: string }) {
   const { user, appUser } = useAuthContext();
   const { confirm, Dialog } = useConfirmDialog();
   const { toast } = useToast();
@@ -54,15 +57,27 @@ export function CustomersAdmin() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [notFound, setNotFound] = useState(false);
+  /** Store name when the customer exists but is outside this store's window. */
+  const [outOfScope, setOutOfScope] = useState<string | null>(null);
+  const [scope, setScope] = useState<"store" | "global">("store");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
 
-  // All accounts (live subscription)
+  // Accounts in scope. `presence` is null in global (admin) scope.
   const [allAccounts, setAllAccounts] = useState<
-    { phone: string; name: string; pointsBalance: number; createdAtMs: number | null }[]
+    {
+      phone: string;
+      name: string;
+      pointsBalance: number;
+      createdAtMs: number | null;
+      presence?: "active" | "recent" | null;
+      lastActiveAtMs?: number | null;
+      reason?: string | null;
+    }[]
   >([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
 
-  // Audit logs (live subscription)
+  // Audit logs, scoped to this store unless the caller is an admin.
   const [logs, setLogs] = useState<
     Array<{
       id: string;
@@ -79,90 +94,54 @@ export function CustomersAdmin() {
   >([]);
   const [logsLoading, setLogsLoading] = useState(true);
 
-  useEffect(() => {
-    const q = query(collection(db, "loyaltyLogs"), orderBy("createdAt", "desc"), qLimit(200));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows = snap.docs.map((d) => {
-          const data = d.data() as any;
-          return {
-            id: d.id,
-            type: data.type,
-            phone: data.phone ?? "",
-            customerName: data.customerName ?? "",
-            actorUid: data.actorUid ?? "",
-            storeId: data.storeId ?? undefined,
-            storeName: data.storeName ?? undefined,
-            points: data.points ?? undefined,
-            amount: data.amount ?? undefined,
-            createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
-          };
-        });
-        setLogs(rows);
-        setLogsLoading(false);
-      },
-      (err) => {
-        console.error("Failed to fetch loyalty logs:", err);
-        setLogsLoading(false);
-      }
-    );
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const q = query(collection(db, "customers"), orderBy("createdAt", "desc"), qLimit(500));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows = snap.docs.map((d) => {
-          const data = d.data() as any;
-          return {
-            phone: d.id,
-            name: data.name ?? "",
-            pointsBalance: data.pointsBalance ?? 0,
-            createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
-          };
-        });
-        setAllAccounts(rows);
-        setAccountsLoading(false);
-      },
-      (err) => {
-        console.error("Failed to fetch accounts:", err);
-        setAccountsLoading(false);
-      }
-    );
-    return () => unsub();
-  }, []);
-
-  // Live aggregate stats (projection doc) — O(1) read regardless of account count
+  // Aggregates arrive with the scoped payload above: all-branch totals for
+  // admins, this store's in-scope customers for everyone else.
   const [stats, setStats] = useState<{
+    label: string;
     totalAccounts: number;
     totalPointsOutstanding: number;
-    totalPointsEarnedEver?: number;
   } | null>(null);
-  useEffect(() => {
-    const ref = doc(db, "loyaltyStats/global");
-    return onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
-          const d = snap.data() as any;
-          setStats({
-            totalAccounts: Number(d.totalAccounts) || 0,
-            totalPointsOutstanding: Number(d.totalPointsOutstanding) || 0,
-            totalPointsEarnedEver: Number(d.totalPointsEarnedEver) || 0,
-          });
-        } else {
-          setStats(null);
-        }
-      },
-      () => setStats(null)
-    );
-  }, []);
 
-  // Fallback: if the aggregate doc doesn't exist yet, fall back to summing
-  // client-side from the subscribed accounts list so the stats card stays useful.
+  // One scoped load replaces the old direct subscriptions to `customers` and
+  // `loyaltyLogs`. Those showed every branch's customers to every branch, and
+  // both collections are admin-only in firestore.rules now. The server returns
+  // data already scoped: global for admins, this store's presence window for
+  // everyone else. Polled rather than live because the scope is computed from
+  // a time window, which is not expressible as a Firestore listener.
+  const loadScoped = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const qs = storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
+      const res = await fetch(`/api/loyalty/store-customers${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load customers.");
+      setScope(json.scope === "global" ? "global" : "store");
+      setAllAccounts(json.customers || []);
+      setLogs(json.logs || []);
+      setStats(json.stats || null);
+      setLoadError(null);
+    } catch (err: any) {
+      console.error("Failed to load scoped customers:", err);
+      setLoadError(err?.message || "Failed to load customers.");
+    } finally {
+      setAccountsLoading(false);
+      setLogsLoading(false);
+    }
+  }, [user, storeId]);
+
+  useEffect(() => {
+    if (!user) return;
+    void loadScoped();
+    const timer = setInterval(() => void loadScoped(), 30_000);
+    return () => clearInterval(timer);
+  }, [user, loadScoped]);
+
+
+  // Fallback to summing the loaded rows if the payload carried no stats block,
+  // so the header numbers stay useful rather than rendering zero.
   const totalPointsOutstanding = useMemo(
     () =>
       stats?.totalPointsOutstanding ??
@@ -171,14 +150,22 @@ export function CustomersAdmin() {
   );
   const totalAccounts = stats?.totalAccounts ?? allAccounts.length;
 
-  // Accounts filter — only show results when user has typed a query
+  // In store scope the list is only the customers inside the presence window,
+  // so showing it unfiltered IS the useful view — the manager sees who is in
+  // the restaurant. Global scope can be 500 rows, so it keeps the search gate.
   const accountQuery = phoneInput.trim().toLowerCase();
   const filteredAccounts = useMemo(() => {
-    if (!accountQuery) return [];
-    return allAccounts.filter(
-      (a) => a.phone.toLowerCase().includes(accountQuery) || a.name.toLowerCase().includes(accountQuery)
-    );
-  }, [allAccounts, accountQuery]);
+    if (!accountQuery) return scope === "store" ? allAccounts : [];
+    // Phones are stored canonically as +63XXXXXXXXXX (normalizePhone), but
+    // staff type 0917..., 917... or +63917... A plain substring match on the
+    // stored form only ever matched the last of those, so strip both sides to
+    // the local subscriber digits before comparing.
+    const queryDigits = toLocalDigits(accountQuery);
+    return allAccounts.filter((a) => {
+      if (a.name.toLowerCase().includes(accountQuery)) return true;
+      return queryDigits.length > 0 && toLocalDigits(a.phone).includes(queryDigits);
+    });
+  }, [allAccounts, accountQuery, scope]);
 
   // Pagination state
   const ACCOUNTS_PAGE_SIZE = 10;
@@ -237,19 +224,26 @@ export function CustomersAdmin() {
     if (!trimmed || !user) return;
     setLoading(true);
     setNotFound(false);
+    setOutOfScope(null);
     setCustomer(null);
     setLedger([]);
     setTempPassword(null);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(
-        `/api/loyalty/lookup?phone=${encodeURIComponent(trimmed)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const params = new URLSearchParams({ phone: trimmed });
+      if (storeId) params.set("storeId", storeId);
+      const res = await fetch(`/api/loyalty/lookup?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Lookup failed.");
-      if (!json.found) setNotFound(true);
-      else {
+      if (!json.found) {
+        setNotFound(true);
+        // The customer exists but belongs to another branch's window. Say so
+        // rather than "not found", which reads as a typo and leaves the
+        // cashier retyping while the customer waits.
+        setOutOfScope(json.outOfScope === true ? json.storeName || "this store" : null);
+      } else {
         setCustomer(json.customer);
         setLedger(json.ledger || []);
       }
@@ -280,7 +274,7 @@ export function CustomersAdmin() {
       const res = await fetch("/api/loyalty/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ phone: customer.phone }),
+        body: JSON.stringify({ phone: customer.phone, storeId }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Reset failed.");
@@ -409,8 +403,21 @@ export function CustomersAdmin() {
       <Card>
         <CardContent className="p-6 h-full">
           {!customer ? (
-            <div className="flex items-center justify-center min-h-[160px] text-sm text-muted-foreground">
-              No card to display
+            <div className="flex flex-col items-center justify-center gap-2 min-h-[160px] px-6 text-sm text-center text-muted-foreground">
+              {outOfScope ? (
+                <>
+                  <ShieldAlert className="h-5 w-5 text-amber-500" />
+                  <p className="font-medium text-foreground">Not active at {outOfScope}.</p>
+                  <p className="text-xs max-w-xs">
+                    This customer&apos;s record is held at another branch. Ask an admin to
+                    view their points or reset their password.
+                  </p>
+                </>
+              ) : notFound ? (
+                <p>No account found for that number.</p>
+              ) : (
+                <p>No card to display</p>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
@@ -582,11 +589,13 @@ export function CustomersAdmin() {
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <CardTitle className="text-base flex items-center gap-2">
                 <Users className="h-4 w-4 text-primary" />
-                All Accounts
+                {scope === "store" ? "Customers Here Now" : "All Accounts"}
               </CardTitle>
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Accounts</p>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {scope === "store" ? "Here" : "Accounts"}
+                  </p>
                   <p className="text-xl font-black">{totalAccounts.toLocaleString()}</p>
                 </div>
                 <div className="text-right">
@@ -606,19 +615,32 @@ export function CustomersAdmin() {
                 className="pl-8"
               />
             </div>
+            {scope === "store" && (
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                Customers linked to an open session here, or active at this branch in
+                the last 2 hours. Older records are visible to admins only.
+              </p>
+            )}
+            {loadError && (
+              <p className="text-[11px] leading-snug text-destructive">{loadError}</p>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {accountsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-            ) : !accountQuery ? (
+            ) : !accountQuery && scope === "global" ? (
               <p className="px-6 py-8 text-sm text-center text-muted-foreground">
                 Type a name or phone above to search.
               </p>
             ) : filteredAccounts.length === 0 ? (
               <p className="px-6 py-8 text-sm text-center text-muted-foreground">
-                No accounts match.
+                {scope === "store"
+                  ? accountQuery
+                    ? "No customers match here. If they have been away over 2 hours, ask an admin."
+                    : "No customers active at this store right now."
+                  : "No accounts match."}
               </p>
             ) : (
               <>
@@ -639,7 +661,16 @@ export function CustomersAdmin() {
                         }`}
                         onClick={() => handlePickAccount(a.phone)}
                       >
-                        <TableCell className="text-sm font-medium">{a.name || "—"}</TableCell>
+                        <TableCell className="text-sm font-medium">
+                          <span className="flex items-center gap-1.5">
+                            {a.name || "—"}
+                            {a.presence === "active" && (
+                              <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                                In session
+                              </Badge>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-xs font-mono">{a.phone}</TableCell>
                         <TableCell className="text-sm text-right font-mono font-bold">
                           {a.pointsBalance.toLocaleString()}
@@ -683,7 +714,8 @@ export function CustomersAdmin() {
               Activity Log
             </CardTitle>
             <CardDescription>
-              Account creations, points earned, and password resets across all stores.
+              Account creations, points earned, and password resets
+              {scope === "store" ? " at this store, today and yesterday." : " across all stores."}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">

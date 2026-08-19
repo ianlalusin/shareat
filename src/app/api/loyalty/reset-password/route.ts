@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { normalizePhone } from "@/lib/phone";
+import { resolvePhonePresence } from "@/lib/server/loyaltyPresence";
 
 export const runtime = "nodejs";
 
@@ -63,6 +64,28 @@ export async function POST(req: Request) {
   const customerRef = db.doc(`customers/${phone}`);
   const snap = await customerRef.get();
   if (!snap.exists) return bad("Customer not found.", 404);
+
+  // Same scope gate as /api/loyalty/lookup. Guarding only the lookup would
+  // leave this route as the bypass: a manager could POST an arbitrary phone
+  // and reset a customer they were never allowed to see.
+  const isPlatformAdmin = decoded.platformAdmin === true || staffData.role === "admin";
+  if (!isPlatformAdmin) {
+    const assignedStoreIds: string[] = Array.isArray(staffData.assignedStoreIds)
+      ? staffData.assignedStoreIds.map(String)
+      : [];
+    const storeId = String(body.storeId || "").trim();
+    if (!storeId) return bad("storeId is required.");
+    if (!assignedStoreIds.includes(storeId)) {
+      return bad("You are not assigned to this store.", 403);
+    }
+    const presence = await resolvePhonePresence(storeId, phone);
+    if (!presence) {
+      return bad(
+        "This customer is not active at your store. Ask an admin to reset it.",
+        403
+      );
+    }
+  }
 
   const newPassword = customNewPassword || generateTempPassword();
   const passwordHash = await bcrypt.hash(newPassword, 10);

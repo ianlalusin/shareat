@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { requireActiveStaff } from "@/lib/server/active-staff-check";
+import { resolvePhonePresence } from "@/lib/server/loyaltyPresence";
 import { normalizePhone } from "@/lib/phone";
 
 export const runtime = "nodejs";
@@ -24,9 +26,18 @@ export async function GET(req: Request) {
   if (!uid) return bad("Invalid token.", 401);
 
   const db = getAdminDb();
-  const staffSnap = await db.doc(`staff/${uid}`).get();
-  if (!staffSnap.exists || staffSnap.data()?.status !== "active") {
-    return bad("Not active staff.", 403);
+
+  let staff;
+  try {
+    staff = await requireActiveStaff(db, decoded, [
+      "admin",
+      "manager",
+      "cashier",
+      "kitchen",
+      "server",
+    ]);
+  } catch (err: any) {
+    return bad(err?.message || "Not active staff.", 403);
   }
 
   const url = new URL(req.url);
@@ -35,6 +46,34 @@ export async function GET(req: Request) {
 
   const customerSnap = await db.doc(`customers/${phone}`).get();
   if (!customerSnap.exists) return NextResponse.json({ ok: true, found: false });
+
+  // Store-scoped staff may only pull up customers their store is currently
+  // serving. Admins stay global, which is what makes them the escalation path
+  // for a customer who has been away longer than the presence window.
+  if (!staff.isPlatformAdmin) {
+    const storeId = String(url.searchParams.get("storeId") || "").trim();
+    if (!storeId) return bad("storeId is required.");
+    if (!staff.assignedStoreIds.includes(storeId)) {
+      return bad("You are not assigned to this store.", 403);
+    }
+
+    const presence = await resolvePhonePresence(storeId, phone);
+    if (!presence) {
+      // Deliberately distinguishable from "no such customer". A bare not-found
+      // reads as a typo, so the cashier retypes the number while the customer
+      // waits and nobody realises an admin is needed.
+      let storeName = storeId;
+      try {
+        storeName = (await db.doc(`stores/${storeId}`).get()).data()?.name || storeId;
+      } catch {}
+      return NextResponse.json({
+        ok: true,
+        found: false,
+        outOfScope: true,
+        storeName,
+      });
+    }
+  }
 
   const c = customerSnap.data() as any;
 

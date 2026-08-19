@@ -330,14 +330,18 @@ service cloud.firestore {
     // SHARELEBRATOR AUDIT LOG (server-only writes)
     // -----------------------------
     match /loyaltyLogs/{logId} {
-      allow read, list: if isActiveStaff();
+      // Cross-branch PII (phone + name of every customer, every store). Managers
+      // get their own store's slice through /api/loyalty/store-customers, which
+      // reads these with the Admin SDK; direct client listing is admin-only.
+      allow read, list: if isAdmin();
       allow create, update, delete: if false;
     }
 
     // Daily projection for the audit log (server-only writes)
     // Doc ID shape: {dayId}_{partIndex} or {dayId}_meta
     match /loyaltyLogsDaily/{docId} {
-      allow read, list: if isActiveStaff();
+      // Same cross-branch PII as loyaltyLogs — see above.
+      allow read, list: if isAdmin();
       allow create, update, delete: if false;
     }
 
@@ -355,8 +359,12 @@ service cloud.firestore {
     // Top-level (cross-branch). Server-only writes via Admin SDK.
     // -----------------------------
     match /customers/{phone} {
+      // get stays open to staff: it needs an exact phone, so it cannot
+      // enumerate, and OnlineOrdersClient.tsx looks customers up this way.
       allow get: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
-      allow list: if isActiveStaff();
+      // list IS enumeration of the whole cross-branch customer base. Store-scoped
+      // staff go through /api/loyalty/store-customers instead.
+      allow list: if isAdmin();
       allow create, update, delete: if false;
 
       match /pointsLedger/{ledgerId} {
@@ -488,7 +496,10 @@ service cloud.firestore {
       allow read: if isActiveStaff()
         && collection != 'paymongoIntentIndex'
         && collection != 'stores'
-        && collection != 'system';
+        && collection != 'system'
+        && collection != 'customers'
+        && collection != 'loyaltyLogs'
+        && collection != 'loyaltyLogsDaily';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
@@ -502,7 +513,10 @@ service cloud.firestore {
       allow read: if isActiveStaff()
         && collection != 'paymongoIntentIndex'
         && collection != 'stores'
-        && collection != 'system';
+        && collection != 'system'
+        && collection != 'customers'
+        && collection != 'loyaltyLogs'
+        && collection != 'loyaltyLogsDaily';
       allow create, update, delete: if false;
     }
   }

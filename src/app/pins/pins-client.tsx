@@ -383,7 +383,7 @@ export default function PinsClient() {
             </TabsList>
 
             <TabsContent value="customers">
-              <CustomersAdmin />
+              <CustomersAdmin storeId={storeId} />
             </TabsContent>
 
             <TabsContent value="pins" className="space-y-4">
