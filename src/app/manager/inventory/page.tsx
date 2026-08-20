@@ -27,6 +27,7 @@ import { normalizeUom } from "@/lib/uom";
 import { getDisplayName, getEffectiveVariantLabel, groupIntoFamilies } from "@/lib/products/variants";
 import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
+import { CustomerOrderingSettings } from "@/components/manager/store-settings/customer-ordering-settings";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -401,63 +402,6 @@ export default function InventoryManagementPage() {
     }
   };
   
-  /**
-   * Store-level switch for diner self-ordering from the CUSTOMER app.
-   *
-   * Separate from the per-item `customerEnabled` column beside it: that decides
-   * what a diner can SEE, this decides whether they can order it themselves
-   * rather than calling a server over. Opt-in, so enabling the menu for a store
-   * never silently opens self-ordering too.
-   */
-  const [orderingEnabled, setOrderingEnabled] = useState(false);
-  const [orderingBusy, setOrderingBusy] = useState(false);
-
-  useEffect(() => {
-    if (!activeStore) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, "stores", activeStore.id));
-        if (!cancelled) setOrderingEnabled((snap.data() as any)?.customerOrderingEnabled === true);
-      } catch {
-        // A failed read leaves the switch off, matching the opt-in default.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeStore]);
-
-  const handleToggleOrdering = async () => {
-    if (!activeStore || orderingBusy) return;
-    const next = !orderingEnabled;
-    const confirmed = await confirm({
-      title: next
-        ? `Let diners order from their phone at ${activeStore.name}?`
-        : `Stop diners ordering from their phone at ${activeStore.name}?`,
-      description: next
-        ? "Only items marked as add-ons AND enabled for the customer app can be ordered. Orders go to the kitchen and are billed when served."
-        : "The menu stays visible — diners will be asked to approach staff to order.",
-      confirmText: next ? "Yes, enable" : "Yes, disable",
-    });
-    if (!confirmed) return;
-
-    setOrderingBusy(true);
-    try {
-      await updateDoc(doc(db, "stores", activeStore.id), {
-        customerOrderingEnabled: next,
-        updatedAt: serverTimestamp(),
-      });
-      setOrderingEnabled(next);
-      toast({ title: next ? "Self-ordering enabled" : "Self-ordering disabled" });
-      // The switch is published inside the catalog snapshot, so the diner's app
-      // only sees the change after a rebuild.
-      scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Update Failed", description: error.message });
-    } finally {
-      setOrderingBusy(false);
-    }
-  };
-
   // `isAddon` is no longer toggled from the table — it moved into the edit
   // dialog, next to the selling price and kitchen location it depends on.
   const handleToggle = async (item: InventoryItem, field: 'isActive' | 'onlineEnabled' | 'customerEnabled') => {
@@ -747,21 +691,7 @@ export default function InventoryManagementPage() {
 
         <TabsContent value="main-menu">
       <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
-            <div className="mr-auto flex items-center gap-2 rounded-lg border bg-card px-3 py-2">
-              <Switch
-                id="customer-self-ordering"
-                checked={orderingEnabled}
-                disabled={orderingBusy}
-                onCheckedChange={handleToggleOrdering}
-                aria-label={`Let diners order from their phone at ${activeStore.name}`}
-              />
-              <Label htmlFor="customer-self-ordering" className="cursor-pointer text-sm">
-                <span className="font-semibold">Customer self-ordering</span>
-                <span className="block text-xs text-muted-foreground">
-                  Diners order add-ons from their phone; billed when the kitchen serves.
-                </span>
-              </Label>
-            </div>
+            <CustomerOrderingSettings variant="inline" />
             <Button onClick={handleBackfill} variant="outline" disabled={isBackfilling}>
                 {isBackfilling ? <Loader className="animate-spin mr-2"/> : <RefreshCw className="mr-2" />}
                 Backfill Barcodes

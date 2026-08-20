@@ -15,6 +15,7 @@ import { StoreFlavorsSettings } from "@/components/manager/store-settings/store-
 import { StoreRefillsSettings } from "@/components/manager/store-settings/store-refills-settings";
 import { ForecastSettings } from "@/components/manager/store-settings/forecast-settings";
 import { LoyaltySettings } from "@/components/manager/store-settings/loyalty-settings";
+import { CustomerOrderingSettings } from "@/components/manager/store-settings/customer-ordering-settings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
@@ -31,6 +32,7 @@ const TABS = [
     { value: "tables", label: "Tables" },
     { value: "forecast", label: "Forecast" },
     { value: "loyalty", label: "Loyalty" },
+    { value: "customer_ordering", label: "Ordering" },
 ]
 
 export default function StoreSettingsPage() {
@@ -91,7 +93,7 @@ export default function StoreSettingsPage() {
                         </SelectContent>
                     </Select>
                 ) : (
-                    <TabsList className="grid w-full grid-cols-8">
+                    <TabsList className="grid w-full grid-cols-9">
                         {TABS.map(tab => (
                              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                         ))}
@@ -121,6 +123,9 @@ export default function StoreSettingsPage() {
                 </TabsContent>
                 <TabsContent value="loyalty">
                     {mountedTabs.has("loyalty") && <LoyaltySettings store={activeStore} />}
+                </TabsContent>
+                <TabsContent value="customer_ordering">
+                    {mountedTabs.has("customer_ordering") && <CustomerOrderingSettings />}
                 </TabsContent>
             </Tabs>
         </RoleGuard>
