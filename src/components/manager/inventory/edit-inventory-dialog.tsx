@@ -24,6 +24,8 @@ import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/l
 import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
 import Image from "next/image";
 
+import { sellsBelowCost } from "@/lib/inventory/pricing-guards";
+
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
   sellingPrice: z.coerce.number().min(0, "Selling price must be a positive number."),
@@ -41,6 +43,17 @@ const formSchema = z.object({
  * immediately demand a price and a kitchen.
  */
 const refinedFormSchema = formSchema.superRefine((data, ctx) => {
+  // Selling under a known cost loses money on every sale and is nearly always
+  // a typo. Guarded here AND on the table's inline edit — a rule enforced in
+  // only one of the two is not enforced at all.
+  if (sellsBelowCost(data.cost, data.sellingPrice)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sellingPrice"],
+      message: `Cannot be below the ₱${data.cost} cost.`,
+    });
+  }
+
   if (!data.isAddon) return;
   if (data.sellingPrice <= 0) {
     ctx.addIssue({

@@ -30,6 +30,7 @@ import { useConfirmDialog } from "../global/confirm-dialog";
 import { serverTimestamp } from "firebase/firestore";
 import { ImageBoundary } from "@/components/shared/ImageBoundary";
 import { OptionGroupEditDialog } from "@/components/admin/option-groups/OptionGroupEditDialog";
+import { OptionGroupPicker } from "@/components/admin/option-groups/OptionGroupPicker";
 
 type AddonCategory = {
     id: string;
@@ -61,6 +62,9 @@ const variantSchema = z.object({
     uom: z.string().min(1, "UOM is required."),
     barcode: z.string().optional(),
     isActive: z.boolean().default(true),
+    // Adds to whatever the family parent already gives this variant — the
+    // resolver unions the two (see lib/server/catalog-shared.ts).
+    optionGroupIds: z.array(z.string()).optional(),
 });
 type VariantFormValues = z.infer<typeof variantSchema>;
 
@@ -82,7 +86,16 @@ function VariantRow({ variant, onEdit, onDelete }: { variant: Product, onEdit: (
     )
 }
 
-function VariantForm({ form, onSave, onCancel, parentProduct }: { form: any, onSave: (data: VariantFormValues) => void, onCancel: () => void, parentProduct: Product }) {
+function VariantForm({ form, onSave, onCancel, parentProduct, availableOptionGroups, parentOptionGroupIds, onCreateOptionGroup }: {
+    form: any,
+    onSave: (data: VariantFormValues) => void,
+    onCancel: () => void,
+    parentProduct: Product,
+    availableOptionGroups: Array<{ id: string; name: string; selectionMode?: "single" | "multi"; values?: Array<{ isActive?: boolean }> }>,
+    /** What the family already gives this variant — shown read-only, not re-attachable. */
+    parentOptionGroupIds: string[],
+    onCreateOptionGroup: () => void,
+}) {
     return (
         <Form {...form}>
              <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
@@ -99,6 +112,20 @@ function VariantForm({ form, onSave, onCancel, parentProduct }: { form: any, onS
                 </div>
                 <FormField control={form.control} name="isActive" render={({ field }) => (
                     <FormItem className="flex items-center gap-2"><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl><FormLabel>Active</FormLabel></FormItem>
+                )} />
+                <FormField control={form.control} name="optionGroupIds" render={({ field }) => (
+                    <FormItem>
+                        <OptionGroupPicker
+                            value={field.value as string[] | undefined}
+                            onChange={field.onChange}
+                            available={availableOptionGroups}
+                            onCreateNew={onCreateOptionGroup}
+                            inheritedIds={parentOptionGroupIds}
+                            label="Option Groups for this variant only"
+                            description="Extra modifiers only this variant offers — e.g. Extra Nori on Signature but not Veggies. These ADD to what the family already gives it."
+                        />
+                        <FormMessage />
+                    </FormItem>
                 )} />
                  <div className="flex justify-end gap-2">
                     <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
@@ -217,6 +244,9 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
   // Inline "create option group" dialog state.
   const [newOptionGroupOpen, setNewOptionGroupOpen] = useState(false);
+  // Which picker opened the inline create dialog, so the new group auto-attaches
+  // where the admin was actually working rather than always on the parent.
+  const [newOptionGroupTarget, setNewOptionGroupTarget] = useState<"parent" | "variant">("parent");
 
   useEffect(() => {
     if (isOpen) void loadOptionGroups();
@@ -236,7 +266,10 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         variantLabel: variant.variantLabel || '',
         uom: normalizeUom(variant.uom),
         barcode: variant.barcode || '',
-        isActive: variant.isActive
+        isActive: variant.isActive,
+        // Without this the picker opens empty and the save below would clear
+        // whatever this variant already had attached.
+        optionGroupIds: (variant as any).optionGroupIds || [],
     });
     setShowVariantForm(true);
   }
@@ -360,9 +393,17 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                             {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
                           </div>
                           {showVariantForm ? (
-                              <VariantForm form={variantForm} onSave={handleSaveVariant} onCancel={() => { setShowVariantForm(false); setEditingVariant(null); }} parentProduct={product!} />
+                              <VariantForm
+                                  form={variantForm}
+                                  onSave={handleSaveVariant}
+                                  onCancel={() => { setShowVariantForm(false); setEditingVariant(null); }}
+                                  parentProduct={product!}
+                                  availableOptionGroups={availableOptionGroups}
+                                  parentOptionGroupIds={(form.getValues("optionGroupIds") as string[]) || []}
+                                  onCreateOptionGroup={() => { setNewOptionGroupTarget("variant"); setNewOptionGroupOpen(true); }}
+                                />
                           ) : (
-                              <Button type="button" variant="outline" onClick={() => { setEditingVariant(null); variantForm.reset({ variantLabel: '', uom: 'pcs', barcode: '', isActive: true }); setShowVariantForm(true)}}>+ Add Variant</Button>
+                              <Button type="button" variant="outline" onClick={() => { setEditingVariant(null); variantForm.reset({ variantLabel: '', uom: 'pcs', barcode: '', isActive: true, optionGroupIds: [] }); setShowVariantForm(true)}}>+ Add Variant</Button>
                           )}
                       </div>
                   ) : (
@@ -390,75 +431,15 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                     control={form.control}
                     name="optionGroupIds"
                     render={({ field }) => {
-                      const attached: string[] = Array.isArray(field.value) ? field.value : [];
-                      const attachedSet = new Set(attached);
-                      const unattached = availableOptionGroups.filter((g) => !attachedSet.has(g.id));
                       return (
                         <FormItem>
-                          <div className="flex items-center justify-between gap-2">
-                            <FormLabel>Option Groups (Modifiers)</FormLabel>
-                            <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => setNewOptionGroupOpen(true)}>+ New group</Button>
-                          </div>
-                          <FormDescription className="text-xs">
-                            Reusable modifier groups applied at order time. When this product is added to a bill the cashier (and customer) will be prompted to pick from each attached group. For families, attach at the family parent — variants inherit automatically.
-                          </FormDescription>
-                          <div className="grid gap-2 mt-2">
-                            {attached.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">No option groups attached.</p>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {attached.map((id, i) => {
-                                  const g = availableOptionGroups.find((x) => x.id === id);
-                                  const move = (dir: -1 | 1) => {
-                                    const next = [...attached];
-                                    const t = i + dir;
-                                    if (t < 0 || t >= next.length) return;
-                                    [next[i], next[t]] = [next[t], next[i]];
-                                    field.onChange(next);
-                                  };
-                                  return (
-                                    <div key={id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-medium truncate">{g?.name ?? `(missing: ${id})`}</div>
-                                        {g && (
-                                          <div className="text-[11px] text-muted-foreground">
-                                            {g.selectionMode === "single" ? "Single-select" : "Multi-select"} · {(g.values || []).filter((v: any) => v.isActive).length} values
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-0.5 shrink-0">
-                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(-1)} disabled={i === 0} aria-label="Move up">↑</Button>
-                                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => move(1)} disabled={i === attached.length - 1} aria-label="Move down">↓</Button>
-                                        <Button type="button" variant="ghost" size="sm" onClick={() => field.onChange(attached.filter((x) => x !== id))}>Remove</Button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {unattached.length > 0 && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1">Attach:</div>
-                                <div className="flex flex-wrap gap-1">
-                                  {unattached.map((g) => (
-                                    <Badge
-                                      key={g.id}
-                                      variant="outline"
-                                      className="cursor-pointer hover:bg-muted/40 text-[11px]"
-                                      onClick={() => field.onChange([...attached, g.id])}
-                                    >
-                                      + {g.name}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            {availableOptionGroups.length === 0 && (
-                              <p className="text-xs text-muted-foreground">
-                                No option groups yet. Click <span className="font-medium">+ New group</span> to create one.
-                              </p>
-                            )}
-                          </div>
+                          <OptionGroupPicker
+                            value={field.value as string[] | undefined}
+                            onChange={field.onChange}
+                            available={availableOptionGroups}
+                            onCreateNew={() => { setNewOptionGroupTarget("parent"); setNewOptionGroupOpen(true); }}
+                            description="Reusable modifier groups applied at order time. When this product is added to a bill the cashier (and customer) is prompted to pick from each attached group. For a family, attach here what EVERY variant offers — a variant can add its own on top."
+                          />
                           <FormMessage />
                         </FormItem>
                       );
@@ -483,8 +464,15 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         onSaved={async (savedId) => {
           await loadOptionGroups();
           if (savedId) {
-            const cur = (form.getValues("optionGroupIds") as string[]) || [];
-            if (!cur.includes(savedId)) form.setValue("optionGroupIds", [...cur, savedId], { shouldDirty: true });
+            // Branch rather than union the two form handles: they are different
+            // schemas, so a shared reference loses the field types entirely.
+            if (newOptionGroupTarget === "variant") {
+              const cur = (variantForm.getValues("optionGroupIds") as string[]) || [];
+              if (!cur.includes(savedId)) variantForm.setValue("optionGroupIds", [...cur, savedId], { shouldDirty: true });
+            } else {
+              const cur = (form.getValues("optionGroupIds") as string[]) || [];
+              if (!cur.includes(savedId)) form.setValue("optionGroupIds", [...cur, savedId], { shouldDirty: true });
+            }
           }
           setNewOptionGroupOpen(false);
         }}

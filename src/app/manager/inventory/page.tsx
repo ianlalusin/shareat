@@ -28,6 +28,7 @@ import { getDisplayName, getEffectiveVariantLabel, groupIntoFamilies } from "@/l
 import { scheduleStorefrontAutoPublish, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult } from "@/lib/customer-catalog/auto-publish";
 import { CustomerOrderingSettings } from "@/components/manager/store-settings/customer-ordering-settings";
+import { pricingWarnings, sellsBelowCost } from "@/lib/inventory/pricing-guards";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -355,6 +356,19 @@ export default function InventoryManagementPage() {
   const handleQuickPrice = async (item: InventoryItem, field: 'cost' | 'sellingPrice' | 'onlinePrice', next: number | null) => {
     if (!activeStore || !appUser) return;
 
+    // Selling under a known cost is nearly always a typo. Cost itself is NOT
+    // guarded: a supplier raising their price is a fact the manager has to be
+    // able to record, and refusing it would just leave the cost wrong. The row
+    // turns red in that case instead (see pricingWarnings).
+    if (field === 'sellingPrice' && sellsBelowCost(item.cost, next)) {
+      toast({
+        variant: "destructive",
+        title: "Price is below cost",
+        description: `"${getDisplayName(item)}" costs ₱${item.cost}. Selling at ₱${next ?? 0} would lose money on every one.`,
+      });
+      throw new Error("selling price below cost");
+    }
+
     // The edit dialog refuses to leave an add-on without a positive price; the
     // fast path must not become a way around that.
     if (field === 'sellingPrice' && item.isAddon && (next ?? 0) <= 0) {
@@ -495,8 +509,22 @@ export default function InventoryManagementPage() {
     const effectiveImageUrl = item.imageUrl ?? productImageById.get(item.productId) ?? null;
     const online = item.onlineEnabled === true;
     const customer = item.customerEnabled === true;
+    // Pricing problems worth the manager's eye. Both are advisory here — the
+    // hard stop lives in handleQuickPrice and the edit dialog.
+    const warnings = showArchived ? [] : pricingWarnings(item);
     return (
-      <TableRow key={item.id} className={cn(!item.isActive && !showArchived && "opacity-60", indent && "bg-muted/20")}>
+      <TableRow
+        key={item.id}
+        className={cn(
+          !item.isActive && !showArchived && "opacity-60",
+          indent && "bg-muted/20",
+          // Flag, never block: an aggressive online discount can be a real
+          // promo, and a cost that has risen above the price is a fact the
+          // manager still has to be able to record.
+          warnings.length > 0 && "bg-red-50 hover:bg-red-100/70",
+        )}
+        title={warnings.length > 0 ? warnings.map((w) => w.message).join(" ") : undefined}
+      >
         <TableCell>
             <div className={cn("rounded-md bg-muted flex items-center justify-center relative", indent ? "ml-6 w-10 h-10" : "w-12 h-12")}>
                 {effectiveImageUrl ? (

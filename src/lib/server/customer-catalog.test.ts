@@ -282,6 +282,52 @@ describe("rebuildCustomerCatalog — categories and modifiers", () => {
     expect(categories[0].name).toBe("Uncategorized");
   });
 
+  it("carries a variant's own option groups only when they differ from the family's", async () => {
+    const { products, variants } = kimbap(["Veggies", "Signature"]);
+    products[0].optionGroupIds = ["og_dip"];          // family: Dip
+    variants[1].optionGroupIds = ["og_nori"];          // Signature also gets Nori
+    const optionGroups = [
+      { id: "og_dip", name: "Dip", values: [{ id: "cheese", name: "Cheese", priceDelta: 0 }] },
+      { id: "og_nori", name: "Extra Nori", values: [{ id: "nori", name: "Nori", priceDelta: 20 }] },
+    ];
+    const { categories } = await build({
+      products,
+      inventory: variants.map((v) => orderableInv(v.id, 150)),
+      optionGroups,
+    });
+    const entry = allEntries(categories)[0];
+
+    // The shared set stays at family level and is NOT duplicated onto Veggies.
+    expect(entry.optionGroups?.map((g) => g.id)).toEqual(["og_dip"]);
+    expect(entry.variants?.[0].optionGroups).toBeUndefined();
+
+    // Signature carries the FULL resolved list, so consumers never merge.
+    expect(entry.variants?.[1].optionGroups?.map((g) => g.id)).toEqual(["og_dip", "og_nori"]);
+  });
+
+  it("leaves every variant bare when the whole family shares one set", async () => {
+    const { products, variants } = kimbap(["Veggies", "Signature"]);
+    products[0].optionGroupIds = ["og_dip"];
+    const { categories } = await build({
+      products,
+      inventory: variants.map((v) => orderableInv(v.id, 150)),
+      optionGroups: [{ id: "og_dip", name: "Dip", values: [{ id: "cheese", name: "Cheese", priceDelta: 0 }] }],
+    });
+    const entry = allEntries(categories)[0];
+    expect(entry.optionGroups?.map((g) => g.id)).toEqual(["og_dip"]);
+    expect(entry.variants?.every((v) => v.optionGroups === undefined)).toBe(true);
+  });
+
+  it("picks up a group this store attached on its own inventory row", async () => {
+    const p = product("p1", { optionGroupIds: [] });
+    const { categories } = await build({
+      products: [p],
+      inventory: [orderableInv("p1", 250, { optionGroupIds: ["og_local"] })],
+      optionGroups: [{ id: "og_local", name: "Local Dip", values: [{ id: "v1", name: "Sukang Pinakurat", priceDelta: 10 }] }],
+    });
+    expect(allEntries(categories)[0].optionGroups?.map((g) => g.id)).toEqual(["og_local"]);
+  });
+
   it("attaches this store's option groups, dropping ones it has disabled", async () => {
     const p = product("p1", { optionGroupIds: ["og_dip", "og_size"] });
     const optionGroups = [

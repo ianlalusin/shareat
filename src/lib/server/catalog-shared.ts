@@ -56,6 +56,47 @@ export function clampDescription(value: unknown): string {
   return (space > 0 ? cut.slice(0, space) : cut).trimEnd();
 }
 
+/** Anything that may carry an `optionGroupIds` array. */
+type GroupBearing = { optionGroupIds?: unknown } | null | undefined;
+
+function idsOf(source: GroupBearing): string[] {
+  const raw = source?.optionGroupIds;
+  if (!Array.isArray(raw)) return [];
+  // Discard blanks BEFORE stringifying — String(null) is "null", which is
+  // truthy and would resolve to a group id that cannot exist.
+  return raw.filter((x) => x !== null && x !== undefined && x !== "").map((x) => String(x));
+}
+
+/**
+ * The option groups attached to one sellable item, from all three layers.
+ *
+ *   parent (the family root)  ∪  the item itself  ∪  this store's inventory row
+ *
+ * Union, not replace, and de-duplicated preserving first-seen order — which is
+ * the attachment order the admin controls with the ↑↓ arrows.
+ *
+ * The layers answer different questions and all three are legitimate at once:
+ * the parent carries what the whole family offers, a variant adds what only it
+ * offers (Extra Nori on Signature but not Veggies), and the inventory row adds
+ * what one branch offers without touching the global catalog every other branch
+ * shares.
+ *
+ * Store-level *disables* are NOT applied here — `loadStoreOptionGroups` drops
+ * them when it resolves ids to groups, so a group one store attaches can still
+ * be withheld by another.
+ *
+ * This mirrors what `api/products/[id]/option-groups` has always done for the
+ * cashier (parent ∪ variant); it exists so the cashier, the storefront and the
+ * customer app cannot answer this question three different ways.
+ */
+export function resolveOptionGroupIds(
+  product: GroupBearing,
+  parent?: GroupBearing,
+  inventoryRow?: GroupBearing
+): string[] {
+  return Array.from(new Set([...idsOf(parent), ...idsOf(product), ...idsOf(inventoryRow)]));
+}
+
 /**
  * Maps a product's `optionGroupIds` to the option groups this store actually
  * carries, or `undefined` when it attaches none that survive.

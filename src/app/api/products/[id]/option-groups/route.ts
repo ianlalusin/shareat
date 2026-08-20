@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireActiveStaff } from "@/lib/server/active-staff-check";
 import { loadOptionOverrides, filterGroupsForStore } from "@/lib/server/option-overrides";
+import { resolveOptionGroupIds } from "@/lib/server/catalog-shared";
 
 export const runtime = "nodejs";
 
@@ -29,20 +30,27 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const db = getAdminDb();
     await requireActiveStaff(db, decoded, ["admin", "manager", "cashier", "kitchen", "server"]);
 
+    // Read once, up front: both the attachment union below and the per-store
+    // availability filter further down need it.
+    const storeId = String(url.searchParams.get("storeId") || "").trim();
+
     const productSnap = await db.doc(`products/${id}`).get();
     if (!productSnap.exists) return NextResponse.json({ ok: true, optionGroups: [] });
     const product = productSnap.data() as any;
 
-    // Pull from the parent if this product is a variant.
-    let ids: string[] = Array.isArray(product?.optionGroupIds) ? product.optionGroupIds : [];
-    if ((product?.kind === "variant") && product?.groupId) {
+    // parent ∪ this product ∪ this store's own attachment — the same rule the
+    // storefront and customer-app catalogs use. See catalog-shared.ts.
+    let parent: any = null;
+    if (product?.kind === "variant" && product?.groupId) {
       const parentSnap = await db.doc(`products/${product.groupId}`).get();
-      if (parentSnap.exists) {
-        const parent = parentSnap.data() as any;
-        const parentIds: string[] = Array.isArray(parent?.optionGroupIds) ? parent.optionGroupIds : [];
-        ids = Array.from(new Set([...parentIds, ...ids]));
-      }
+      if (parentSnap.exists) parent = parentSnap.data();
     }
+    let inventoryRow: any = null;
+    if (storeId) {
+      const invSnap = await db.doc(`stores/${storeId}/inventory/${id}`).get();
+      if (invSnap.exists) inventoryRow = invSnap.data();
+    }
+    const ids = resolveOptionGroupIds(product, parent, inventoryRow);
 
     if (ids.length === 0) return NextResponse.json({ ok: true, optionGroups: [] });
 
@@ -59,7 +67,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // Per-store availability: a store can turn off whole groups or individual
     // values it doesn't carry (e.g. Malvar has no Cheese dip). No storeId means
     // "show everything", so non-cashier callers are unaffected.
-    const storeId = String(url.searchParams.get("storeId") || "").trim();
     if (storeId) {
       const overrides = await loadOptionOverrides(db, storeId);
       groups = filterGroupsForStore(groups, overrides);

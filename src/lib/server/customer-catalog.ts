@@ -3,6 +3,7 @@ import {
   clampDescription,
   displayNameFor,
   loadStoreOptionGroups,
+  resolveOptionGroupIds,
   type CatalogOptionGroup,
 } from "./catalog-shared";
 import { getStoreInventoryRows } from "./store-inventory-cache";
@@ -63,6 +64,11 @@ export type CustomerCatalogVariant = {
   orderable: boolean;
   kitchenLocationId?: string | null;
   kitchenLocationName?: string | null;
+  /**
+   * This variant's own modifier set, present ONLY when it differs from the
+   * family's. Read it as `variant.optionGroups ?? entry.optionGroups`.
+   */
+  optionGroups?: CatalogOptionGroup[];
   /**
    * Only present when the family actually uses per-variant copy — see
    * `DESCRIPTION_MAX` in `catalog-shared.ts`. When absent, consumers fall back
@@ -207,6 +213,22 @@ export async function rebuildCustomerCatalog(
   // availability overrides so it only publishes what it actually carries. ---
   const resolveOptionGroups = await loadStoreOptionGroups(db, storeId);
 
+  /**
+   * The option groups for one variant, but ONLY when they differ from what the
+   * family already publishes.
+   *
+   * Consumers read `variant.optionGroups ?? entry.optionGroups`, so the full
+   * list is carried rather than just the extras — a merge at the consumption
+   * sites (one of which prices real orders) is a bug waiting to happen, and the
+   * duplication only costs anything for the rare variant that actually differs.
+   */
+  function variantOptionGroups(v: any, parent: any, familyIds: Set<string>) {
+    const inv = invByProductId.get(String(v.id));
+    const ids = resolveOptionGroupIds(v, parent, inv);
+    const differs = ids.length !== familyIds.size || ids.some((id) => !familyIds.has(id));
+    return differs ? resolveOptionGroups(ids) : undefined;
+  }
+
   // --- Build entries from root products; variants surface via their parent. ---
   const entries: CustomerCatalogEntry[] = [];
   for (const p of allProducts) {
@@ -215,7 +237,12 @@ export async function rebuildCustomerCatalog(
     if (p.kind === "variant") continue;
 
     const subCategory = String(p.subCategory || p.category || "Uncategorized");
-    const optionGroups = resolveOptionGroups(p.optionGroupIds);
+    // Family/shared set. A single product also picks up whatever its own
+    // store attached, which is why the inventory row is passed here.
+    const optionGroups = resolveOptionGroups(
+      resolveOptionGroupIds(p, null, p.kind === "group" ? null : invByProductId.get(String(p.id)))
+    );
+    const familyGroupIds = new Set((optionGroups ?? []).map((g) => g.id));
     const description = clampDescription(p.description);
 
     if (p.kind === "group") {
@@ -255,6 +282,8 @@ export async function rebuildCustomerCatalog(
           const own = clampDescription(v.description) || description;
           if (own) variant.description = own;
         }
+        const ownGroups = variantOptionGroups(v, p, familyGroupIds);
+        if (ownGroups) variant.optionGroups = ownGroups;
         return variant;
       });
 

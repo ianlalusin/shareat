@@ -521,7 +521,21 @@ export default function KitchenPage() {
                 console.log(`Ticket ${ticketId} is already finalized. Skipping update.`);
                 return;
             }
-            
+
+            // This is the whole-ticket serve path (the plain "Served" button);
+            // handleServeBatch covers partial serves. A customer-app order bills
+            // HERE too — without this a quantity-1 order, which is the common
+            // case, would be served and never charged.
+            const pendingBill = newStatus === 'served' ? pendingBillLineFor(oldTicketState) : null;
+            const billLineRef = pendingBill
+                ? doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", pendingBill.lineId)
+                : null;
+            const billLineSnap = billLineRef ? await transaction.get(billLineRef) : null;
+
+            const ticketQtyOrdered = oldTicketState.qtyOrdered ?? oldTicketState.qty ?? 1;
+            const alreadyServed = oldTicketState.qtyServed ?? 0;
+            const alreadyCancelled = oldTicketState.qtyCancelled ?? 0;
+
             const updatePayload: any = { status: newStatus, updatedAt: serverTimestamp() };
             let newTicketState: KitchenTicket;
             
@@ -544,6 +558,41 @@ export default function KitchenPage() {
                     [`serveTimeMsTotalByType.${oldTicketState.type}`]: increment(durationMs),
                 };
 
+                // Record the quantity explicitly. computeKdsTargets reads
+                // `qtyServed ?? fallback`, and a ticket written with
+                // `qtyServed: 0` (as both POS and the customer app do) would
+                // otherwise report ZERO serves to KDS analytics.
+                const qtyNowServed = Math.max(0, ticketQtyOrdered - alreadyCancelled);
+                updatePayload.qtyServed = qtyNowServed;
+                updatePayload.qtyRemaining = 0;
+
+                if (pendingBill && billLineRef && billLineSnap) {
+                    const qtyToBill = Math.max(0, qtyNowServed - alreadyServed);
+                    if (qtyToBill > 0) {
+                        if (billLineSnap.exists()) {
+                            transaction.update(billLineRef, {
+                                qtyOrdered: increment(qtyToBill),
+                                updatedAt: serverTimestamp(),
+                                updatedByUid: appUser.uid,
+                                updatedByName: currentProfile?.name ?? null,
+                            });
+                        } else {
+                            transaction.set(billLineRef, stripUndefined({
+                                ...buildCustomerOrderBillLine(pendingBill, qtyToBill),
+                                createdAt: serverTimestamp(),
+                                updatedAt: serverTimestamp(),
+                                updatedByUid: appUser.uid,
+                                updatedByName: currentProfile?.name ?? null,
+                            }));
+                        }
+                        updatePayload.billLineId = pendingBill.lineId;
+                        updatePayload.billedAtClientMs = nowMs;
+                        // The payment path aborts on a stale billingRevision.
+                        sessionUpdate.billingRevision = increment(1);
+                        sessionUpdate.updatedAt = serverTimestamp();
+                    }
+                }
+
                 if (oldTicketState.type === 'refill') {
                     const qty = oldTicketState.qty || 1;
                     sessionUpdate.servedRefillsTotal = increment(qty);
@@ -560,11 +609,19 @@ export default function KitchenPage() {
                 updatePayload.cancelledAtClientMs = nowMs;
                 updatePayload.cancelledByUid = appUser.uid;
                 updatePayload.cancelReason = reason;
+                // Same reason as the serve branch: make the quantity explicit
+                // so KDS analytics does not read a literal 0.
+                updatePayload.qtyCancelled = Math.max(0, ticketQtyOrdered - alreadyServed);
+                updatePayload.qtyRemaining = 0;
 
                 newTicketState = { ...oldTicketState, ...updatePayload };
 
-                if (oldTicketState.type === 'addon' && oldTicketState.billLineId) {
-                    const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", oldTicketState.billLineId);
+                // A bill-on-serve ticket is excluded: its line only ever holds
+                // what was already served, so voiding here would subtract
+                // quantity that was never charged.
+                const voidLineId = shouldVoidBilledQty(oldTicketState) ? oldTicketState.billLineId : null;
+                if (voidLineId) {
+                    const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", voidLineId);
                     const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
                     const ticketQty = oldTicketState.qty || 1;
                     transaction.update(billLineRef, {
