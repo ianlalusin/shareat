@@ -10,46 +10,81 @@ import { buttonVariants } from "@/components/ui/button"
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>
 
+/**
+ * These `classNames` keys are react-day-picker **v9** (see `UI`, `DayFlag` and
+ * `SelectionState` in the package). They are not interchangeable with v8's:
+ * v9 renamed `caption`→`month_caption`, `table`→`month_grid`,
+ * `head_row`/`head_cell`→`weekdays`/`weekday`, `row`→`week`,
+ * `nav_button_previous`/`_next`→`button_previous`/`button_next`, and dropped the
+ * `day_` prefix on state keys (`day_selected`→`selected`, and so on).
+ *
+ * Two traps, both of which this file previously fell into:
+ *
+ * 1. v9 silently ignores keys it does not recognise, so a leftover v8 map does
+ *    not fail — it just renders an unstyled table with the weekday header and
+ *    the date grid out of alignment and the nav buttons floating. Nothing
+ *    imports react-day-picker's own stylesheet, so these classes are the ONLY
+ *    styling the calendar gets.
+ * 2. `day` moved. In v8 it was the button; in v9 it is the `<td>` gridcell and
+ *    the button is `day_button`. State modifiers (`selected`, `today`, …) land
+ *    on that `<td>` too, along with matching `data-*` attributes — hence the
+ *    `[&>button]` reach-throughs below, which stop the ghost button's own
+ *    background from covering the cell's selected/today colour.
+ */
 function Calendar({
   className,
   classNames,
   showOutsideDays = true,
   ...props
 }: CalendarProps) {
+  const navButton = cn(
+    buttonVariants({ variant: "outline" }),
+    "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 disabled:opacity-30"
+  )
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
       className={cn("p-3", className)}
       classNames={{
-        months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
-        month: "space-y-4",
-        caption: "flex justify-center pt-1 relative items-center",
+        // `nav` is a sibling of the months, so `months` is the positioning
+        // context the absolute nav row anchors to.
+        months: "relative flex flex-col gap-4 sm:flex-row",
+        month: "flex flex-col gap-4",
+        nav: "absolute inset-x-0 top-0 flex h-7 items-center justify-between",
+        button_previous: navButton,
+        button_next: navButton,
+        month_caption: "flex h-7 items-center justify-center",
         caption_label: "text-sm font-medium",
-        nav: "space-x-1 flex items-center",
-        nav_button: cn(
-          buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
-        ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
-        table: "w-full border-collapse space-y-1",
-        head_row: "flex",
-        head_cell:
-          "text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]",
-        row: "flex w-full mt-2",
-        cell: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
-        day: cn(
+        month_grid: "w-full border-collapse",
+        weekdays: "flex",
+        weekday: "w-9 rounded-md text-[0.8rem] font-normal text-muted-foreground",
+        week: "mt-2 flex w-full",
+        day: "relative h-9 w-9 p-0 text-center text-sm focus-within:relative focus-within:z-20",
+        day_button: cn(
           buttonVariants({ variant: "ghost" }),
-          "h-9 w-9 p-0 font-normal aria-selected:opacity-100"
+          "h-9 w-9 p-0 font-normal"
         ),
-        day_selected:
-          "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-accent text-accent-foreground",
-        day_outside: "text-muted-foreground opacity-50",
-        day_disabled: "text-muted-foreground opacity-50",
-        day_range_middle:
-          "aria-selected:bg-accent aria-selected:text-accent-foreground",
-        day_hidden: "invisible",
+        selected: cn(
+          "rounded-md bg-primary text-primary-foreground",
+          "[&>button]:bg-transparent [&>button]:text-primary-foreground",
+          "[&>button:hover]:bg-transparent [&>button:hover]:text-primary-foreground"
+        ),
+        // Selected wins when a day is both, rather than relying on class order.
+        today: cn(
+          "rounded-md bg-accent text-accent-foreground",
+          "data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground"
+        ),
+        outside: "text-muted-foreground opacity-50",
+        disabled: "text-muted-foreground opacity-50",
+        range_start: "rounded-l-md rounded-r-none",
+        range_end: "rounded-r-md rounded-l-none",
+        range_middle: cn(
+          "rounded-none bg-accent text-accent-foreground",
+          "[&>button]:bg-transparent [&>button]:text-accent-foreground",
+          "[&>button:hover]:bg-transparent"
+        ),
+        hidden: "invisible",
         ...classNames,
       }}
       components={{
