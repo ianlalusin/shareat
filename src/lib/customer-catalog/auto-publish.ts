@@ -2,8 +2,16 @@ import { getAuth } from "firebase/auth";
 
 /**
  * Shared client helper to republish a store's CUSTOMER app catalog cache after
- * an edit that affects it (customerEnabled toggle or customerPrice change on
- * an inventory item). Mirrors `src/lib/storefront/auto-publish.ts`, but every
+ * an edit that affects it: the `customerEnabled` toggle, a `sellingPrice`
+ * change, or the store-level `customerOrderingEnabled` switch.
+ *
+ * NOTE: there is no customer-app price override. `rebuildCustomerCatalog`
+ * always charges `sellingPrice`. A retired backfill
+ * (scripts/backfill-customer-catalog.ts) wrote a `customerPrice` field that is
+ * not on the InventoryItem type and that nothing reads — this comment used to
+ * name it as a trigger, which promised an override that does not exist.
+ *
+ * Mirrors `src/lib/storefront/auto-publish.ts`, but every
  * store publishes its own cache — there is no single "pilot store" gate here,
  * since the CUSTOMER app serves each store's own menu.
  *
