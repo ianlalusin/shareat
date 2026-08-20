@@ -41,6 +41,7 @@ const formSchema = z.object({
   isActive: z.boolean().default(true),
   acceptsReservations: z.boolean().default(false),
   acceptsWebsiteChat: z.boolean().default(false),
+  fbPageLink: z.string().optional(),
   acceptsOnlineOrders: z.boolean().default(false),
   aiEnabled: z.boolean().default(false),
   reservationSchedule: z.object({
@@ -105,6 +106,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
       name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKm: 0, pickupRadiusKm: 0, isActive: true,
       acceptsReservations: false,
       acceptsWebsiteChat: false,
+      fbPageLink: "",
       acceptsOnlineOrders: false,
       aiEnabled: false,
       reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
@@ -119,6 +121,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
   const logoUrl = form.watch("logoUrl");
   const taxType = useWatch({ control: form.control, name: 'taxType' });
   const acceptsReservations = useWatch({ control: form.control, name: 'acceptsReservations' });
+  const acceptsWebsiteChat = useWatch({ control: form.control, name: 'acceptsWebsiteChat' });
 
   useEffect(() => {
       if (taxType === "NON_VAT") {
@@ -149,6 +152,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         tin: store.tin || "", isActive: store.isActive,
         acceptsReservations: store.acceptsReservations ?? false,
         acceptsWebsiteChat: store.acceptsWebsiteChat ?? false,
+        fbPageLink: store.fbPageLink ?? "",
         acceptsOnlineOrders: store.acceptsOnlineOrders ?? false,
         aiEnabled: store.aiEnabled ?? false,
         reservationSchedule: store.reservationSchedule ?? DEFAULT_RESERVATION_SCHEDULE,
@@ -167,6 +171,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
         name: "", code: "", address: "", tin: "", geoLat: "", geoLng: "", deliveryRadiusKm: 0, pickupRadiusKm: 0, isActive: true,
         acceptsReservations: false,
         acceptsWebsiteChat: false,
+      fbPageLink: "",
         acceptsOnlineOrders: false,
         aiEnabled: false,
         reservationSchedule: DEFAULT_RESERVATION_SCHEDULE,
@@ -336,7 +341,7 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                 </FormItem>
 
                 <FormField control={form.control} name="isActive" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Active Status</FormLabel><FormDescription className="text-xs"> Inactive stores cannot be selected by users. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
-                <FormField control={form.control} name="acceptsReservations" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Reservations</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's reservation form. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="acceptsReservations" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Reservations</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's reservation form. This switch is the only setup needed &mdash; the branch appears on shareat.net as soon as it is on. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
                 {acceptsReservations && (
                   <div className="rounded-lg border p-3 shadow-sm space-y-3">
                     <div className="space-y-0.5">
@@ -394,7 +399,22 @@ export function StoreEditDialog({ isOpen, onClose, onSave, store, isSubmitting }
                     </div>
                   </div>
                 )}
-                <FormField control={form.control} name="acceptsWebsiteChat" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Website Chat</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's live chat; messages go to this store's cashier inbox. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                <FormField control={form.control} name="acceptsWebsiteChat" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Website Chat</FormLabel><FormDescription className="text-xs"> Show this branch on the public website's live chat; messages go to this store's cashier inbox. Only offered inside the Opening/Closing Time above &mdash; outside those hours the branch drops off the website's chat picker automatically. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
+                {(acceptsReservations || acceptsWebsiteChat) && (
+                  <FormField control={form.control} name="fbPageLink" render={({ field }) => (
+                    <FormItem className="rounded-lg border p-3 shadow-sm">
+                      <FormLabel>Facebook Messenger link</FormLabel>
+                      <FormControl>
+                        <Input placeholder="https://m.me/shareatlipa" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormDescription className="text-xs">
+                        Offered to customers after they book, and as the fallback when chat is closed.
+                        Optional &mdash; leave blank to show no Messenger button.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                )}
                 <FormField control={form.control} name="acceptsOnlineOrders" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>Accepts Online Orders</FormLabel><FormDescription className="text-xs"> Master switch — enrolls this branch in online ordering on shareat.net. Also needs the geotag above and to be marked open on the Online Orders page to actually show up for customers. </FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )} />
 
                 <RoleGuard allow={["admin", "manager"]} hideOnDeny>

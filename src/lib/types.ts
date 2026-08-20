@@ -1105,7 +1105,8 @@ export type Store = {
   /**
    * When true, this store is bookable from the public SharEat website. The
    * website (shareat-website project) reads this flag via an Admin SDK function
-   * to decide which branches to show on its reservation form.
+   * to decide which branches to show on its reservation form. This flag is the
+   * ONLY enrolment step — there is no separate website-side registration.
    */
   acceptsReservations?: boolean;
   /**
@@ -1113,6 +1114,12 @@ export type Store = {
    * routes to this store's cashier inbox.
    */
   acceptsWebsiteChat?: boolean;
+  /**
+   * The branch's Facebook Messenger link (https://m.me/...). Surfaced by the
+   * website after a booking and as the fallback when live chat is closed.
+   * Optional — a blank link simply hides the Messenger button.
+   */
+  fbPageLink?: string;
   /**
    * Master switch — this store is enrolled in online ordering. The SharEat
    * website only ever lists/serves/accepts orders for a store when this is true
