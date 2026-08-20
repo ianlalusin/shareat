@@ -87,6 +87,7 @@ function entry(over: Record<string, any> = {}) {
     type: "login",
     phone: PHONE,
     customerName: "Ana",
+    source: "in_session",
     storeId: STORE,
     sessionId: "s1",
     createdAtMs: 0,
@@ -177,11 +178,36 @@ describe("resolveStorePresence", () => {
     expect(presence.has(PHONE)).toBe(false);
   });
 
-  it("does not grant presence on login_failed", async () => {
-    // Otherwise anyone at a terminal could make an arbitrary phone number
-    // visible at their store just by typing it and failing the password.
+  it("grants presence on an in-session login_failed", async () => {
+    // The forgot-password path. A customer who cannot log in never links to
+    // the session and never earns points, so this is the ONLY signal that puts
+    // them in scope — and the customer app tells them to ask the manager for a
+    // reset, which only works if the manager can see them.
     seedProjection(today, [
-      entry({ type: "login_failed", createdAtMs: now - 5 * 60 * 1000 }),
+      entry({ type: "login_failed", source: "in_session", createdAtMs: now - 5 * 60 * 1000 }),
+    ]);
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.get(PHONE)?.presence).toBe("recent");
+  });
+
+  it("does not grant presence on a standalone login_failed", async () => {
+    // Outside a session there is no verified session token behind the attempt,
+    // so it is just a phone number someone typed at an unknown keyboard.
+    seedProjection(today, [
+      entry({ type: "login_failed", source: "standalone", createdAtMs: now - 5 * 60 * 1000 }),
+    ]);
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.has(PHONE)).toBe(false);
+  });
+
+  it("does not grant presence on a login_failed with no source", async () => {
+    // Older projection entries predate the source field; absent must not pass.
+    seedProjection(today, [
+      entry({ type: "login_failed", source: null, createdAtMs: now - 5 * 60 * 1000 }),
     ]);
 
     const presence = await resolveStorePresence(STORE, now);

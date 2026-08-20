@@ -22,18 +22,45 @@ import { getAdminDb } from "@/lib/firebase/admin";
 export const PRESENCE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 /**
- * Log types that grant presence.
+ * Whether a logged event puts its customer in scope at the store it names.
  *
- * `login_failed` is deliberately absent. It is written by the *customer app*
- * with whatever phone was typed into the form, so honouring it would let
- * anyone standing at a terminal make an arbitrary phone number visible at
- * their store just by entering it and failing the password — an enumeration
- * hole wearing a presence signal's clothes.
+ * `login_failed` counts, but only from inside a session (`source:
+ * "in_session"`, which the customer app can only produce while holding a
+ * verified session token for an open session at that store).
  *
- * `password_reset` is absent because it carries no storeId, and granting
- * presence off a staff action would make the guard self-satisfying.
+ * That is the forgot-password path, and without it the feature cannot work: a
+ * customer who cannot log in never links to the session and never earns
+ * points, so nothing else would ever put them in scope, and the customer app's
+ * "ask our manager to reset it" prompt would send them to someone whose lookup
+ * returns "not active at this store".
+ *
+ * An earlier version of this file excluded `login_failed` outright, reasoning
+ * that it would let anyone make an arbitrary phone number visible by typing it
+ * and failing the password. That over-weighted the risk: the person typing
+ * never sees the record — only staff do, in /pins — so a customer entering
+ * numbers gains nothing. The residual vector is a staff member opening a
+ * customer session at their own store to surface a number they already have,
+ * which yields a name and a points balance and is audit-logged as an
+ * in-session login_failed carrying that store and session id.
+ *
+ * A standalone (non-session) failed login still grants nothing, and carries no
+ * storeId to match on in any case.
+ *
+ * `password_reset` never counts: it carries no storeId, and granting presence
+ * off a staff action would make the guard self-satisfying.
  */
-const PRESENCE_LOG_TYPES = new Set(["login", "account_created", "points_earned"]);
+function grantsPresence(entry: DailyEntry): boolean {
+  switch (String(entry?.type ?? "")) {
+    case "login":
+    case "account_created":
+    case "points_earned":
+      return true;
+    case "login_failed":
+      return String(entry?.source ?? "") === "in_session";
+    default:
+      return false;
+  }
+}
 
 export type PresenceKind = "active" | "recent";
 
@@ -50,6 +77,7 @@ export type StorePresence = {
 type DailyEntry = {
   type?: string;
   phone?: string;
+  source?: string | null;
   storeId?: string | null;
   sessionId?: string | null;
   createdAtMs?: number;
@@ -147,7 +175,7 @@ export async function resolveStorePresence(
     const phone = String(entry?.phone ?? "").trim();
     if (!phone) continue;
     if (String(entry?.storeId ?? "") !== storeId) continue;
-    if (!PRESENCE_LOG_TYPES.has(String(entry?.type ?? ""))) continue;
+    if (!grantsPresence(entry)) continue;
 
     const atMs = Number(entry?.createdAtMs ?? 0);
     const existing = byPhone.get(phone);
