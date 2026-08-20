@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/context/auth-context";
 import { ScrollArea } from "../ui/scroll-area";
 import { Label } from "../ui/label";
-import { Checkbox } from "../ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StorePackage, PendingSession, Refill, StoreRefill, StoreFlavor } from "@/lib/types";
@@ -557,25 +557,19 @@ function POSContent({
     onClose();
   }
   
-  const handleFlavorToggle = (flavorId: string) => {
+  /**
+   * One flavor per meat: picking another flavor replaces the current one.
+   * Mirrors the customer app, so both sides enforce the same rule.
+   */
+  const handleFlavorSelect = (flavorId: string) => {
     if (!activeRefillId) return;
 
     setCart(prev => {
         const newCart = new Map(prev);
         const item = newCart.get(activeRefillId);
         if (item) {
-            const isSelected = item.flavorIds.includes(flavorId);
-            let newFlavorIds = item.flavorIds;
-            if (isSelected) {
-                newFlavorIds = item.flavorIds.filter(id => id !== flavorId);
-            } else {
-                 if (item.flavorIds.length >= 3) {
-                    toast({ variant: 'destructive', title: 'Flavor Limit Reached', description: 'You can select a maximum of 3 flavors.'});
-                    return prev; // Return previous state without changes
-                }
-                newFlavorIds = [...item.flavorIds, flavorId];
-            }
-            newCart.set(activeRefillId, { ...item, flavorIds: newFlavorIds });
+            const isSelected = item.flavorIds[0] === flavorId;
+            newCart.set(activeRefillId, { ...item, flavorIds: isSelected ? [] : [flavorId] });
         }
         return newCart;
     });
@@ -749,17 +743,22 @@ function POSContent({
             <div className="flex-1 flex flex-col gap-4">
               <div className={cn("border rounded-lg", !needsFlavors && "bg-muted/50")}>
                 <div className="p-4 space-y-2">
-                  <h3 className="font-semibold">Flavors {needsFlavors && "(up to 3)"}</h3>
+                  <h3 className="font-semibold">
+                    {needsFlavors ? "Flavor — choose 1 per meat" : "Flavors"}
+                  </h3>
                   {needsFlavors ? (
-                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                    <RadioGroup
+                      value={activeCartItem.flavorIds[0] ?? ""}
+                      onValueChange={handleFlavorSelect}
+                      className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto"
+                    >
                         {sortedAllowedFlavors.map(flavor => (
                             <div key={flavor.flavorId} className="flex items-center gap-2">
-                                <Checkbox
+                                <RadioGroupItem
                                     id={`flavor-${flavor.flavorId}`}
-                                    checked={activeCartItem.flavorIds.includes(flavor.flavorId)}
-                                    onCheckedChange={() => handleFlavorToggle(flavor.flavorId)}
+                                    value={flavor.flavorId}
                                 />
-                                <Label 
+                                <Label
                                   htmlFor={`flavor-${flavor.flavorId}`} 
                                   className={cn(
                                     "font-normal",
@@ -770,7 +769,7 @@ function POSContent({
                                 </Label>
                             </div>
                         ))}
-                    </div>
+                    </RadioGroup>
                   ) : (
                     <p className="text-sm text-muted-foreground">This item does not require flavors.</p>
                   )}

@@ -191,15 +191,18 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                             ● Online
                         </Badge>
                     )}
-                    <CardTitle className="text-xl leading-tight">{ticket.itemName}</CardTitle>
+                    {/* Flavor reads inline with the meat — "Pork - Bulgogi" — now that
+                        a refill carries exactly one flavor. Keeps the Notes block for
+                        the guest's own text only. */}
+                    <CardTitle className="text-xl leading-tight">
+                        {ticket.itemName}
+                        {(ticket as any).flavorNote && (
+                          <span className="text-amber-700"> - {(ticket as any).flavorNote}</span>
+                        )}
+                    </CardTitle>
                     {(ticket as any).modifiersText && (
                       <p className="text-sm text-muted-foreground -mt-1 italic">
                         — {(ticket as any).modifiersText}
-                      </p>
-                    )}
-                    {(ticket as any).flavorNote && (
-                      <p className="text-base font-semibold text-amber-700 leading-tight">
-                        📝 Flavors: {(ticket as any).flavorNote}
                       </p>
                     )}
 
