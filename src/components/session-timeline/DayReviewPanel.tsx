@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { format } from "date-fns";
 import { ChevronDown, Download } from "lucide-react";
@@ -75,6 +75,16 @@ export function DayReviewPanel({
   const { toast } = useToast();
   const [state, setState] = useState<LoadState>({ status: "idle" });
 
+  // Which (store, day) the settled-or-in-flight fetch belongs to. This is a ref
+  // rather than the `cancelled` closure flag it replaces, and `state.status` is
+  // deliberately NOT an effect dependency: with it there, the effect's own
+  // setState({ loading }) re-ran the effect, whose cleanup flipped `cancelled`
+  // milliseconds later — while the query itself takes ~600ms. Both handlers then
+  // bailed out and the two cards spun forever. Keying off the request instead
+  // means only a *different* day can invalidate a response, which is the actual
+  // rule we want; closing the panel mid-flight now keeps the result.
+  const fetchKey = useRef<string | null>(null);
+
   // Changing the date resets to idle but leaves the panel open, so it refetches
   // for the new day only because the user asked for the panel in the first place.
   useEffect(() => {
@@ -82,30 +92,33 @@ export function DayReviewPanel({
   }, [dayId, storeId]);
 
   useEffect(() => {
-    if (!open || state.status !== "idle" || !storeId) return;
-    let cancelled = false;
+    if (!open || !storeId) return;
+    const key = `${storeId}:${dayId}`;
+    if (fetchKey.current === key) return; // already loaded, or already on the way
+    fetchKey.current = key;
     setState({ status: "loading" });
     getDocs(query(
       collection(db, "stores", storeId, "activityLogsByDay", dayId, "logs"),
       orderBy("createdAt", "desc")
     ))
       .then((snap) => {
-        if (cancelled) return;
+        if (fetchKey.current !== key) return; // a newer day won the race
         const logs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ActivityLog));
         onLogsLoaded(logs);
         setState({ status: "loaded", logs });
       })
       .catch((err: any) => {
-        if (cancelled) return;
+        if (fetchKey.current !== key) return;
+        fetchKey.current = null; // a failed day may be retried
         setState({ status: "error", message: err?.message || "Could not load the day's activity." });
       });
-    return () => { cancelled = true; };
-  }, [open, state.status, storeId, dayId, onLogsLoaded]);
+  }, [open, storeId, dayId, onLogsLoaded]);
 
   const logs = state.status === "loaded" ? state.logs : [];
   const voidAndFreeLogs = logs.filter((l) => VOID_AND_FREE_ACTIONS.includes(l.action));
   const discountLogs = logs.filter((l) => DISCOUNT_ACTIONS.includes(l.action));
-  const isLoading = state.status === "loading";
+  // `idle` while open is the frame before the effect fires: still loading, not empty.
+  const isLoading = state.status === "loading" || state.status === "idle";
 
   const handleExport = () => {
     if (logs.length === 0) return;
