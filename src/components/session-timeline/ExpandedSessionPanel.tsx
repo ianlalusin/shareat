@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, ClipboardCopy, Loader2, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { Check, ClipboardCopy, Loader2, Receipt, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -151,10 +152,20 @@ export function ExpandedSessionPanel({
             </span>
           )}
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={copySummary} className="shrink-0">
-          {copied ? <Check className="mr-2 h-3.5 w-3.5" aria-hidden /> : <ClipboardCopy className="mr-2 h-3.5 w-3.5" aria-hidden />}
-          {copied ? "Copied" : "Copy summary"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={copySummary}>
+            {copied ? <Check className="mr-2 h-3.5 w-3.5" aria-hidden /> : <ClipboardCopy className="mr-2 h-3.5 w-3.5" aria-hidden />}
+            {copied ? "Copied" : "Copy summary"}
+          </Button>
+          {/* Same tab on purpose: the timeline keeps its date/receipt/focus in the
+              URL, so Back returns to this exact expanded session. */}
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link href={`/receipt?id=${encodeURIComponent(row.receiptId)}`}>
+              <Receipt className="mr-2 h-3.5 w-3.5" aria-hidden />
+              View receipt
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <StageRail stages={stages} focusId={focusId} />
