@@ -2,7 +2,8 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { applyRefillTap } from "@/lib/refill-selection";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -148,56 +149,68 @@ function POSContent({
   const activeCartItem = activeRefillId ? cart.get(activeRefillId) : null;
   const activeGlobalRefill = activeCartItem ? globalRefills.find(r => r.id === activeCartItem.refill.refillId) : null;
   
-  const sortedAllowedFlavors = useMemo(() => {
-    if (!activeCartItem) return [];
-    
-    const globalRefillInfo = globalRefills.find(r => r.id === activeCartItem.refill.refillId);
+  // Callable for ANY refill, not just the focused one — the selection rules need
+  // to ask "does this meat still need a flavor?" about one that is off screen.
+  const allowedFlavorsFor = useCallback((refillId: string): StoreFlavor[] => {
+    const globalRefillInfo = globalRefills.find(r => r.id === refillId);
     if (!globalRefillInfo?.requiresFlavor) return [];
 
     const globallyAllowedFlavorIds = new Set(globalRefillInfo.allowedFlavorIds || []);
     const storeEnabledFlavorIds = new Set(storeFlavors.map(f => f.flavorId));
-    
+
     const finalAllowedIds = globallyAllowedFlavorIds.size === 0
       ? storeEnabledFlavorIds
       : new Set([...globallyAllowedFlavorIds].filter(id => storeEnabledFlavorIds.has(id)));
 
     const allowedStoreFlavors = storeFlavors.filter(f => finalAllowedIds.has(f.flavorId));
-    
+
     const initialFlavorIds = new Set(session.initialFlavorIds || []);
-    return allowedStoreFlavors.sort((a, b) => {
+    return [...allowedStoreFlavors].sort((a, b) => {
         const aIsInitial = initialFlavorIds.has(a.flavorId);
         const bIsInitial = initialFlavorIds.has(b.flavorId);
         if (aIsInitial && !bIsInitial) return -1;
         if (!aIsInitial && bIsInitial) return 1;
         return ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.flavorName.localeCompare(b.flavorName);
     });
-}, [activeCartItem, storeFlavors, globalRefills, session.initialFlavorIds]);
+  }, [globalRefills, storeFlavors, session.initialFlavorIds]);
+
+  const needsFlavorFor = useCallback(
+    (refillId: string) => allowedFlavorsFor(refillId).length > 0,
+    [allowedFlavorsFor]
+  );
+
+  const sortedAllowedFlavors = useMemo(
+    () => (activeCartItem ? allowedFlavorsFor(activeCartItem.refill.refillId) : []),
+    [activeCartItem, allowedFlavorsFor]
+  );
 
 
+  // Cart and focus move together through one pure transition. Updating them
+  // independently let focus land on an entry that had just been removed (which
+  // happens when you deselect a refill that is NOT the focused one), after
+  // which the flavor picker could never reappear.
   const handleSelectRefill = (refill: StoreRefill) => {
-    setCart(prev => {
-        const newCart = new Map(prev);
-        if (newCart.has(refill.refillId)) {
-            newCart.delete(refill.refillId);
-        } else {
-            newCart.set(refill.refillId, {
-                refill: refill,
-                flavorIds: [],
-                notes: ""
-            });
-        }
-        return newCart;
+    const next = applyRefillTap<CartItem>({
+      cart,
+      activeId: activeRefillId,
+      tappedId: refill.refillId,
+      needsFlavor: needsFlavorFor,
+      createItem: () => ({ refill, flavorIds: [], notes: "" }),
     });
-
-    setActiveRefillId(prev => {
-      // If we are unselecting the currently active item, clear focus
-      if (prev === refill.refillId) return null;
-      return refill.refillId;
-    });
+    setCart(next.cart);
+    setActiveRefillId(next.activeId);
   };
 
   const handleSelectOtherRefills = () => {
-    setActiveRefillId(OTHER_REFILLS_ID);
+    // No createItem: this panel moves focus but never becomes a cart entry.
+    const next = applyRefillTap<CartItem>({
+      cart,
+      activeId: activeRefillId,
+      tappedId: OTHER_REFILLS_ID,
+      needsFlavor: needsFlavorFor,
+    });
+    setCart(next.cart);
+    setActiveRefillId(next.activeId);
   };
 
   // Fire-and-forget backup print of offline-created kitchen tickets to the
@@ -652,7 +665,10 @@ function POSContent({
                     className={cn(
                         "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors focus:outline-none",
                         cart.has(refill.refillId) && "bg-destructive text-white border-destructive font-bold",
-                        activeRefillId === refill.refillId && !cart.has(refill.refillId) && "bg-muted font-semibold"
+                        activeRefillId === refill.refillId && !cart.has(refill.refillId) && "bg-muted font-semibold",
+                        // Focused item is outlined: tapping a selected item that is
+                        // NOT focused reopens it, tapping the focused one removes it.
+                        activeRefillId === refill.refillId && "ring-2 ring-destructive/40 ring-offset-1"
                     )}
                   >
                     {refill.refillName}
