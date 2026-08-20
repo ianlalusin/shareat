@@ -47,8 +47,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     }
     let inventoryRow: any = null;
     if (storeId) {
-      const invSnap = await db.doc(`stores/${storeId}/inventory/${id}`).get();
-      if (invSnap.exists) inventoryRow = invSnap.data();
+      // Query by the productId FIELD, never by doc id. An inventory document's
+      // id is NOT the product id — they differ on every row in practice — so a
+      // direct doc read here silently found nothing and the store's own
+      // attachments were dropped. The catalog builders key by this field too.
+      const invSnap = await db
+        .collection(`stores/${storeId}/inventory`)
+        .where("productId", "==", id)
+        .limit(1)
+        .get();
+      if (!invSnap.empty) inventoryRow = invSnap.docs[0].data();
     }
     const ids = resolveOptionGroupIds(product, parent, inventoryRow);
 

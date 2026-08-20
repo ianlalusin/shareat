@@ -56,6 +56,8 @@ export type CustomerCatalogItem = {
 
 export type CustomerCatalogVariant = {
   productId: string;
+  /** This store's inventory doc id — what POS bill lines and analytics key on. */
+  inventoryId?: string | null;
   variantLabel: string;
   displayName: string;
   price: number;
@@ -79,6 +81,8 @@ export type CustomerCatalogVariant = {
 
 export type CustomerCatalogEntry = {
   productId: string;
+  /** This store's inventory doc id — what POS bill lines and analytics key on. */
+  inventoryId?: string | null;
   name: string;
   displayName: string;
   description?: string;
@@ -154,6 +158,15 @@ export async function rebuildCustomerCatalog(
   // --- Per-store inventory keyed by productId: price + availability source. ---
   const invRows = await getStoreInventoryRows(db, storeId);
   const invByProductId = new Map<string, any>();
+  /**
+   * The inventory DOC id per product, which is NOT the product id.
+   *
+   * POS bill lines and sold-items analytics key on the inventory doc id
+   * (`line.itemId` — see lib/analytics/sold-items-core.ts). A customer order
+   * that used the productId instead would bucket separately from the identical
+   * item sold at the counter, so the snapshot has to carry it.
+   */
+  const invIdByProductId = new Map<string, string>();
   for (const row of invRows) {
     const x = row.data as any;
     if (x?.isActive === false) continue;
@@ -163,7 +176,10 @@ export async function rebuildCustomerCatalog(
     // diner's menu by default.
     if (x?.customerEnabled !== true) continue;
     const pid = String(x?.productId || "");
-    if (pid) invByProductId.set(pid, x);
+    if (pid) {
+      invByProductId.set(pid, x);
+      invIdByProductId.set(pid, row.id);
+    }
   }
 
   /** The table price, or null when this store cannot sell the item. */
@@ -276,6 +292,7 @@ export async function rebuildCustomerCatalog(
           orderable: ordering.orderable,
           kitchenLocationId: ordering.kitchenLocationId,
           kitchenLocationName: ordering.kitchenLocationName,
+          inventoryId: invIdByProductId.get(String(v.id)) ?? null,
         };
         if (familyUsesVariantCopy) {
           // Fall back to the root so switching tiers never blanks the panel.
@@ -322,6 +339,7 @@ export async function rebuildCustomerCatalog(
         orderable: ordering.orderable,
         kitchenLocationId: ordering.kitchenLocationId,
         kitchenLocationName: ordering.kitchenLocationName,
+        inventoryId: invIdByProductId.get(String(p.id)) ?? null,
       };
       if (optionGroups) entry.optionGroups = optionGroups;
       if (description) entry.description = description;

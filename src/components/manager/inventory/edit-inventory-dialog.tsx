@@ -25,6 +25,7 @@ import { scheduleCustomerCatalogAutoPublish, type CustomerCatalogPublishResult }
 import Image from "next/image";
 
 import { sellsBelowCost } from "@/lib/inventory/pricing-guards";
+import { OptionGroupPicker, type PickableOptionGroup } from "@/components/admin/option-groups/OptionGroupPicker";
 
 const formSchema = z.object({
   cost: z.coerce.number().min(0, "Cost must be a positive number."),
@@ -35,6 +36,8 @@ const formSchema = z.object({
   onlinePrice: z.number().min(0, "Online price cannot be negative.").nullable().optional(),
   isAddon: z.boolean(),
   kitchenLocationId: z.string().nullable().optional(),
+  // Modifier groups THIS store attaches, on top of the global product's.
+  optionGroupIds: z.array(z.string()).optional(),
 });
 
 /**
@@ -83,6 +86,12 @@ interface EditInventoryDialogProps {
   onSave: (item: InventoryItem, data: any) => void;
   onToggle: (item: InventoryItem, field: ToggleField) => void;
   isSubmitting: boolean;
+  /**
+   * Option groups the GLOBAL product already gives this item (its own plus, for
+   * a variant, its family parent's). Shown read-only so a manager can see what
+   * is already in effect and does not re-attach it into a duplicate.
+   */
+  inheritedOptionGroupIds?: string[];
 }
 
 function CurrencyFormField({ name, label, form, uom }: { name: "cost" | "sellingPrice", label: string, form: any, uom: string }) {
@@ -270,7 +279,11 @@ function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
 
   React.useEffect(() => {
     const unsub = onSnapshot(
-      doc(db, "stores", storeId, "inventory", item.productId),
+      // item.id is the inventory DOC id; item.productId is a field on it, and
+      // the two are not the same. Watching by productId matched nothing, so
+      // every snapshot reported "missing" and blanked the preview — the exact
+      // failure the comment above says this listener exists to prevent.
+      doc(db, "stores", storeId, "inventory", item.id),
       (snap) => setLocalImageUrl(snap.exists() ? ((snap.data() as InventoryItem).imageUrl ?? null) : null),
       (err) => console.error("Failed to watch this item's local photo:", err)
     );
@@ -401,7 +414,7 @@ function PhotoTab({ item, storeId }: { item: InventoryItem; storeId: string }) {
   );
 }
 
-export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, onToggle, isSubmitting, kitchenLocations }: EditInventoryDialogProps) {
+export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, onToggle, isSubmitting, kitchenLocations, inheritedOptionGroupIds = [] }: EditInventoryDialogProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(refinedFormSchema),
     defaultValues: {
@@ -410,12 +423,40 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
       onlinePrice: item.onlinePrice ?? null,
       isAddon: !!item.isAddon,
       kitchenLocationId: item.kitchenLocationId || null,
+      optionGroupIds: item.optionGroupIds || [],
     },
   });
 
   // Toggles are instant-write (same as the table), so they're tracked as local
   // display state seeded from `item` rather than form fields — flipping one
   // must not wait for "Save Changes", and must not be reverted by it either.
+  // The shared option groups a manager may attach. Read-only for them:
+  // GET /api/admin/option-groups already allows admin+manager, while every
+  // mutation on that route is admin-only, so authoring stays with admins.
+  const [availableOptionGroups, setAvailableOptionGroups] = React.useState<PickableOptionGroup[]>([]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/admin/option-groups", { headers: { Authorization: `Bearer ${idToken}` } });
+        const json = await res.json().catch(() => ({}));
+        if (cancelled || !res.ok || !json?.ok) return;
+        setAvailableOptionGroups(
+          (json.groups || []).filter((g: any) => g.isActive !== false && g.isArchived !== true)
+        );
+      } catch {
+        // Non-fatal: the picker shows its empty state and the rest of the
+        // dialog (pricing, availability) still works.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
   const [isActive, setIsActive] = React.useState(!!item.isActive);
   const [onlineEnabled, setOnlineEnabled] = React.useState(item.onlineEnabled === true);
   const [customerEnabled, setCustomerEnabled] = React.useState(item.customerEnabled === true);
@@ -428,6 +469,9 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
       onlinePrice: item.onlinePrice ?? null,
       isAddon: !!item.isAddon,
       kitchenLocationId: item.kitchenLocationId || null,
+      // Without this the picker opens empty and saving would clear whatever
+      // this store already had attached.
+      optionGroupIds: item.optionGroupIds || [],
     });
     setIsActive(!!item.isActive);
     setOnlineEnabled(item.onlineEnabled === true);
@@ -506,6 +550,24 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
                       <FormControl>
                         <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="optionGroupIds"
+                  render={({ field }) => (
+                    <FormItem>
+                      <OptionGroupPicker
+                        value={field.value as string[] | undefined}
+                        onChange={field.onChange}
+                        available={availableOptionGroups}
+                        inheritedIds={inheritedOptionGroupIds}
+                        inheritedLabel="From the product (all stores)"
+                        label="Extra option groups for this store"
+                        description="Modifiers only THIS branch offers, on top of what the product already gives it. Attaching here changes nothing for any other store. New groups are created by an admin."
+                      />
+                      <FormMessage />
                     </FormItem>
                   )}
                 />

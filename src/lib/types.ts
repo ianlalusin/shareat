@@ -44,9 +44,14 @@ export type Product = {
   isSku?: boolean;
 
   // Modifier / option group references. Order at attach time; the cashier
-  // and the customer modifier pickers iterate in this order. For variants
-  // (kind: "variant"), modifiers are inherited from the parent group product;
-  // per-variant overrides are not supported in this phase.
+  // and the customer modifier pickers iterate in this order.
+  //
+  // A variant INHERITS its family parent's groups and may attach its own on
+  // top — the two are UNIONED, never replaced. A store may also attach extra
+  // groups for itself on its inventory row without touching this global doc,
+  // which every branch shares. `resolveOptionGroupIds`
+  // (lib/server/catalog-shared.ts) is the one place that rule lives, and the
+  // cashier picker, the storefront and the customer app all defer to it.
   optionGroupIds?: string[];
 
   category: string;
@@ -306,6 +311,17 @@ export type InventoryItem = {
    * two can never drift apart.
    */
   customerEnabled?: boolean;
+  /**
+   * Modifier groups THIS STORE attaches, on top of whatever the global product
+   * already gives the item.
+   *
+   * Unioned with the product's (and, for a variant, its family parent's) by
+   * `resolveOptionGroupIds` — never a replacement. This exists so a branch can
+   * offer a modifier the others don't without an admin editing `products`,
+   * which every branch shares. It is the additive counterpart to
+   * `optionOverrides`, which can only take groups AWAY for one store.
+   */
+  optionGroupIds?: string[];
   kitchenLocationId?: string | null;
   kitchenLocationName?: string | null;
   createdAt: Timestamp;

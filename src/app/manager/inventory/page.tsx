@@ -111,6 +111,13 @@ export default function InventoryManagementPage() {
    * on demand in handleBackfill and in the "Add Products" dialog.
    */
   const [productImageById, setProductImageById] = useState<Map<string, string | null>>(new Map());
+  /**
+   * What the GLOBAL product contributes to each item's modifiers — its own
+   * groups unioned with its family parent's, for a variant. Read from the same
+   * single `products` fetch as the photos above; the edit dialog shows it
+   * read-only so a manager can see what is already in effect.
+   */
+  const [productOptionGroupIds, setProductOptionGroupIds] = useState<Map<string, string[]>>(new Map());
 
   useEffect(() => {
     if (!appUser) return;
@@ -119,6 +126,18 @@ export default function InventoryManagementPage() {
       .then((snapshot) => {
         if (cancelled) return;
         setProductImageById(new Map(snapshot.docs.map((d) => [d.id, (d.data() as Product).imageUrl ?? null])));
+
+        // Resolve parent ∪ variant here so the dialog does not have to know
+        // about families. Mirrors resolveOptionGroupIds' product layers.
+        const byId = new Map(snapshot.docs.map((d) => [d.id, d.data() as Product]));
+        const groupIds = new Map<string, string[]>();
+        for (const [id, p] of byId) {
+          const own = Array.isArray(p.optionGroupIds) ? p.optionGroupIds : [];
+          const parent = p.kind === "variant" && p.groupId ? byId.get(String(p.groupId)) : undefined;
+          const inherited = Array.isArray(parent?.optionGroupIds) ? parent!.optionGroupIds : [];
+          groupIds.set(id, Array.from(new Set([...inherited, ...own])));
+        }
+        setProductOptionGroupIds(groupIds);
       })
       .catch((error) => {
         // Non-fatal: rows fall back to no picture for items with no local
@@ -394,7 +413,7 @@ export default function InventoryManagementPage() {
     }
   };
 
-  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; isAddon: boolean; }) => {
+  const handleEditItem = async (item: InventoryItem, data: { cost: number; sellingPrice: number; kitchenLocationId: string | null; onlinePrice: number | null; isAddon: boolean; optionGroupIds?: string[]; }) => {
      if (!activeStore || !appUser) return;
     setIsSubmitting(true);
     const itemDocRef = doc(db, "stores", activeStore.id, "inventory", item.id);
@@ -835,6 +854,7 @@ export default function InventoryManagementPage() {
             storeId={activeStore!.id}
             kitchenLocations={kitchenLocations}
             onSave={handleEditItem}
+            inheritedOptionGroupIds={productOptionGroupIds.get(selectedItem.productId) ?? []}
             onToggle={handleToggle}
             isSubmitting={isSubmitting}
         />

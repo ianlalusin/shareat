@@ -263,6 +263,26 @@ describe("rebuildCustomerCatalog — orderability", () => {
   });
 });
 
+describe("rebuildCustomerCatalog — inventory doc id", () => {
+  it("carries the inventory DOC id, which is not the product id", async () => {
+    // The fixture's doc id is `i_p1` while productId is `p1` — mirroring real
+    // data, where the two never match. POS bill lines and sold-items analytics
+    // key on the doc id, so the snapshot must carry it.
+    const p = product("p1");
+    const { categories } = await build({ products: [p], inventory: [orderableInv("p1", 250)] });
+    expect(allEntries(categories)[0].inventoryId).toBe("i_p1");
+  });
+
+  it("carries each variant's own inventory doc id", async () => {
+    const { products, variants } = kimbap(["Veggies", "Signature"]);
+    const { categories } = await build({
+      products,
+      inventory: variants.map((v) => orderableInv(v.id, 150)),
+    });
+    expect(allEntries(categories)[0].variants?.map((v) => v.inventoryId)).toEqual(["i_v1", "i_v2"]);
+  });
+});
+
 describe("rebuildCustomerCatalog — categories and modifiers", () => {
   it("groups entries by subCategory, sorted, with items sorted by display name", async () => {
     const drink = product("d1", { name: "Iced Tea", subCategory: "Drinks" });
@@ -326,6 +346,40 @@ describe("rebuildCustomerCatalog — categories and modifiers", () => {
       optionGroups: [{ id: "og_local", name: "Local Dip", values: [{ id: "v1", name: "Sukang Pinakurat", priceDelta: 10 }] }],
     });
     expect(allEntries(categories)[0].optionGroups?.map((g) => g.id)).toEqual(["og_local"]);
+  });
+
+  it("picks up a group THIS STORE attached to a single variant, without leaking to its siblings", async () => {
+    const { products, variants } = kimbap(["Veggies", "Signature"]);
+    products[0].optionGroupIds = ["og_dip"]; // family-wide
+    const { categories } = await build({
+      products,
+      inventory: [
+        orderableInv(variants[0].id, 150),
+        // Only Signature's row at THIS store carries the extra group.
+        orderableInv(variants[1].id, 150, { optionGroupIds: ["og_local"] }),
+      ],
+      optionGroups: [
+        { id: "og_dip", name: "Dip", values: [{ id: "cheese", name: "Cheese", priceDelta: 0 }] },
+        { id: "og_local", name: "Branch Special", values: [{ id: "v1", name: "Extra Sauce", priceDelta: 15 }] },
+      ],
+    });
+    const entry = allEntries(categories)[0];
+
+    expect(entry.optionGroups?.map((g) => g.id)).toEqual(["og_dip"]);
+    expect(entry.variants?.[0].optionGroups).toBeUndefined();          // Veggies untouched
+    expect(entry.variants?.[1].optionGroups?.map((g) => g.id)).toEqual(["og_dip", "og_local"]);
+  });
+
+  it("lets a store's own attachment be withheld again by its option overrides", async () => {
+    const p = product("p1", { optionGroupIds: [] });
+    const { categories } = await build({
+      products: [p],
+      inventory: [orderableInv("p1", 250, { optionGroupIds: ["og_local"] })],
+      optionGroups: [{ id: "og_local", name: "Branch Special", values: [{ id: "v1", name: "Extra Sauce", priceDelta: 15 }] }],
+      // Attach and disable must layer, not fight — disable wins.
+      optionOverrides: { disabledGroupIds: ["og_local"], disabledValueKeys: [] },
+    });
+    expect(allEntries(categories)[0].optionGroups).toBeUndefined();
   });
 
   it("attaches this store's option groups, dropping ones it has disabled", async () => {
