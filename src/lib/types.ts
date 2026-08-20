@@ -551,6 +551,20 @@ export type KitchenTicket = {
     // by package tickets), since refill tickets don't go through the
     // session-based flavor-name enrichment package tickets use.
     flavorNote?: string;
+    // ---- Diner self-ordering (CUSTOMER app) ----------------------------------
+    // Set only on tickets a diner placed from their own phone. Such a ticket
+    // carries NO bill line until the kitchen serves it: `billLineId` stays null
+    // and `pendingBillLine` holds everything needed to create the line at that
+    // point. See src/lib/kitchen/customer-order-billing.ts for the contract and
+    // why cancelling one of these must never void bill quantity.
+    /** "customer_app" when the diner placed this themselves. */
+    source?: string | null;
+    /** Marks a ticket whose bill line is created on serve, not on order. */
+    billOnServe?: boolean;
+    /** The line to create/increment on serve. Shape: PendingBillLine. */
+    pendingBillLine?: Record<string, any> | null;
+    /** Stamped the first time this ticket put quantity on the bill. */
+    billedAtClientMs?: number;
     qty: number;
     uom?: string;
     createdByUid: string;

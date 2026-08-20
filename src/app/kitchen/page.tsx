@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
+import { buildCustomerOrderBillLine, pendingBillLineFor, shouldVoidBilledQty } from "@/lib/kitchen/customer-order-billing";
 import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc, DailyMetric } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
@@ -795,6 +796,17 @@ export default function KitchenPage() {
         if (!ticketSnap.exists()) throw new Error('Ticket not found.');
         const old = ticketSnap.data() as KitchenTicket;
         if (old.status === 'served' || old.status === 'cancelled') return null;
+
+        // A customer-app order carries no bill line until now — the diner is
+        // charged for what the kitchen actually hands over. Read the target
+        // line here, while we are still in the transaction's read phase, so we
+        // can tell create-vs-increment below.
+        const pendingBill = pendingBillLineFor(old);
+        const billLineRef = pendingBill
+          ? doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', pendingBill.lineId)
+          : null;
+        const billLineSnap = billLineRef ? await transaction.get(billLineRef) : null;
+
         const qtyOrdered = old.qtyOrdered ?? old.qty ?? 1;
         const qtyServed = (old.qtyServed ?? 0) + qtyToServe;
         const qtyCancelled = old.qtyCancelled ?? 0;
@@ -815,11 +827,44 @@ export default function KitchenPage() {
           durationMs,
           updatedAt: serverTimestamp(),
         };
-        transaction.update(ticketRef, updatePayload);
         const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId);
+        const didBill = !!(pendingBill && billLineRef && billLineSnap);
+
+        // Bill the served quantity for a customer-placed order. Partial serves
+        // bill partially: 1-of-3 served puts exactly 1 on the bill.
+        if (pendingBill && billLineRef && billLineSnap) {
+          if (billLineSnap.exists()) {
+            transaction.update(billLineRef, {
+              qtyOrdered: increment(qtyToServe),
+              updatedAt: serverTimestamp(),
+              updatedByUid: appUser.uid,
+              updatedByName: currentProfile?.name ?? null,
+            });
+          } else {
+            transaction.set(billLineRef, stripUndefined({
+              ...buildCustomerOrderBillLine(pendingBill, qtyToServe),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              updatedByUid: appUser.uid,
+              updatedByName: currentProfile?.name ?? null,
+            }));
+          }
+          // Link the ticket to its line from now on, so the existing cancel and
+          // void paths can find it. Until this point it was deliberately null.
+          updatePayload.billLineId = pendingBill.lineId;
+          updatePayload.billedAtClientMs = nowMs;
+        }
+
+        transaction.update(ticketRef, updatePayload);
         const sessionUpdate: Record<string, any> = {};
         sessionUpdate[`serveCountByType.${old.type}`] = increment(1);
         sessionUpdate[`serveTimeMsTotalByType.${old.type}`] = increment(durationMs);
+        if (didBill) {
+          // The payment path aborts on a stale billingRevision — without this
+          // bump a cashier could settle a bill computed before this line landed.
+          sessionUpdate.billingRevision = increment(1);
+          sessionUpdate.updatedAt = serverTimestamp();
+        }
         transaction.update(sessionRef, sessionUpdate);
         if (old.kitchenLocationId) {
           const rtKdsDocRef = doc(db, 'stores', activeStore.id, 'rtKdsTickets', old.kitchenLocationId);
@@ -893,8 +938,12 @@ export default function KitchenPage() {
           cancelReason: reason,
           updatedAt: serverTimestamp(),
         };
-        if (old.type === 'addon' && old.billLineId) {
-          const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', old.billLineId);
+        // A bill-on-serve ticket is deliberately excluded here: its line only
+        // ever carries the quantity already served, so there is no unserved
+        // quantity on the bill to take back off.
+        const billLineIdToVoid = shouldVoidBilledQty(old) ? old.billLineId : null;
+        if (billLineIdToVoid) {
+          const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', billLineIdToVoid);
           const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId);
           transaction.update(billLineRef, { voidedQty: increment(qtyRemaining), voidReason: "kitchen_cancel", voidNote: "Cancelled by kitchen: " + reason, updatedAt: serverTimestamp() });
           transaction.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
