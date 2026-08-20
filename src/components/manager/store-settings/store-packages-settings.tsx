@@ -18,6 +18,7 @@ import { rebuildStoreConfig } from "@/lib/manager/dataManagement";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
+import { globalInactiveIds } from "@/lib/refill-visibility";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { StorePackage, StoreFlavor, StoreRefill, KitchenLocation, MenuSchedule } from "@/lib/types";
 
@@ -30,6 +31,10 @@ export function StorePackagesSettings({ store }: { store: Store }) {
     const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
     const [kitchenLocations, setKitchenLocations] = useState<KitchenLocation[]>([]);
     const [refills, setRefills] = useState<StoreRefill[]>([]);
+    // Every storeRefill, disabled ones included, so the editor can name the ids a
+    // package still holds but can no longer offer.
+    const [allStoreRefills, setAllStoreRefills] = useState<StoreRefill[]>([]);
+    const [globalRefillDocs, setGlobalRefillDocs] = useState<Array<{ id: string; isActive?: boolean }>>([]);
     const [flavors, setFlavors] = useState<StoreFlavor[]>([]);
     const [schedules, setSchedules] = useState<Map<string, MenuSchedule>>(new Map());
     
@@ -71,6 +76,12 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "storeRefills"), where("isEnabled", "==", true)), (snapshot) => {
             setRefills(snapshot.docs.map(doc => ({ ...doc.data() } as StoreRefill)));
         }));
+        unsubs.push(onSnapshot(collection(db, "stores", store.id, "storeRefills"), (snapshot) => {
+            setAllStoreRefills(snapshot.docs.map(doc => ({ refillId: doc.id, ...doc.data() } as StoreRefill)));
+        }));
+        unsubs.push(onSnapshot(collection(db, "refills"), (snapshot) => {
+            setGlobalRefillDocs(snapshot.docs.map(doc => ({ id: doc.id, isActive: (doc.data() as any).isActive })));
+        }));
         unsubs.push(onSnapshot(query(collection(db, "stores", store.id, "storeFlavors"), where("isEnabled", "==", true)), (snapshot) => {
             setFlavors(snapshot.docs.map(doc => ({ ...doc.data() } as StoreFlavor)));
         }));
@@ -85,6 +96,15 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         setIsLoading(false);
         return () => unsubs.forEach(unsub => unsub());
     }, [store.id, toast]);
+
+    const globalInactive = useMemo(() => globalInactiveIds(globalRefillDocs), [globalRefillDocs]);
+
+    // A globally retired refill must not be offerable, or you could tick something
+    // that will never render for a customer.
+    const selectableRefills = useMemo(
+        () => refills.filter(r => !globalInactive.has(r.refillId)),
+        [refills, globalInactive]
+    );
 
     const filteredPackages = useMemo(() => {
         if (!availableNowFilter) {
@@ -291,7 +311,9 @@ export function StorePackagesSettings({ store }: { store: Store }) {
                     onSave={handleSave}
                     item={editingPackage}
                     kitchenLocations={kitchenLocations}
-                    availableRefills={refills}
+                    availableRefills={selectableRefills}
+                    allStoreRefills={allStoreRefills}
+                    globalInactive={globalInactive}
                     availableFlavors={flavors}
                     availableSchedules={Array.from(schedules.values())}
                 />

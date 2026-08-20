@@ -4,6 +4,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { applyRefillTap } from "@/lib/refill-selection";
+import { globalInactiveIds } from "@/lib/refill-visibility";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,7 @@ function POSContent({
   const { toast } = useToast();
   const isOnline = useOnlineStatus();
   const [storeRefills, setStoreRefills] = useState<StoreRefill[]>([]);
-  const [globalRefills, setGlobalRefills] = useState<Refill[]>([]);
+  const [allGlobalRefills, setAllGlobalRefills] = useState<Refill[]>([]);
   const [storeFlavors, setStoreFlavors] = useState<StoreFlavor[]>([]);
   const [currentPackage, setCurrentPackage] = useState<StorePackage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -94,8 +95,11 @@ function POSContent({
         );
     }));
     
-    const globalRefillsQuery = query(collection(db, "refills"), where("isActive", "==", true));
-    unsubs.push(onSnapshot(globalRefillsQuery, (snapshot) => setGlobalRefills(snapshot.docs.map(d => ({id: d.id, ...d.data()} as Refill)))));
+    // Read every global refill, not just the active ones: the list has to know
+    // which ids are RETIRED so it can hide them. Filtering to isActive==true here
+    // is why deactivating an item in the global admin appeared to do nothing.
+    const globalRefillsQuery = query(collection(db, "refills"));
+    unsubs.push(onSnapshot(globalRefillsQuery, (snapshot) => setAllGlobalRefills(snapshot.docs.map(d => ({id: d.id, ...d.data()} as Refill)))));
 
     const flavorsQuery = query(
         collection(db, "stores", storeId, "storeFlavors"),
@@ -124,22 +128,29 @@ function POSContent({
     return () => unsubs.forEach(unsub => unsub());
   }, [storeId, session.packageOfferingId]);
   
+  // Only ACTIVE globals carry the flavor rules; retired ids are hidden outright.
+  const globalRefills = useMemo(
+    () => allGlobalRefills.filter(r => r.isActive !== false),
+    [allGlobalRefills]
+  );
+  const globalInactive = useMemo(() => globalInactiveIds(allGlobalRefills), [allGlobalRefills]);
+
   const filteredRefills = useMemo(() => {
-    let availableRefills = storeRefills;
+    let availableRefills = storeRefills.filter(r => !globalInactive.has(r.refillId));
 
     if (currentPackage && currentPackage.refillsAllowed && currentPackage.refillsAllowed.length > 0) {
         const allowedIds = new Set(currentPackage.refillsAllowed);
         availableRefills = availableRefills.filter(r => allowedIds.has(r.refillId));
     }
-    
+
     return availableRefills;
-  }, [storeRefills, currentPackage]);
+  }, [storeRefills, currentPackage, globalInactive]);
 
   const otherRefills = useMemo(() => {
     return (storeRefills || [])
-      .filter(r => (r as any).isOther === true)
+      .filter(r => (r as any).isOther === true && !globalInactive.has(r.refillId))
       .sort((a,b) => (a.sortOrder - b.sortOrder) || a.refillName.localeCompare(b.refillName));
-  }, [storeRefills]);
+  }, [storeRefills, globalInactive]);
 
   const hasOther = useMemo(() => {
     return otherRefills.some(r => Number(otherQty[r.refillId] || 0) > 0);

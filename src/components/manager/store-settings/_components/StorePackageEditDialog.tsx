@@ -15,6 +15,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import type { StorePackage, StoreRefill, StoreFlavor, KitchenLocation, MenuSchedule } from "@/lib/types";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { AlertTriangle } from "lucide-react";
+import { partitionVisibleRefills, stalePackageIds } from "@/lib/refill-visibility";
 
 const formSchema = z.object({
     pricePerHead: z.coerce.number().min(0),
@@ -47,16 +49,47 @@ interface StorePackageEditDialogProps {
   availableRefills: StoreRefill[];
   availableFlavors: StoreFlavor[];
   availableSchedules: MenuSchedule[];
+  /** Every storeRefill incl. disabled — used to NAME ids the pick list cannot show. */
+  allStoreRefills?: StoreRefill[];
+  /** Global refill ids retired chain-wide. */
+  globalInactive?: Set<string>;
 }
 
-function PackageFormFields({ form, kitchenLocations, availableSchedules, availableRefills, availableFlavors }: {
+function PackageFormFields({ form, kitchenLocations, availableSchedules, availableRefills, availableFlavors, allStoreRefills = [], globalInactive }: {
   form: any;
   kitchenLocations: KitchenLocation[];
   availableSchedules: MenuSchedule[];
   availableRefills: StoreRefill[];
   availableFlavors: StoreFlavor[];
+  allStoreRefills?: StoreRefill[];
+  globalInactive?: Set<string>;
 }) {
   const isBundle = form.watch("isBundle");
+
+  const selectedRefillIds: string[] = form.watch("refillsAllowed") || [];
+
+  // Ids the pick list cannot show — disabled at this store, retired globally, or
+  // deleted. They stay in refillsAllowed invisibly: not listed, not unticked.
+  const staleIds = stalePackageIds(selectedRefillIds, availableRefills.map(r => r.refillId));
+  const nameById = new Map(allStoreRefills.map(r => [r.refillId, r.refillName]));
+  const staleEntries = staleIds.map(id => ({
+    id,
+    label: nameById.get(id) ?? id,
+    reason: !nameById.has(id)
+      ? "deleted"
+      : globalInactive?.has(id)
+        ? "retired in the global menu"
+        : "disabled at this store",
+  }));
+
+  const preview = partitionVisibleRefills(
+    availableRefills,
+    globalInactive ?? new Set<string>(),
+    selectedRefillIds
+  );
+
+  const clearStale = () =>
+    form.setValue("refillsAllowed", selectedRefillIds.filter(id => !staleIds.includes(id)), { shouldDirty: true });
   return (
     <>
       <FormField control={form.control} name="isBundle" render={({ field }) => (
@@ -141,11 +174,44 @@ function PackageFormFields({ form, kitchenLocations, availableSchedules, availab
               </FormItem>
           )} />
       </div>
+
+      {/* What the customer will actually get. A package can silently grant a meat
+          only through a refill that is disabled or retired, in which case the meat
+          never appears — the failure has no error anywhere else. */}
+      <div className="rounded-md border p-3 space-y-2">
+          <p className="text-sm font-medium">Customers will see</p>
+          {preview.mains.length === 0 ? (
+              <p className="text-sm font-semibold text-destructive flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4" /> No refills at all — this package would offer nothing.
+              </p>
+          ) : (
+              <p className="text-sm">{preview.mains.map(r => r.refillName).join(", ")}</p>
+          )}
+          {preview.others.length > 0 && (
+              <p className="text-xs text-muted-foreground">Other Refills: {preview.others.map(r => r.refillName).join(", ")}</p>
+          )}
+
+          {staleEntries.length > 0 && (
+              <div className="rounded border border-amber-300 bg-amber-50 p-2 space-y-1.5 dark:bg-amber-900/20 dark:border-amber-800">
+                  <p className="text-xs font-semibold flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5" /> This package still grants refills it can no longer offer
+                  </p>
+                  <ul className="text-xs text-muted-foreground pl-1 space-y-0.5">
+                      {staleEntries.map(e => (
+                          <li key={e.id}>{e.label} — {e.reason}</li>
+                      ))}
+                  </ul>
+                  <Button type="button" variant="outline" size="sm" onClick={clearStale}>
+                      Clear stale entries
+                  </Button>
+              </div>
+          )}
+      </div>
     </>
   )
 }
 
-export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenLocations, availableRefills, availableFlavors, availableSchedules }: StorePackageEditDialogProps) {
+export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenLocations, availableRefills, availableFlavors, availableSchedules, allStoreRefills, globalInactive }: StorePackageEditDialogProps) {
   const isMobile = useIsMobile();
   
   const form = useForm<FormValues>({
@@ -187,7 +253,7 @@ export function StorePackageEditDialog({ isOpen, onClose, onSave, item, kitchenL
     });
   };
 
-  const formContent = <PackageFormFields form={form} kitchenLocations={kitchenLocations} availableSchedules={availableSchedules} availableRefills={availableRefills} availableFlavors={availableFlavors} />;
+  const formContent = <PackageFormFields form={form} kitchenLocations={kitchenLocations} availableSchedules={availableSchedules} availableRefills={availableRefills} availableFlavors={availableFlavors} allStoreRefills={allStoreRefills} globalInactive={globalInactive} />;
   
   if (isMobile) {
     return (
