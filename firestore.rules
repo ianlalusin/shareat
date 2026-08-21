@@ -230,6 +230,29 @@ service cloud.firestore {
       allow read, write: if hasStoreAccess(storeId);
     }
 
+    // -----------------------------
+    // FLASH ADS (CUSTOMER-VISIBLE PROMOS)
+    // -----------------------------
+    // The only collection the customer Hub reads straight from Firestore
+    // instead of through an Admin-SDK route (see CUSTOMER
+    // src/app/dashboard/page.tsx). It had no rule at all here, so every Hub
+    // load logged a permission-denied and diners never saw an ad — the promo
+    // silently did nothing. Staff read/write is already covered by the
+    // stores/{storeId}/{coll} catch-all below; this block adds only the
+    // customer's own read.
+    //
+    // `list` as well as `get`: the Hub fetches its store's ads in one query.
+    // Firestore can only satisfy a rule that inspects resource.data on a query
+    // constrained the same way, so the Hub MUST ask for
+    // where('active','==',true). An unfiltered read stays denied by design —
+    // that is precisely what stops a draft ad reaching a paying diner, so do
+    // not "fix" a future denial by dropping the active check here.
+    match /stores/{storeId}/flashAds/{adId} {
+      allow get, list: if isCustomer()
+        && customerStoreId() == storeId
+        && resource.data.active == true;
+    }
+
     // The store document itself (kept separate so the collection-scoped rule
     // below can inspect the top-level collection name as a plain string).
     // Write/delete require isManagerOrAdmin(): this doc holds taxRatePct, tin,
