@@ -23,7 +23,57 @@
 
 ---
 
-### Task 0: Measure the volume (pre-flight, read-only)
+## Census outcome & revised recommendation (2026-08-22)
+
+Task 0 is complete. Measured, with the corrected field:
+
+| | Purgeable at 90d |
+|---|---|
+| Sessions past horizon | 5,841 (Lipa 4,356 · Malvar 1,398 · TEST 87) |
+| `kitchentickets` | ≈27,672 of 42,640 |
+| `sessionBillLines` | ≈8,381 of 17,008 |
+| `pinRegistry` expired >7d | 4,878 of 5,296 |
+| **Total** | **≈40,900 documents** |
+
+Data quality is clean: **0** sessions missing `startedAtClientMs`, **0**
+non-terminal sessions in the sampled old population. The purge predicate is
+sound.
+
+**But the payoff is close to nothing, and the count threshold in Task 0 step 2
+was the wrong test.** It measured documents when it should have measured cost:
+
+- Deletes: ~40,900 ops ≈ **$0.01, one-time**.
+- Storage reclaimed: ~40,900 small documents ≈ tens of MB ≈ **under a cent a month**.
+- **No query gets faster.** Every bulk reader is already date-bounded —
+  `SyncKdsTicketsTool` to 3 days, `rebuildDailyAnalyticsFromReceiptsServer` to
+  the rebuild range ±1 day, and the customer app's `refillTicketState` to a
+  single session. Nothing scans the collection group unbounded.
+- PIN space is 32⁶ ≈ 1.07 billion, so 5,296 live pins is 0.0005% occupancy —
+  no collision pressure, and issuance retries were never at risk.
+
+Against that, purging tickets **trades away reconstructibility**: today the
+`kitchen.*` block can be rebuilt from source; afterwards it exists in exactly
+one place — the day doc — protected by a guard we would have to keep correct
+forever.
+
+**Recommendation, split by target:**
+
+1. **Pins — do it.** 4,878 documents that are pure ephemera: a closed session's
+   PIN has no analytic value, feeds no aggregate, and needs no horizon or guard.
+   CUSTOMER's `cleanup-archived-pins` route was built for this and has evidently
+   never run. This is Task 5's pin half, and it is **independently shippable** —
+   Tasks 1-4 are not prerequisites. Approved by Ian 2026-08-22.
+2. **Kitchen tickets and bill lines — I would skip.** Pennies saved in exchange
+   for making kitchen metrics single-copy. Tasks 1-4, 6, 7 stay written and
+   ready; run them only if there is a reason the numbers don't capture (export
+   size, console usability, or a decision to archive tickets to Postgres first).
+
+The rest of this plan is unchanged and remains valid if the ticket purge is
+wanted.
+
+---
+
+### Task 0: Measure the volume (pre-flight, read-only) — COMPLETE
 
 **Files:**
 - Read-only; no repo changes.
