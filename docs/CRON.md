@@ -2,8 +2,8 @@
 
 ## Active-store list caching
 
-`reconcile-analytics` and `holiday-calendar` both fire every 15 minutes, and
-`log-weather` hourly — each of them (plus `generate-forecast`,
+`reconcile-analytics` fires every 15 minutes and `log-weather` hourly — each of
+them (plus `holiday-calendar`, `generate-forecast`,
 `update-accuracy`, `rebuild-presets`, `generate-daily-insight`, and the
 external `/api/external/stores` API) used to independently run
 `stores` WHERE `isActive == true` to get the active-store list. That query
@@ -21,15 +21,11 @@ scanning. The cache is self-healing (a missing or expired doc just triggers a
 fresh scan) and server-only — `system/*` is excluded from both client
 catch-alls in `firestore.rules`, so it's never reachable from the app.
 
-**Known gap:** `reconcile-analytics` and `holiday-calendar` run on the exact
-same `*/15 * * * *` schedule, so on a refresh tick both can still miss the
-cache and scan concurrently — there's no lock, just a TTL. That's an accepted
-tradeoff (a harmless duplicate scan+write once every couple of cycles) rather
-than a distributed lock for a background read-cost optimization. Every other
-consumer isn't aligned to that same instant and gets a real cache hit most of
-the time. Offsetting one of the two schedules (e.g. `holiday-calendar` to
-`7-59/15 * * * *`) would remove even that overlap, at the cost of a Cloud
-Scheduler change outside this repo — not done here.
+**Resolved 2026-08-22:** this used to warn that `reconcile-analytics` and
+`holiday-calendar` shared a `*/15 * * * *` schedule and could both miss the
+cache on a refresh tick. `holiday-calendar` now runs monthly (`0 2 1 * *`), so
+the two no longer collide and no offset is needed. `reconcile-analytics` is the
+only `*/15` job left.
 
 ## The scheduled endpoints
 
@@ -55,7 +51,7 @@ from this doc. All jobs are `Asia/Manila`.
 | `reconcile-analytics` | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` | asia-southeast1 | ENABLED |
 | `purge-expired-pins` | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM) | asia-southeast1 | ENABLED |
 | `rebuild-presets` | `GET /api/cron/rebuild-presets` | `30 0 * * *` (12:30 AM) | **asia-east1** | ENABLED |
-| `holiday-calendar` | `GET /api/cron/holiday-calendar` | — | — | **NO JOB EXISTS** |
+| `holiday-calendar` | `GET /api/cron/holiday-calendar` | `0 2 1 * *` (1st, 2 AM) | asia-southeast1 | ENABLED |
 
 Discrepancies this table corrects, all confirmed live:
 
@@ -71,11 +67,43 @@ Discrepancies this table corrects, all confirmed live:
   `https://shareat--shareat-hub-v2.asia-southeast1.hosted.app`, newer ones
   (`reconcile-analytics`, `rebuild-presets`, `purge-expired-pins`) target the
   custom domain `https://app.shareat.net`. Both resolve to the same backend.
-- **`holiday-calendar` has no Cloud Scheduler job in any region** — the route
-  exists in this repo and is described below, but nothing ever calls it, so the
-  per-store holiday scan never runs. Consistent with the holiday-forecasting
-  feature having been built but never rolled out. Either create the job or stop
-  documenting it as scheduled; not decided here.
+- `holiday-calendar` **had no Cloud Scheduler job in any region** until
+  2026-08-22 — the route shipped but nothing ever called it, so no store ever
+  got a holiday calendar. Now scheduled monthly; see below.
+
+### `holiday-calendar` — monthly, all stores per fire
+
+One Gemini call per AI-enabled store builds that store's calendar from its own
+address: PH regular and special non-working holidays, movable religious dates
+(Holy Week, Eid'l Fitr/Adha, Chinese New Year), commercial occasions, **and
+local town/city fiestas** (`scope: 'local'`). Written to
+`stores/{id}/holidayCalendar/{YYYY}` with `merge: true`, so newly proclaimed
+dates append rather than replacing the year. Then
+`recomputeHolidayEffectsForStore` re-derives the learned effects.
+
+It generates **whole years** (prior + current, plus next each December), not
+just the current month — the sales forecast reads forward, so a month-only
+calendar would leave it blind past the 30th. The monthly cadence is how often
+it re-checks; the horizon it writes is a year.
+
+**Why one fire must process every store.** This route used to run `*/15` and
+advance ONE store per fire, deduped by ISO week. Scheduling that monthly is
+silently broken: every fire lands in a different ISO week, so the done-list is
+always empty and the picker always returns the first store — store #1 refreshed
+forever, every other store never, with a cheerful `200 OK` each time. So the
+runner was changed to process all due stores in one fire and the dedupe key
+moved from ISO week to `YYYY-MM` (`system/holidayCronLog.months[YYYY-MM]`).
+
+Stores are sequential and isolated by try/catch; a store is marked done only
+after it succeeds. A timeout or a single bad store therefore leaves the rest
+retryable — just force-run the job again within the same month and it picks up
+only the stragglers. Partial failures still return `200` with per-store detail
+in the body; check `failed` in the response or the log line.
+
+```bash
+# force a run (safe to repeat — already-done stores are skipped)
+gcloud scheduler jobs run holiday-calendar   --location=asia-southeast1 --project=shareat-hub-v2
+```
 
 ### `purge-expired-pins` rollout notes
 
@@ -175,12 +203,12 @@ gcloud scheduler jobs create http rebuild-presets \
 
 gcloud scheduler jobs create http holiday-calendar \
   --location="$REGION" \
-  --schedule="*/15 * * * *" \
+  --schedule="0 2 1 * *" \
   --time-zone="Asia/Manila" \
   --uri="$BACKEND_URL/api/cron/holiday-calendar" \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
-  --attempt-deadline=120s
+  --attempt-deadline=600s
 
 # NOTE the ?write=1 — without it this route only reports and deletes nothing.
 gcloud scheduler jobs create http purge-expired-pins \

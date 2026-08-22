@@ -1,20 +1,26 @@
-// Pure scheduling helpers for the weekly per-store holiday calendar cron.
+// Pure scheduling helpers for the monthly per-store holiday calendar cron.
 // All use UTC getters; the caller passes a Manila-shifted Date.
 
-export function isoWeekKey(date: Date): string {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const dayNum = d.getUTCDay() || 7;          // Mon=1..Sun=7
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);  // shift to the week's Thursday
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+/**
+ * Dedupe key for a cron run: `YYYY-MM`.
+ *
+ * Was `isoWeekKey` when this cron fired every 15 minutes and advanced one store
+ * per fire. It now runs monthly and processes every due store in one fire, so
+ * the key must be the month — a week key would reset between runs and make the
+ * done-list permanently empty.
+ */
+export function monthKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** First store id not present in doneStoreIds, or null when all are done. */
-export function pickDueStore(allStoreIds: string[], doneStoreIds: string[]): string | null {
+/**
+ * Every store id not already processed this period. Ids in `doneStoreIds` that
+ * are no longer active stores are simply ignored, so a deleted or
+ * AI-disabled store can't wedge the list.
+ */
+export function pickDueStores(allStoreIds: string[], doneStoreIds: string[]): string[] {
   const done = new Set(doneStoreIds);
-  for (const id of allStoreIds) if (!done.has(id)) return id;
-  return null;
+  return allStoreIds.filter((id) => !done.has(id));
 }
 
 /** Prior + current year (so last year's holidays seed learning); + next year in December. */

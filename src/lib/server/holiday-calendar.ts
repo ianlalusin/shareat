@@ -6,7 +6,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
 import { getActiveStores } from "@/lib/server/active-stores-cache";
 import { generateHolidayCalendar } from "@/ai/flows/generate-holiday-calendar";
-import { isoWeekKey, pickDueStore, yearsToGenerate } from "@/lib/holidays/holiday-cron";
+import { monthKey, pickDueStores, yearsToGenerate } from "@/lib/holidays/holiday-cron";
 import { recomputeHolidayEffectsForStore } from "@/lib/server/holiday-effects";
 import type { HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
 
@@ -51,32 +51,52 @@ export async function generateAndStoreHolidayCalendar(
   return { storeId: store.id, yearsWritten: byYear.size, entriesWritten };
 }
 
-async function markStoreDone(weekKey: string, storeId: string): Promise<void> {
+async function markStoreDone(periodKey: string, storeId: string): Promise<void> {
   const db = getAdminDb();
   await db.doc(HOLIDAY_CRON_LOG).set(
-    { weeks: { [weekKey]: { doneStoreIds: FieldValue.arrayUnion(storeId), lastFireAt: Timestamp.now() } } },
+    { months: { [periodKey]: { doneStoreIds: FieldValue.arrayUnion(storeId), lastFireAt: Timestamp.now() } } },
     { merge: true },
   );
 }
 
 /**
- * Process ONE store that hasn't been refreshed this ISO week. Generates its
- * calendar, recomputes its learned effects, and marks it done. Each cron fire
- * (every 15 min) advances one store, so every active AI store is refreshed ~weekly.
+ * Refresh the holiday calendar for every AI-enabled store that has not been
+ * done this calendar month, in a single fire.
+ *
+ * Previously this processed ONE store per fire, deduped by ISO week, because it
+ * ran every 15 minutes. On a monthly schedule that design silently breaks: each
+ * fire lands in a different ISO week, so the done-list is always empty and the
+ * picker always returns the first store — store #1 would be refreshed forever
+ * and every other store never, while the route still returned 200 OK. Hence
+ * both changes together: month-keyed dedupe, and all due stores per fire.
+ *
+ * Stores are processed sequentially (one Gemini call each) and isolated by
+ * try/catch, so one failing store cannot abort the rest. Because each store is
+ * marked done only after it succeeds, a timeout or partial failure can simply
+ * be retried within the same month and will pick up only the stragglers.
  */
-export async function runHolidayCalendarForDueStore(): Promise<{
-  skipped: boolean;
-  reason: string;
-  storeId?: string;
-  result?: { storeId: string; yearsWritten: number; entriesWritten: number };
+export async function runHolidayCalendarForAllDueStores(): Promise<{
+  periodKey: string;
+  totalAiStores: number;
+  processed: number;
+  skipped: number;
+  failed: number;
+  results: Array<{
+    storeId: string;
+    status: "generated" | "skipped" | "failed";
+    reason?: string;
+    yearsWritten?: number;
+    entriesWritten?: number;
+  }>;
 }> {
   const db = getAdminDb();
   const manila = new Date(Date.now() + 8 * 3600 * 1000);
-  const weekKey = isoWeekKey(manila);
+  const periodKey = monthKey(manila);
+  const years = yearsToGenerate(manila);
 
   const logSnap = await db.doc(HOLIDAY_CRON_LOG).get();
   const doneStoreIds: string[] = logSnap.exists
-    ? (logSnap.data()?.weeks?.[weekKey]?.doneStoreIds ?? [])
+    ? (logSnap.data()?.months?.[periodKey]?.doneStoreIds ?? [])
     : [];
 
   const activeStores = await getActiveStores(db);
@@ -88,19 +108,47 @@ export async function runHolidayCalendarForDueStore(): Promise<{
     storeById.set(s.id, { id: s.id, address: s.address ?? undefined });
   }
 
-  const dueId = pickDueStore(aiStoreIds, doneStoreIds);
-  if (!dueId) return { skipped: true, reason: `All ${aiStoreIds.length} AI store(s) done for ${weekKey}.` };
+  const due = pickDueStores(aiStoreIds, doneStoreIds);
+  const results: Array<{
+    storeId: string;
+    status: "generated" | "skipped" | "failed";
+    reason?: string;
+    yearsWritten?: number;
+    entriesWritten?: number;
+  }> = [];
 
-  // Honor the master AI switch; mark done so we don't retry it all week.
-  if (!(await isStoreAiEnabled(db, dueId))) {
-    await markStoreDone(weekKey, dueId);
-    return { skipped: true, reason: `Store ${dueId} AI disabled; marked done.`, storeId: dueId };
+  for (const storeId of due) {
+    try {
+      // Honor the master AI switch; mark done so we don't retry it all month.
+      if (!(await isStoreAiEnabled(db, storeId))) {
+        await markStoreDone(periodKey, storeId);
+        results.push({ storeId, status: "skipped", reason: "AI disabled" });
+        continue;
+      }
+
+      const result = await generateAndStoreHolidayCalendar(storeById.get(storeId)!, years);
+      await recomputeHolidayEffectsForStore(storeId);
+      await markStoreDone(periodKey, storeId);
+      results.push({
+        storeId,
+        status: "generated",
+        yearsWritten: result.yearsWritten,
+        entriesWritten: result.entriesWritten,
+      });
+    } catch (err: any) {
+      // Deliberately NOT marked done — a failed store is retried on the next
+      // fire within the same month rather than being written off.
+      console.error(`[holiday-calendar] store ${storeId} failed:`, err);
+      results.push({ storeId, status: "failed", reason: err?.message ?? "unknown error" });
+    }
   }
 
-  const years = yearsToGenerate(manila);
-  const result = await generateAndStoreHolidayCalendar(storeById.get(dueId)!, years);
-  await recomputeHolidayEffectsForStore(dueId);
-  await markStoreDone(weekKey, dueId);
-
-  return { skipped: false, reason: `Generated holiday calendar for ${dueId} (${weekKey}).`, storeId: dueId, result };
+  return {
+    periodKey,
+    totalAiStores: aiStoreIds.length,
+    processed: results.filter((r) => r.status === "generated").length,
+    skipped: results.filter((r) => r.status === "skipped").length,
+    failed: results.filter((r) => r.status === "failed").length,
+    results,
+  };
 }
