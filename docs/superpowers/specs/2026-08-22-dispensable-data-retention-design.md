@@ -2,7 +2,14 @@
 
 **Date:** 2026-08-22
 **Repo:** POS (`sev5_advanced`) — the tickets, the rebuild, and the guard all live here.
-**Status:** Approved design, pending implementation plan.
+**Status:** Costed and partly declined. The **PIN purge shipped and ran**
+(4,878 deleted 2026-08-22, `scripts/purge-expired-pins.ts`). The **kitchen-ticket
+and bill-line purge was deliberately not built** — safe and ready, but worth
+about a penny and it would make kitchen metrics single-copy. See
+`docs/superpowers/plans/2026-08-22-dispensable-data-retention.md` for the
+measured numbers, the revisit triggers, and the documented pin-cron follow-up.
+The design below stands as written and needs no revision if the ticket purge is
+ever revived.
 
 ## 1. Problem
 
@@ -251,13 +258,19 @@ the other seven cron routes.
   already archived**, i.e. the existing `cleanup-archived-pins` route has never
   been run. ~10,269 sessions across 6 active stores (~4.2 tickets and ~1.7 bill
   lines per session).
-- **The age split is still unmeasured.** The first census asked for sessions
-  older than 30 days using `createdAtClientMs` and got zero everywhere — the
-  wrong field (see §3). `census2.cjs` re-measures it per store using
-  `startedAtClientMs`, plus a 25-session sample to estimate purgeable
-  subcollection documents. Run it before implementing Tasks 4-7. If the estimate
-  lands under ~10,000 tickets, land the guard and the pin sweep and defer the
-  ticket purge.
+- **Age split, measured.** ~5,841 sessions past 90 days → ≈27,672 tickets and
+  ≈8,381 bill lines eligible. Zero sessions missing `startedAtClientMs`, zero
+  non-terminal sessions in the sampled old population, so the purge predicate is
+  sound.
+- **No data is a year old.** Oldest session anywhere is Lipa, 2026-01-16 (217
+  days). A 365-day horizon would delete nothing today and only ~5,000 tickets a
+  year from now — the horizon and the eligible volume move in opposite
+  directions, so a longer window shrinks the purge rather than justifying it.
+- **The decisive finding was cost, not count.** ≈40,900 purgeable documents are
+  worth ~$0.01 one-time in delete ops and well under a cent a month in storage,
+  and no query gets faster: every bulk reader is already date-bounded
+  (`SyncKdsTicketsTool` 3 days, this rebuild its own range ±1 day, CUSTOMER's
+  `refillTicketState` one session). Measuring document count was the wrong test.
 
 ## 8. Non-goals
 

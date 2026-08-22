@@ -10,6 +10,20 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-dispensable-data-retention-design.md`
 
+## STATUS — read this first (2026-08-22)
+
+This plan is **partly executed and partly shelved on purpose.**
+
+| Part | Status |
+|---|---|
+| Expired-PIN purge | **DONE.** 4,878 deleted, 418 kept. `scripts/purge-expired-pins.ts`, commit `8528af0` |
+| Scheduling that purge nightly | **Documented, not built** — see "Follow-up: schedule the pin sweep" below |
+| Kitchen-ticket / bill-line purge (Tasks 1-4, 6, 7) | **Deliberately not built.** Safe and ready, but not worth doing — see the recommendation below |
+
+Tasks 1-4, 6 and 7 remain written and valid. Do not treat them as pending work;
+treat them as a design that was costed and declined. Anyone reviving them should
+read the recommendation first and check whether its triggers have fired.
+
 ## Global Constraints
 
 - **Retention horizon: 90 days.** Not 30 — month-end reconcile of the previous month lands near a 30-day edge.
@@ -68,8 +82,62 @@ forever.
    ready; run them only if there is a reason the numbers don't capture (export
    size, console usability, or a decision to archive tickets to Postgres first).
 
-The rest of this plan is unchanged and remains valid if the ticket purge is
-wanted.
+### A longer horizon makes it smaller, not more worthwhile
+
+Asked whether a one-year horizon changes the answer. It does not — it makes the
+case worse. Measured 2026-08-22:
+
+| Store | Oldest session | Age | Sessions >365d |
+|---|---|---|---|
+| Lipa | 2026-01-16 | 217d | **0** |
+| Malvar | 2026-02-02 | 201d | 0 |
+| TEST (`pVHSvbG8…`) | 2026-01-31 | 202d | 0 |
+| Banay-Banay | 2026-06-17 | 65d | 0 |
+| Davao | 2026-07-21 | 31d | 0 |
+
+**There is no year-old data anywhere in the system.** A 365-day policy would
+delete nothing today, and a year from now it would reach only Lipa's Jan-Feb
+2026 window — roughly 5,000 tickets, about a fifth of what is eligible at 90
+days right now. The horizon and the eligible volume move in opposite directions,
+so waiting is strictly worse than acting, and acting was already not worth it.
+
+Growth is ~250 tickets/day across all stores (~91k/year), so 500k tickets is
+around 2031.
+
+### Triggers to revisit — not a date
+
+1. Total `kitchentickets` crosses ~500k.
+2. Tickets get archived to Postgres for other reasons — reconstructibility moves
+   to the droplet and purging Firestore becomes free upside.
+3. Something concretely hurts: export duration, console usability, or a
+   retention/compliance rule.
+
+## Follow-up: schedule the pin sweep (documented, not built)
+
+Pins are the one target that genuinely recurs. 5,296 accumulated in seven months
+and 4,878 were just cleared; at that rate the registry is back to ~5,000 by
+around March 2027. Running `npm run purge:pins --write` by hand works but will
+be forgotten.
+
+When this gets built, it is Task 6 minus everything that made Task 6
+complicated — no retention horizon, no rebuild guard, no shared `runPurge`
+extraction:
+
+- **Create** `src/app/api/cron/purge-expired-pins/route.ts`, copying the auth and
+  shape of `src/app/api/cron/reconcile-analytics/route.ts` verbatim:
+  `runtime = "nodejs"`, `Authorization: Bearer ${CRON_SECRET}`, 500 on missing
+  secret, 401 on mismatch.
+- **Extract** the query and batched-delete body of `scripts/purge-expired-pins.ts`
+  into `src/lib/server/retention/purge-pins.ts` as
+  `purgeExpiredPins(db: Firestore, opts: { nowMs: number; write: boolean; graceDays?: number }): Promise<{ total: number; candidates: number; deleted: number }>`,
+  and have both the script and the route call it so they cannot drift.
+- **Keep both safety rails** from the script: the 7-day grace window, and the
+  refusal to run when every pin matches the filter.
+- **Gate writes** behind `?write=1` like the other cron routes, so the job can be
+  scheduled and observed for a night before it is armed.
+- **Schedule** weekly, not nightly — the registry accumulates ~25 pins/day, so a
+  daily sweep is wasted invocations. `0 3 * * 0` Asia/Manila. Add the entry to
+  `docs/CRON.md` alongside the existing seven.
 
 ---
 
