@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, ScrollText, KeyRound as KeyIcon, UserPlus, Coins as CoinIcon, MapPin, LogIn, ShieldAlert } from "lucide-react";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
 
@@ -46,6 +46,18 @@ function toLocalDigits(value: string): string {
   return value.replace(/\D/g, "").replace(/^63/, "").replace(/^0/, "");
 }
 
+/**
+ * "2 hours" / "90 minutes" — the presence window comes from the server
+ * (PRESENCE_WINDOW_MS) so this copy cannot drift from the rule it describes.
+ */
+function formatWindow(minutes: number): string {
+  if (minutes >= 60 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 export function CustomersAdmin({ storeId }: { storeId?: string }) {
   const { user, appUser } = useAuthContext();
   const { confirm, Dialog } = useConfirmDialog();
@@ -57,8 +69,18 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [notFound, setNotFound] = useState(false);
-  /** Store name when the customer exists but is outside this store's window. */
-  const [outOfScope, setOutOfScope] = useState<string | null>(null);
+  /**
+   * Set when the account exists but nothing puts it inside this store's
+   * presence window. Carries the window and this store's own last-visit stamp
+   * so the card can name the real blocker — recency — instead of implying the
+   * record lives at another branch. It does not: `customers` is global.
+   */
+  const [outOfScope, setOutOfScope] = useState<{
+    storeName: string;
+    lastVisitHereMs: number | null;
+  } | null>(null);
+  /** Presence window in minutes, served alongside the scoped payload. */
+  const [windowMinutes, setWindowMinutes] = useState(120);
   const [scope, setScope] = useState<"store" | "global">("store");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -119,6 +141,7 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to load customers.");
       setScope(json.scope === "global" ? "global" : "store");
+      if (Number(json.windowMinutes) > 0) setWindowMinutes(Number(json.windowMinutes));
       setAllAccounts(json.customers || []);
       setLogs(json.logs || []);
       setStats(json.stats || null);
@@ -213,6 +236,8 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
   const canReset =
     appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin;
 
+  const windowLabel = formatWindow(windowMinutes);
+
   function handlePickAccount(phone: string) {
     setPhoneInput(phone);
     // Pass phone directly so we don't race the React state update.
@@ -239,10 +264,18 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
       if (!res.ok) throw new Error(json.error || "Lookup failed.");
       if (!json.found) {
         setNotFound(true);
-        // The customer exists but belongs to another branch's window. Say so
-        // rather than "not found", which reads as a typo and leaves the
-        // cashier retyping while the customer waits.
-        setOutOfScope(json.outOfScope === true ? json.storeName || "this store" : null);
+        // The account exists, it is just outside this store's presence window.
+        // Say that rather than "not found", which reads as a typo and leaves
+        // the cashier retyping while the customer waits.
+        if (json.outOfScope === true) {
+          if (Number(json.windowMinutes) > 0) setWindowMinutes(Number(json.windowMinutes));
+          setOutOfScope({
+            storeName: json.storeName || "this store",
+            lastVisitHereMs: Number(json.lastVisitHereMs) || null,
+          });
+        } else {
+          setOutOfScope(null);
+        }
       } else {
         setCustomer(json.customer);
         setLedger(json.ledger || []);
@@ -407,10 +440,28 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
               {outOfScope ? (
                 <>
                   <ShieldAlert className="h-5 w-5 text-amber-500" />
-                  <p className="font-medium text-foreground">Not active at {outOfScope}.</p>
+                  <p className="font-medium text-foreground">
+                    No activity at {outOfScope.storeName} in the last {windowLabel}.
+                  </p>
                   <p className="text-xs max-w-xs">
-                    This customer&apos;s record is held at another branch. Ask an admin to
-                    view their points or reset their password.
+                    The account exists. A record opens here while the customer is linked
+                    to an open session, or was active at this branch within the last{" "}
+                    {windowLabel} — this one is neither.
+                  </p>
+                  {outOfScope.lastVisitHereMs ? (
+                    <p className="text-xs max-w-xs">
+                      Last recorded visit here:{" "}
+                      {format(new Date(outOfScope.lastVisitHereMs), "MMM d, h:mm a")} (
+                      {formatDistanceToNow(new Date(outOfScope.lastVisitHereMs), {
+                        addSuffix: true,
+                      })}
+                      ).
+                    </p>
+                  ) : null}
+                  <p className="text-xs max-w-xs">
+                    Link them to their table or have them log in here to bring the record
+                    into scope — or ask an admin, who can view points and reset passwords
+                    for any branch.
                   </p>
                 </>
               ) : notFound ? (
@@ -618,7 +669,7 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
             {scope === "store" && (
               <p className="text-[11px] leading-snug text-muted-foreground">
                 Customers linked to an open session here, or active at this branch in
-                the last 2 hours. Older records are visible to admins only.
+                the last {windowLabel}. Older records are visible to admins only.
               </p>
             )}
             {loadError && (
@@ -638,7 +689,7 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
               <p className="px-6 py-8 text-sm text-center text-muted-foreground">
                 {scope === "store"
                   ? accountQuery
-                    ? "No customers match here. If they have been away over 2 hours, ask an admin."
+                    ? `No customers match here. If they have been away over ${windowLabel}, ask an admin.`
                     : "No customers active at this store right now."
                   : "No accounts match."}
               </p>

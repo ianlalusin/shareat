@@ -12,6 +12,7 @@ import { Loader, ArrowLeft } from "lucide-react";
 import { ModesOfPaymentSettings } from "@/components/manager/collections/ModesOfPaymentSettings";
 import { ChargesSettings } from "@/components/manager/collections/ChargesSettings";
 import { DiscountsSettings } from "@/components/manager/collections/DiscountsSettings";
+import { LoyaltyRewardsSettings } from "@/components/manager/collections/LoyaltyRewardsSettings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ const TABS = [
     { value: "payments", label: "Modes of Payment" },
     { value: "charges", label: "Charges" },
     { value: "discounts", label: "Discounts" },
+    { value: "loyalty", label: "Loyalty" },
 ]
 
 export default function CollectionsPage() {
@@ -77,7 +79,7 @@ export default function CollectionsPage() {
                         </SelectContent>
                     </Select>
                 ) : (
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-4">
                         {TABS.map(tab => (
                             <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                         ))}
@@ -92,6 +94,9 @@ export default function CollectionsPage() {
                 </TabsContent>
                  <TabsContent value="discounts">
                      {mountedTabs.has("discounts") && <DiscountsSettings store={activeStore} />}
+                 </TabsContent>
+                 <TabsContent value="loyalty">
+                     {mountedTabs.has("loyalty") && <LoyaltyRewardsSettings store={activeStore} />}
                  </TabsContent>
             </Tabs>
         </RoleGuard>

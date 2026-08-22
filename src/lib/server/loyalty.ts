@@ -3,6 +3,7 @@ import "server-only";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { appendLogToProjection } from "@/lib/server/loyaltyLog";
+import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
 
 const DEFAULT_POINTS_PER_PESO = 0.01; // 1 point per ₱100
 
@@ -205,6 +206,10 @@ export async function writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, 
       const c = cSnap.data() as any;
       const reward = rewardSnap.data() as any;
       if (reward.isActive === false) throw new Error("Reward is not available");
+      // Per-store availability. Claims only — an already-issued voucher is
+      // honoured wherever it is presented, since the member has already paid
+      // the points for it.
+      if (!isRewardOfferedAtStore(reward, storeId)) throw new Error("This reward is not offered at this store");
 
       const pointsCost = Math.floor(Number(reward.pointsCost) || 0);
       const value = Number(reward.value) || 0;

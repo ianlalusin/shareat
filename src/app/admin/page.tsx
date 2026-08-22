@@ -36,17 +36,17 @@ const managerTools = [
     { title: "Data Management", description: "Sync config caches for fast POS reads.", href: "/manager/data-management", icon: Wrench },
 ]
 
-const dataTools = [
-    { title: "Reconciliation Tool", description: "Verify analytics data against receipts.", href: "/admin/reconcile", icon: ShieldCheck },
-    { title: "Analytics Backfill", description: "Rebuild daily analytics from receipts.", href: "/admin/backfill", icon: DatabaseZap },
+// One group for both. `adminOnly` is load-bearing: /admin/reconcile and
+// /admin/backfill are RoleGuard allow={["admin"]}, so showing those two cards
+// to a manager would just bounce them off the page.
+const dataAndAnalysisTools = [
+    { title: "Data Analysis", description: "360° historical performance, comparisons, and trends.", href: "/admin/data-analysis", icon: BarChart3, adminOnly: false },
+    { title: "Customer Requests", description: "All requests sent from the floor, with response times.", href: "/admin/customer-requests", icon: MessageCircle, adminOnly: false },
+    { title: "Reconciliation Tool", description: "Verify analytics data against receipts.", href: "/admin/reconcile", icon: ShieldCheck, adminOnly: true },
+    { title: "Analytics Backfill", description: "Rebuild daily analytics from receipts.", href: "/admin/backfill", icon: DatabaseZap, adminOnly: true },
 ]
 
-const analysisTools = [
-    { title: "Data Analysis", description: "360° historical performance, comparisons, and trends.", href: "/admin/data-analysis", icon: BarChart3 },
-    { title: "Customer Requests", description: "All requests sent from the floor, with response times.", href: "/admin/customer-requests", icon: MessageCircle },
-]
-
-function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType }) {
+function ToolCard({ title, description, href, icon: Icon }: { title: string, description: string, href: string, icon: React.ElementType, adminOnly?: boolean }) {
     return (
         <Link href={href}>
             <Card className="h-full hover:bg-muted/50 transition-colors">
@@ -116,30 +116,18 @@ export default function AdminPage() {
                     </>
                 )}
                 
-                {appUser?.isPlatformAdmin && (
-                     <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><DatabaseZap /> Data Management Tools</CardTitle>
-                            <CardDescription>Advanced tools for data maintenance. Use with caution.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                            {dataTools.map(tool => (
-                                <ToolCard key={tool.title} {...tool} />
-                            ))}
-                        </CardContent>
-                     </Card>
-                )}
-
                 {(appUser?.isPlatformAdmin || appUser?.role === 'manager') && (
                     <Card>
                         <CardHeader>
-                            <CardTitle className="flex items-center gap-2"><BarChart3 /> Analysis</CardTitle>
-                            <CardDescription>Historical, comparative, and 360° performance insights for the active store.</CardDescription>
+                            <CardTitle className="flex items-center gap-2"><BarChart3 /> Data Management and Analysis</CardTitle>
+                            <CardDescription>Historical, comparative, and 360° performance insights for the active store, plus advanced data maintenance. Use the maintenance tools with caution.</CardDescription>
                         </CardHeader>
                         <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                            {analysisTools.map(tool => (
-                                <ToolCard key={tool.title} {...tool} />
-                            ))}
+                            {dataAndAnalysisTools
+                                .filter(tool => !tool.adminOnly || appUser?.isPlatformAdmin)
+                                .map(tool => (
+                                    <ToolCard key={tool.title} {...tool} />
+                                ))}
                         </CardContent>
                     </Card>
                 )}

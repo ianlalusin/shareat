@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { normalizePhone } from "@/lib/phone";
-import { resolvePhonePresence } from "@/lib/server/loyaltyPresence";
+import { PRESENCE_WINDOW_MS, resolvePhonePresence } from "@/lib/server/loyaltyPresence";
 
 export const runtime = "nodejs";
 
@@ -80,8 +80,13 @@ export async function POST(req: Request) {
     }
     const presence = await resolvePhonePresence(storeId, phone);
     if (!presence) {
+      // Name the window, not the store: the record is global, it is the
+      // *recency* of the customer's activity here that fails the gate.
+      const hours = PRESENCE_WINDOW_MS / 3600000;
       return bad(
-        "This customer is not active at your store. Ask an admin to reset it.",
+        `This customer has had no activity at your store in the last ${hours} ` +
+          `hour${hours === 1 ? "" : "s"}, so their record is out of scope here. ` +
+          `Link them to their table or ask an admin to reset it.`,
         403
       );
     }

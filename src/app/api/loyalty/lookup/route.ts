@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireActiveStaff } from "@/lib/server/active-staff-check";
-import { resolvePhonePresence } from "@/lib/server/loyaltyPresence";
+import { PRESENCE_WINDOW_MS, resolvePhonePresence } from "@/lib/server/loyaltyPresence";
 import { normalizePhone } from "@/lib/phone";
 
 export const runtime = "nodejs";
@@ -62,15 +62,26 @@ export async function GET(req: Request) {
       // Deliberately distinguishable from "no such customer". A bare not-found
       // reads as a typo, so the cashier retypes the number while the customer
       // waits and nobody realises an admin is needed.
+      //
+      // The blocker is *time*, not ownership: `customers` is not partitioned by
+      // store, so telling staff the record "belongs to another branch" sends
+      // them chasing a problem that does not exist. Return the window and this
+      // store's own last-visit stamp instead, so the UI can name what actually
+      // failed and when the customer was last here.
       let storeName = storeId;
       try {
         storeName = (await db.doc(`stores/${storeId}`).get()).data()?.name || storeId;
       } catch {}
+      const visitHere = (customerSnap.data() as any)?.storeVisits?.[storeId];
       return NextResponse.json({
         ok: true,
         found: false,
         outOfScope: true,
         storeName,
+        windowMinutes: PRESENCE_WINDOW_MS / 60000,
+        // Written on points_earned only, so absence means "no recorded visit
+        // here", never "never been here" — the copy is hedged accordingly.
+        lastVisitHereMs: Number(visitHere?.lastVisitAtMs) || null,
       });
     }
   }

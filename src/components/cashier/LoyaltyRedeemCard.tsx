@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Gift, Loader2, Sparkles, Ticket, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
 import type { LoyaltyReward, SessionLoyaltyRedemption } from "@/lib/types";
 
 interface Props {
@@ -46,7 +47,13 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
     try {
       const t = await token();
       const [lookupRes, rewardsSnap] = await Promise.all([
-        fetch(`/api/loyalty/lookup?phone=${encodeURIComponent(linkedPhone)}`, { headers: { Authorization: `Bearer ${t}` } }),
+        // storeId is required for store-scoped staff since /pins customer
+        // scoping landed; without it the lookup 400s and the balance silently
+        // renders as 0 for every non-admin cashier.
+        fetch(
+          `/api/loyalty/lookup?phone=${encodeURIComponent(linkedPhone)}&storeId=${encodeURIComponent(storeId)}`,
+          { headers: { Authorization: `Bearer ${t}` } },
+        ),
         getDocs(collection(db, "loyaltyRewards")),
       ]);
       const lookup = await lookupRes.json().catch(() => ({}));
@@ -54,7 +61,9 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
       setRewards(
         rewardsSnap.docs
           .map((d) => ({ id: d.id, ...(d.data() as any) }))
-          .filter((r: any) => r.isActive !== false)
+          // Store scoping, not just the global on/off switch: managers choose
+          // which of the global rewards their branch offers.
+          .filter((r: any) => isRewardOfferedAtStore(r, storeId))
           .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)) as LoyaltyReward[],
       );
     } catch (e: any) {
@@ -62,7 +71,7 @@ export function LoyaltyRedeemCard({ storeId, sessionId, linkedPhone, linkedName,
     } finally {
       setLoading(false);
     }
-  }, [linkedPhone, toast]);
+  }, [linkedPhone, storeId, toast]);
 
   useEffect(() => {
     if (open && balance === null) void load();

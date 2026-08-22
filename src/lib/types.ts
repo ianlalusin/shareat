@@ -1040,6 +1040,11 @@ export type LoyaltyReward = {
   imageUrl?: string | null;
   /** Optional store scoping; absent ⇒ available at all stores. */
   applicableStoreIds?: string[] | null;
+  /**
+   * Stores that have switched this reward off locally (Collections → Loyalty).
+   * Subtractive on purpose: see src/lib/loyaltyRewardScope.ts.
+   */
+  disabledStoreIds?: string[] | null;
   /** Max times one customer may claim this reward within a single visit. Default 1. */
   maxPerVisit?: number;
   /** Max total claims of this reward per store. null/0/absent ⇒ unlimited. */
