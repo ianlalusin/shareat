@@ -50,6 +50,7 @@ externally by **Google Cloud Scheduler**.
 | `reconcile-analytics`      | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` (every 15 min)   | 120s             |
 | `rebuild-presets`          | `GET /api/cron/rebuild-presets`     | `30 0 * * *` (12:30 AM)         | 300s             |
 | `holiday-calendar`         | `GET /api/cron/holiday-calendar`    | `*/15 * * * *` (every 15 min)   | 120s             |
+| `purge-expired-pins`       | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM)   | 300s             |
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
 editor) and upserts each day's forecast into the monthly doc
@@ -112,6 +113,26 @@ back **off** once it leaves the rolling window, so the tiles inflate over time
 per-day analytics docs are always correct (keyed by `dayId`), so re-summing them
 resets the tiles; the deltas keep them live during the day. Reuses `CRON_SECRET`;
 no new secret. Cheap (≈8 windowed reads per store).
+
+`purge-expired-pins` deletes docs from the root `pinRegistry` collection whose
+`expiresAtMs` lapsed more than 7 days ago. A PIN's TTL is 2 hours and it is dead
+once its session closes — it feeds no aggregate, so unlike kitchen tickets this
+needs no retention horizon and no rebuild guard. The 7-day grace window keeps the
+`/admin` pin list useful for support lookups. Filtering on `expiresAtMs` rather
+than `status` catches both archived pins and ones that expired without being
+archived, in a single-field query needing no composite index.
+
+**This route is report-only unless `?write=1` is on the URI** — the scheduler job
+must include it to actually delete. It also refuses to run if *every* pin matches
+the filter, so a wrong field or a clock problem can't take live sessions' PINs
+with it. Logic is shared verbatim with `scripts/purge-expired-pins.ts`
+(`npm run purge:pins`) via `src/lib/server/retention/purge-pins.ts`, so the manual
+tool and the job cannot drift.
+
+Weekly rather than daily on purpose: the registry gains only ~25 pins/day, so a
+nightly sweep would mostly be empty invocations. First run cleared 4,878 of 5,296
+pins (2026-08-22) — that backlog existed because CUSTOMER's
+`cleanup-archived-pins` admin route was never actually invoked.
 
 ## Auth
 
@@ -194,6 +215,16 @@ gcloud scheduler jobs create http holiday-calendar \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=120s
+
+# NOTE the ?write=1 — without it this route only reports and deletes nothing.
+gcloud scheduler jobs create http purge-expired-pins \
+  --location="$REGION" \
+  --schedule="0 3 * * 0" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/purge-expired-pins?write=1" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=300s
 ```
 
 **Secrets**: `generate-daily-insight` needs only `CRON_SECRET` (already
