@@ -16,6 +16,7 @@
 - **No new Firestore indexes.** `firestore.indexes.json` declares ~13 of ~57 live indexes; a bulk `firebase deploy --only firestore:indexes` would offer to delete ~44 live indexes including the `COLLECTION_GROUP kitchentickets` ones the rebuild depends on. Every query in this plan is a single-field range query with in-memory filtering. If an index turns out to be unavoidable, create it via the console error-link — never a file deploy.
 - **Dry run is the default** on every entry point. Deletion requires an explicit `--write`.
 - **The horizon is written before the first delete commits**, never after the run completes. Over-covering is harmless; under-covering is data loss.
+- **Session documents are timestamped `startedAtClientMs`, NOT `createdAtClientMs`** (`src/components/cashier/firestore.ts:183,248`). Kitchen tickets and customer requests *do* use `createdAtClientMs` — the two are not interchangeable. A Firestore range filter silently excludes documents missing the field, so querying the wrong one returns zero rows and reports success. The first census hit exactly this and falsely reported "0 sessions older than 30 days" for every store. Every session query in this plan must use `startedAtClientMs`, and Task 4 carries a sanity check that aborts rather than reporting an empty purge.
 - **Never purge:** `receipts`, `analytics` / `analyticsMonths` / `analyticsYears`, session documents themselves, `sessions/{id}/payments`, `customerFeedbackDays`, `pointsLedger` / `loyaltyLogs` / `loyaltyRedemptions`.
 - **Branch `sev5_advanced`. Do not push** — Ian pushes POS.
 - Test command is `npm test` (Vitest). Typecheck with `npm run typecheck`.
@@ -27,18 +28,34 @@
 **Files:**
 - Read-only; no repo changes.
 
-This gates whether the ticket purge is worth building at all. It requires a Bash permission the auto-mode classifier currently blocks — ask Ian to run it or to allow it.
+**Partially complete — 2026-08-22.** A first pass ran and produced global totals, but its per-store age query was wrong (see Global Constraints: it used `createdAtClientMs` on session docs). Totals below are trustworthy; the age split is not, and `census2.cjs` re-measures it.
 
-- [ ] **Step 1: Run the census**
+Global totals, verified:
+
+| Collection group | Docs |
+|---|---|
+| `kitchentickets` | 42,640 |
+| `sessionBillLines` | 17,008 |
+| `payments` (never purged) | 10,506 |
+| `refillItems` | 99 |
+| `pinRegistry` | 5,295 (5,277 archived) |
+
+Sessions total ~10,269 across 6 active stores, so roughly 4.2 tickets and 1.7 bill lines per session.
+
+- [ ] **Step 1: Re-run the corrected census**
 
 ```bash
 cd "C:/Users/ianla/AppData/Local/Temp/claude/C--Users-ianla/192a251b-54ab-4628-bd9d-9ed4b286501f/scratchpad"
-NODE_PATH="C:/Users/ianla/webapps/POS/node_modules" node census.cjs
+NODE_PATH="C:/Users/ianla/webapps/POS/node_modules" node census2.cjs
 ```
 
-- [ ] **Step 2: Record the result**
+It reports, per store, sessions older than 30 and 90 days by `startedAtClientMs`, how many session docs are missing that field, and a 25-session sample of the oldest sessions past the horizon giving average tickets and bill lines each — from which it estimates total purgeable documents.
 
-Note total `kitchentickets`, `sessionBillLines`, stale `pinRegistry` docs, and per-store sessions older than 90 days. If tickets number in the low thousands, say so and recommend deferring Tasks 4-6 in favour of Tasks 1-3 plus the pin cleanup only — the guard is worth having regardless, because it removes a live footgun.
+- [ ] **Step 2: Decide on the strength of the numbers**
+
+If estimated purgeable tickets are under ~10,000, say so and recommend landing Tasks 1-3 (the guard) plus the pin sweep only, deferring the ticket purge. The guard is worth having regardless — it removes a live footgun whether or not anything is ever deleted.
+
+Also check the `missing startedAtClientMs` column. Any non-zero count means some sessions would never be reached by the purge; that is not a blocker (they are simply skipped) but it should be reported, not ignored.
 
 No commit.
 
@@ -554,14 +571,29 @@ async function purgeStore(db: Firestore, storeId: string, storeName: string, now
     );
   }
 
+  // Sanity check: a range filter silently drops docs missing the field, so a
+  // wrong field name returns zero rows and looks like "nothing to purge".
+  // If this store has sessions but none carry startedAtClientMs, abort loudly.
+  const sessionsTotal = (await db.collection(`stores/${storeId}/sessions`).count().get()).data().count;
+  if (sessionsTotal > 0) {
+    const withField = (
+      await db.collection(`stores/${storeId}/sessions`).orderBy("startedAtClientMs").count().get()
+    ).data().count;
+    if (withField === 0) {
+      throw new Error(
+        `${storeId}: ${sessionsTotal} sessions but none carry startedAtClientMs — wrong field, refusing to run.`,
+      );
+    }
+  }
+
   // Single-field range query — no composite index needed. Terminal status is
   // filtered in memory on purpose (see Global Constraints).
   let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
   for (;;) {
     let q = db
       .collection(`stores/${storeId}/sessions`)
-      .where("createdAtClientMs", "<", cutoff)
-      .orderBy("createdAtClientMs", "asc")
+      .where("startedAtClientMs", "<", cutoff)
+      .orderBy("startedAtClientMs", "asc")
       .limit(SESSION_PAGE);
     if (cursor) q = q.startAfter(cursor);
 
@@ -668,7 +700,11 @@ git commit -m "feat(retention): add dry-run-first purge script for tickets and b
 - Consumes: `deleteQuery`, `WRITE`, `DELETE_BATCH` from Task 4.
 - Produces: no new exports.
 
-`pinRegistry` is a root collection keyed by the PIN itself, so stale docs also consume PIN space. The existing `CUSTOMER/src/app/api/admin/cleanup-archived-pins/route.ts` only deletes `status == "archived"`; PINs that expired without being archived linger forever. This closes that gap.
+`pinRegistry` is a root collection keyed by the PIN itself, so stale docs also consume PIN space.
+
+**Census finding (2026-08-22):** 5,295 pins live, of which **5,277 are already `status == "archived"`**. `CUSTOMER/src/app/api/admin/cleanup-archived-pins/route.ts` was built to delete exactly those (archived, older than 6h) — it is evidently never invoked, since none have been cleaned. Only 18 pins are non-archived, so the expired-but-unarchived gap is negligible; the real win is the 5,277 nobody is sweeping.
+
+Filtering on `expiresAtMs` rather than `status` covers both populations in one query and needs no composite index, so this supersedes the CUSTOMER route rather than duplicating it. Leave that route in place — it is a manual admin tool and harmless — but the scheduled sweep is this one.
 
 - [ ] **Step 1: Add the two cleanup functions**
 

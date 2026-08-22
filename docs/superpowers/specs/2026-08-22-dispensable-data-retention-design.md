@@ -107,6 +107,15 @@ A session is terminal when `status` is `closed`, `voided`, or `cancelled`, or
 `isPaid === true` — matching the guards already used at
 `firestore.ts:496`, `:906`, `:1099`.
 
+**Session documents are timestamped `startedAtClientMs`, not
+`createdAtClientMs`** (`firestore.ts:183`, `:248`). Kitchen tickets and customer
+requests do use `createdAtClientMs`; the two are not interchangeable. A
+Firestore range filter silently excludes documents missing the field, so the
+wrong name returns zero rows and looks like a clean "nothing to purge". The
+first census hit this and falsely reported zero sessions older than 30 days for
+every store despite seven months of history. The purge carries an explicit
+sanity check that aborts if a store has sessions but none carry the field.
+
 ### Never purge
 
 `receipts`, `analytics` / `analyticsMonths` / `analyticsYears`, session
@@ -236,11 +245,19 @@ the other seven cron routes.
 
 ## 7. Open items
 
-- **Volume is unmeasured.** A read-only census script exists
-  (scratchpad `census.cjs`) but was blocked by the auto-mode classifier. Run it
-  before implementation to size the win and to set batch pacing. If the volume
-  turns out to be trivial, the pin/request cleanup may be worth keeping and the
-  ticket purge worth deferring.
+- **Volume, partially measured 2026-08-22.** Global totals:
+  42,640 `kitchentickets`, 17,008 `sessionBillLines`, 10,506 `payments`
+  (never purged), 99 `refillItems`, 5,295 `pinRegistry` — of which **5,277 are
+  already archived**, i.e. the existing `cleanup-archived-pins` route has never
+  been run. ~10,269 sessions across 6 active stores (~4.2 tickets and ~1.7 bill
+  lines per session).
+- **The age split is still unmeasured.** The first census asked for sessions
+  older than 30 days using `createdAtClientMs` and got zero everywhere — the
+  wrong field (see §3). `census2.cjs` re-measures it per store using
+  `startedAtClientMs`, plus a 25-session sample to estimate purgeable
+  subcollection documents. Run it before implementing Tasks 4-7. If the estimate
+  lands under ~10,000 tickets, land the guard and the pin sweep and defer the
+  ticket purge.
 
 ## 8. Non-goals
 
