@@ -18,7 +18,8 @@
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
     "build:storeConfig": "tsx scripts/build-store-config.ts",
     "seed:grillerCharge": "tsx scripts/seed-griller-charge.ts",
-    "backfill:onlineEnabled": "tsx scripts/backfill-online-enabled.ts"
+    "backfill:onlineEnabled": "tsx scripts/backfill-online-enabled.ts",
+    "purge:pins": "tsx scripts/purge-expired-pins.ts"
   },
   "engines": {
     "node": ">=20 <21"
