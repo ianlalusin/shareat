@@ -14,11 +14,19 @@ import { Loader, Save, Sparkles } from "lucide-react";
 
 import type { Store, LoyaltyConfig } from "@/lib/types";
 
-interface LoyaltySettingsProps {
+/**
+ * How this branch mints Sharelebrator points: the earn switch and the rate.
+ *
+ * Lives beside LoyaltyRewardsSettings under Collections → Loyalty so the two
+ * halves of the programme — what earns points, and what points buy — are read
+ * and edited in one place. It used to sit in Store Settings, where a manager
+ * had to know that half of loyalty lived on a different page.
+ */
+interface LoyaltyEarningSettingsProps {
   store: Store;
 }
 
-export function LoyaltySettings({ store }: LoyaltySettingsProps) {
+export function LoyaltyEarningSettings({ store }: LoyaltyEarningSettingsProps) {
   const { toast } = useToast();
   const config = store.loyaltyConfig ?? { isEnabled: true, pointsPerPeso: 0.01 };
 
@@ -52,15 +60,15 @@ export function LoyaltySettings({ store }: LoyaltySettingsProps) {
   const examplePoints = Math.floor(exampleAmount * exampleRate);
 
   return (
-    <div className="space-y-6 mt-4">
+    <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
-            Sharelebrator Loyalty
+            Points Earning
           </CardTitle>
           <CardDescription>
-            Configure how customers earn points on purchases at this branch.
+            How customers earn Sharelebrator points on purchases at this branch.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -98,7 +106,7 @@ export function LoyaltySettings({ store }: LoyaltySettingsProps) {
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={isSaving}>
           {isSaving ? <Loader className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-          Save Loyalty Settings
+          Save Earning Settings
         </Button>
       </div>
     </div>

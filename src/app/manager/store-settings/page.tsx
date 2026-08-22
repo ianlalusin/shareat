@@ -14,7 +14,6 @@ import { SchedulesSettings } from "@/components/manager/store-settings/schedules
 import { StoreFlavorsSettings } from "@/components/manager/store-settings/store-flavors-settings";
 import { StoreRefillsSettings } from "@/components/manager/store-settings/store-refills-settings";
 import { ForecastSettings } from "@/components/manager/store-settings/forecast-settings";
-import { LoyaltySettings } from "@/components/manager/store-settings/loyalty-settings";
 import { CustomerOrderingSettings } from "@/components/manager/store-settings/customer-ordering-settings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,7 +30,6 @@ const TABS = [
     { value: "kitchen", label: "Location" },
     { value: "tables", label: "Tables" },
     { value: "forecast", label: "Forecast" },
-    { value: "loyalty", label: "Loyalty" },
     { value: "customer_ordering", label: "Ordering" },
 ]
 
@@ -44,7 +42,7 @@ export default function StoreSettingsPage() {
     // Track which tabs have ever been opened so we lazy-mount each panel.
     // Default-active tab is in the set on first render. Each setting panel
     // owns one or more onSnapshot subscriptions; without this, opening this
-    // page would fire 8 simultaneous listeners for collections the manager
+    // page would fire 7 simultaneous listeners for collections the manager
     // may never look at on this visit.
     const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set(["store_packages"]));
     const handleTabChange = (value: string) => {
@@ -93,7 +91,7 @@ export default function StoreSettingsPage() {
                         </SelectContent>
                     </Select>
                 ) : (
-                    <TabsList className="grid w-full grid-cols-9">
+                    <TabsList className="grid w-full grid-cols-8">
                         {TABS.map(tab => (
                              <TabsTrigger key={tab.value} value={tab.value}>{tab.label}</TabsTrigger>
                         ))}
@@ -120,9 +118,6 @@ export default function StoreSettingsPage() {
                 </TabsContent>
                 <TabsContent value="forecast">
                     {mountedTabs.has("forecast") && <ForecastSettings store={activeStore} />}
-                </TabsContent>
-                <TabsContent value="loyalty">
-                    {mountedTabs.has("loyalty") && <LoyaltySettings store={activeStore} />}
                 </TabsContent>
                 <TabsContent value="customer_ordering">
                     {mountedTabs.has("customer_ordering") && <CustomerOrderingSettings />}

@@ -12,6 +12,7 @@ import { Loader, ArrowLeft } from "lucide-react";
 import { ModesOfPaymentSettings } from "@/components/manager/collections/ModesOfPaymentSettings";
 import { ChargesSettings } from "@/components/manager/collections/ChargesSettings";
 import { DiscountsSettings } from "@/components/manager/collections/DiscountsSettings";
+import { LoyaltyEarningSettings } from "@/components/manager/collections/LoyaltyEarningSettings";
 import { LoyaltyRewardsSettings } from "@/components/manager/collections/LoyaltyRewardsSettings";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -96,7 +97,14 @@ export default function CollectionsPage() {
                      {mountedTabs.has("discounts") && <DiscountsSettings store={activeStore} />}
                  </TabsContent>
                  <TabsContent value="loyalty">
-                     {mountedTabs.has("loyalty") && <LoyaltyRewardsSettings store={activeStore} />}
+                     {/* Both halves of the programme: what earns points, then
+                         what points buy. Earning moved here from Store Settings. */}
+                     {mountedTabs.has("loyalty") && (
+                         <div className="space-y-6 mt-4">
+                             <LoyaltyEarningSettings store={activeStore} />
+                             <LoyaltyRewardsSettings store={activeStore} />
+                         </div>
+                     )}
                  </TabsContent>
             </Tabs>
         </RoleGuard>
