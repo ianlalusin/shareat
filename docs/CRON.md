@@ -41,16 +41,56 @@ externally by **Google Cloud Scheduler**.
 
 ## The two jobs
 
-| Job name                   | Endpoint                            | Schedule (Asia/Manila)          | Attempt deadline |
-| -------------------------- | ----------------------------------- | ------------------------------- | ---------------- |
-| `update-forecast-accuracy` | `GET /api/cron/update-accuracy`     | `0 20 * * *` (8 PM)             | 180s             |
-| `generate-forecast`        | `GET /api/cron/generate-forecast`   | `0 21,22,23,0,1 * * *` (9 PM–1 AM) | 600s         |
-| `generate-daily-insight`   | `GET /api/cron/generate-daily-insight` | `0 1-5 * * *` (1–5 AM, batched) | 300s          |
-| `log-weather`              | `GET /api/cron/log-weather`         | `0 * * * *` (hourly)            | 120s             |
-| `reconcile-analytics`      | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` (every 15 min)   | 120s             |
-| `rebuild-presets`          | `GET /api/cron/rebuild-presets`     | `30 0 * * *` (12:30 AM)         | 300s             |
-| `holiday-calendar`         | `GET /api/cron/holiday-calendar`    | `*/15 * * * *` (every 15 min)   | 120s             |
-| `purge-expired-pins`       | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM)   | 300s             |
+**Verified against production 2026-08-22** with
+`gcloud scheduler jobs list --project=shareat-hub-v2`. The table below is what
+actually exists, not what was originally planned — several schedules had drifted
+from this doc. All jobs are `Asia/Manila`.
+
+| Cloud Scheduler job | Endpoint | Schedule | Region | State |
+| --- | --- | --- | --- | --- |
+| `weather_api_call` | `GET /api/cron/log-weather` | `0 * * * *` (hourly) | asia-southeast1 | ENABLED |
+| `generate-daily-insight` | `GET /api/cron/generate-daily-insight` | `0 1-5 * * *` (1–5 AM) | asia-southeast1 | ENABLED |
+| `update-accuracy` | `GET /api/cron/update-accuracy` | `0 4 * * *` (4 AM) | asia-southeast1 | ENABLED |
+| `generate-forecast` | `GET /api/cron/generate-forecast` | `0 5-9 * * *` (5–9 AM) | asia-southeast1 | ENABLED |
+| `reconcile-analytics` | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` | asia-southeast1 | ENABLED |
+| `purge-expired-pins` | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM) | asia-southeast1 | **PAUSED** — see below |
+| `rebuild-presets` | `GET /api/cron/rebuild-presets` | `30 0 * * *` (12:30 AM) | **asia-east1** | ENABLED |
+| `holiday-calendar` | `GET /api/cron/holiday-calendar` | — | — | **NO JOB EXISTS** |
+
+Discrepancies this table corrects, all confirmed live:
+
+- The job for `log-weather` is named **`weather_api_call`**, not `log-weather`.
+- `update-accuracy` runs at **4 AM**, not 8 PM as previously documented.
+- `generate-forecast` runs **5–9 AM**, not 9 PM–1 AM.
+- Jobs are split across **two regions**: six in `asia-southeast1`, `rebuild-presets`
+  alone in `asia-east1`. The provisioning snippet below defaults to
+  `asia-southeast1` because that is where the majority live; check with
+  `gcloud scheduler jobs list` before assuming a job's location, since
+  `describe`/`pause`/`run` all require the right `--location`.
+- URIs are also mixed: older jobs target the App Hosting default domain
+  `https://shareat--shareat-hub-v2.asia-southeast1.hosted.app`, newer ones
+  (`reconcile-analytics`, `rebuild-presets`, `purge-expired-pins`) target the
+  custom domain `https://app.shareat.net`. Both resolve to the same backend.
+- **`holiday-calendar` has no Cloud Scheduler job in any region** — the route
+  exists in this repo and is described below, but nothing ever calls it, so the
+  per-store holiday scan never runs. Consistent with the holiday-forecasting
+  feature having been built but never rolled out. Either create the job or stop
+  documenting it as scheduled; not decided here.
+
+### `purge-expired-pins` is paused on purpose
+
+It was created 2026-08-22 and immediately paused because the route was committed
+but **not yet deployed** — POS deploys on push, and the first fire would have
+been the next morning against a 404. Arm it once the route is live:
+
+```bash
+gcloud scheduler jobs resume purge-expired-pins \
+  --location=asia-southeast1 --project=shareat-hub-v2
+
+# optional: prove it end-to-end without waiting for Sunday
+gcloud scheduler jobs run purge-expired-pins \
+  --location=asia-southeast1 --project=shareat-hub-v2
+```
 
 `log-weather` polls OpenWeatherMap once per active store (geotagged via the store
 editor) and upserts each day's forecast into the monthly doc
@@ -148,7 +188,7 @@ You only need to do this once per environment. Substitute the placeholders.
 PROJECT_ID=<your-gcp-project-id>
 BACKEND_URL=https://<your-app-hosting-domain>
 CRON_SECRET=<value from Secret Manager / .env.local>
-REGION=asia-east1   # match your App Hosting region
+REGION=asia-southeast1   # where 6 of the 7 live; rebuild-presets is in asia-east1
 
 gcloud config set project "$PROJECT_ID"
 gcloud services enable cloudscheduler.googleapis.com   # one-time
