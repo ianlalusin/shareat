@@ -437,17 +437,17 @@ export default function InventoryManagementPage() {
   
   // `isAddon` is no longer toggled from the table — it moved into the edit
   // dialog, next to the selling price and kitchen location it depends on.
-  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'onlineEnabled' | 'customerEnabled' | 'isPopular') => {
+  const handleToggle = async (item: InventoryItem, field: 'isActive' | 'onlineEnabled' | 'customerEnabled') => {
     if (!activeStore || !appUser) return;
     // `onlineEnabled`/`customerEnabled` are opt-in and default to FALSE when
     // absent (see InventoryItem) — this must match the publisher's gate
     // (`x?.onlineEnabled !== true`) or the toggle can show "on" for an item
     // that was never actually published.
-    const current = (field === 'onlineEnabled' || field === 'customerEnabled' || field === 'isPopular') ? item[field] === true : !!item[field];
+    const current = (field === 'onlineEnabled' || field === 'customerEnabled') ? item[field] === true : !!item[field];
     const newStatus = !current;
 
     const action = newStatus ? "Enable" : "Disable";
-    const fieldName = field === 'isActive' ? 'availability' : field === 'onlineEnabled' ? 'online availability' : field === 'isPopular' ? 'Popular listing' : 'customer app availability';
+    const fieldName = field === 'isActive' ? 'availability' : field === 'onlineEnabled' ? 'online availability' : 'customer app availability';
 
     const confirmed = await confirm({
         title: `${action} ${getDisplayName(item)}'s ${fieldName}?`,
@@ -461,9 +461,7 @@ export default function InventoryManagementPage() {
         await updateDoc(itemDocRef, { [field]: newStatus, updatedAt: serverTimestamp() });
         toast({ title: "Item Status Updated" });
         if (field === 'isActive' || field === 'onlineEnabled') scheduleStorefrontAutoPublish(activeStore.id, notifyPublish);
-        // Popular lives in the same published cache, so it republishes too —
-        // without this the flag would sit in Firestore unseen by any diner.
-        if (field === 'customerEnabled' || field === 'isPopular') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
+        if (field === 'customerEnabled') scheduleCustomerCatalogAutoPublish(activeStore.id, notifyCustomerPublish);
     } catch (error: any) {
         toast({ variant: "destructive", title: "Update Failed", description: error.message });
     }

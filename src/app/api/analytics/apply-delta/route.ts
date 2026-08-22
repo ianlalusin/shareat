@@ -9,6 +9,10 @@ import {
   upsertDailySessionRow,
 } from "@/lib/server/analytics/applyDailySessionRowServer";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import {
+  mergePopularityDeltas,
+  popularityDeltaFromReceipt,
+} from "@/lib/analytics/popular-items";
 import type { Receipt, Store } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -31,6 +35,34 @@ export const runtime = "nodejs";
  * not yet supported here — it is moved server-side in a later increment.
  */
 const SUPPORTED_OPS = new Set(["payment", "refund", "void", "edit", "voidcash-reverse"]);
+
+/**
+ * Running per-item order counts, for the customer app's Popular group.
+ *
+ * Written as atomic per-key increments inside the caller's transaction, gated
+ * by the same `analyticsApplied` / `analyticsReversed` flags as the rest of the
+ * delta — so a retry, an offline replay, or the client fallback path cannot
+ * double-count. A nested map (not dotted "counts.<id>" paths) because the keys
+ * are arbitrary inventory doc ids.
+ */
+function writePopularityDelta(
+  db: FirebaseFirestore.Firestore,
+  storeId: string,
+  delta: Record<string, number>,
+  tx: FirebaseFirestore.Transaction
+): void {
+  const ids = Object.keys(delta);
+  if (!ids.length) return;
+
+  const counts: Record<string, unknown> = {};
+  for (const id of ids) counts[id] = FieldValue.increment(delta[id]);
+
+  tx.set(
+    db.doc(`stores/${storeId}/catalogCache/popularItems`),
+    { counts, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+}
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
@@ -124,6 +156,7 @@ export async function POST(req: Request) {
           db, storeId, asOriginal, null, tx, new Date(),
           retained > 0 ? { "payments.voidCashRetainedTotal": retained } : undefined,
         );
+        writePopularityDelta(db, storeId, popularityDeltaFromReceipt(asOriginal, -1), tx);
         // The timeline lists closed/paid sessions only, so a void drops the row.
         removeDailySessionRow(db, storeId, receipt, tx);
         tx.update(receiptRef, {
@@ -185,6 +218,18 @@ export async function POST(req: Request) {
           return { skipped: true as const };
         }
         applyAnalyticsDeltaServer(db, storeId, oldReceipt, receipt, tx, new Date());
+        // An edit is "un-count the old lines, count the new ones". Netted into
+        // a single write because two set-with-merge calls on one document in
+        // one transaction do not compound their increments.
+        writePopularityDelta(
+          db,
+          storeId,
+          mergePopularityDeltas(
+            popularityDeltaFromReceipt(oldReceipt, -1),
+            popularityDeltaFromReceipt(receipt, 1)
+          ),
+          tx
+        );
         // Re-derive the row from the edited receipt (same close time, so it
         // overwrites in place on the same day doc).
         upsertDailySessionRow(db, storeId, receipt, store, tx);
@@ -200,6 +245,7 @@ export async function POST(req: Request) {
         return { skipped: true as const };
       }
       applyAnalyticsDeltaServer(db, storeId, null, receipt, tx, new Date());
+      writePopularityDelta(db, storeId, popularityDeltaFromReceipt(receipt, 1), tx);
       upsertDailySessionRow(db, storeId, receipt, store, tx);
       tx.update(receiptRef, { analyticsApplied: true, analyticsAppliedAt: FieldValue.serverTimestamp() });
       return { skipped: false as const };

@@ -312,21 +312,6 @@ export type InventoryItem = {
    */
   customerEnabled?: boolean;
   /**
-   * Surfaces this item under "Popular" on the customer app menu, per branch —
-   * what sells at one store is not what sells at another.
-   *
-   * Curated rather than derived from sales: the customer catalog cache is
-   * rebuilt on menu EDITS only (there is no scheduler), so a sales-computed
-   * figure would freeze at whenever someone last touched the menu. Toggling
-   * this IS an edit, so the cache republishes exactly when the answer changes.
-   * A scheduled job could set the same field later without the customer app
-   * changing at all.
-   *
-   * Only meaningful alongside `customerEnabled` — an item the store does not
-   * publish cannot be popular on a menu it is absent from.
-   */
-  isPopular?: boolean;
-  /**
    * Modifier groups THIS STORE attaches, on top of whatever the global product
    * already gives the item.
    *
