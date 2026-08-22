@@ -74,26 +74,9 @@ type HistoryPreviewItem = {
 };
 
 
-function getStartMs(input: any): number | null {
-  if (!input) return null;
-  // number (ms)
-  if (typeof input === "number" && Number.isFinite(input)) return input;
-  // Date
-  if (input instanceof Date) {
-    const t = input.getTime();
-    return Number.isFinite(t) ? t : null;
-  }
-  // Firestore Timestamp (v9)
-  if (typeof input.toMillis === "function") return input.toMillis();
-  // Timestamp-like object { seconds, nanoseconds }
-  if (typeof input.seconds === "number") {
-    const ns = typeof input.nanoseconds === "number" ? input.nanoseconds : 0;
-    return input.seconds * 1000 + Math.floor(ns / 1e6);
-  }
-  return null;
-}
-
 import { formatDuration } from "@/lib/utils/date";
+import { resolveTicketStartMs, serverNowMs } from "@/lib/kitchen/server-clock";
+import { useServerClockOffset } from "@/hooks/use-server-clock";
 import { KdsFlashOverlay } from "@/components/kitchen/kds-flash-overlay";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import {
@@ -187,6 +170,11 @@ export default function KitchenPage() {
   // Coarse clock (20s) to drive the per-station "over SLA" tab counters without
   // a per-second re-render of the whole page. Individual ticket cards keep
   // their own 1s ticker for the live timer.
+  // How far this tablet's clock is from the server's. Every age, SLA check and
+  // duration below is measured in server time, so a drifting device cannot
+  // inflate kitchen timers or the serve durations they get written into.
+  const clientAheadMs = useServerClockOffset();
+
   const [slaTick, setSlaTick] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setSlaTick(Date.now()), 20000);
@@ -214,13 +202,13 @@ export default function KitchenPage() {
         // "late" alerting count — the kitchen already worked from the printed
         // paper ticket during the outage.
         if (t.printedOffline) continue;
-        const start = getStartMs((t as any).createdAtClientMs ?? (t as any).createdAt);
-        if (start != null && slaTick - start >= slaMs) late += 1;
+        const start = resolveTicketStartMs((t as any).createdAt, (t as any).createdAtClientMs);
+        if (start != null && serverNowMs(clientAheadMs, slaTick) - start >= slaMs) late += 1;
       }
       if (late > 0) counts.set(stationId, late);
     }
     return counts;
-  }, [stationsAllDocs, slaByStation, slaTick]);
+  }, [stationsAllDocs, slaByStation, slaTick, clientAheadMs]);
 
   const activeStationSla = useMemo(
     () => slaByStation.get(activeTab) ?? DEFAULT_SLA_MINUTES,
@@ -451,8 +439,10 @@ export default function KitchenPage() {
       .filter(t => t && (t.sessionId || t.onlineOrderId) && !t.printedOffline);
 
     const sortedTickets = ticketList.sort((a,b) => {
-        const timeA = getStartMs(a.createdAtClientMs ?? a.createdAt);
-        const timeB = getStartMs(b.createdAtClientMs ?? b.createdAt);
+        // One clock for every ticket: a POS order stamped by a drifting browser
+        // must not sort ahead of a customer order stamped by the server.
+        const timeA = resolveTicketStartMs(a.createdAt, a.createdAtClientMs);
+        const timeB = resolveTicketStartMs(b.createdAt, b.createdAtClientMs);
         return (timeA || 0) - (timeB || 0);
     });
 
@@ -503,7 +493,10 @@ export default function KitchenPage() {
         return false;
     }
 
-    const nowMs = opts?.overrideAtMs ?? Date.now();
+    // Server time, because this is written to the ticket as servedAtClientMs and
+    // feeds durationMs and serveTimeMsTotalByType — a skewed tablet was
+    // inflating recorded serve times, not just the display.
+    const nowMs = opts?.overrideAtMs ?? serverNowMs(clientAheadMs, Date.now());
     let kdsDelta: { old: any; new: any } | null = null as { old: any; new: any } | null;
 
     try {
@@ -540,7 +533,7 @@ export default function KitchenPage() {
             let newTicketState: KitchenTicket;
             
             if (newStatus === 'served') {
-                const startMs = getStartMs(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt);
+                const startMs = resolveTicketStartMs(oldTicketState.createdAt, oldTicketState.createdAtClientMs);
                 const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
                 
                 updatePayload.servedAt = serverTimestamp();
@@ -845,7 +838,7 @@ export default function KitchenPage() {
 
   const handleServeBatch = async ({ ticketId, sessionId, qtyToServe }: { ticketId: string; sessionId: string; qtyToServe: number }) => {
     if (!appUser || !activeStore) return;
-    const nowMs = Date.now();
+    const nowMs = serverNowMs(clientAheadMs, Date.now());
     try {
       const kdsDelta = await runTransaction(db, async (transaction: Transaction): Promise<{ old: KitchenTicket; new: KitchenTicket } | null> => {
         const ticketRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId);
@@ -869,7 +862,7 @@ export default function KitchenPage() {
         const qtyCancelled = old.qtyCancelled ?? 0;
         const qtyRemaining = qtyOrdered - qtyServed - qtyCancelled;
         const newStatus = qtyRemaining <= 0 ? 'served' : 'partially_served';
-        const startMs = getStartMs(old.createdAtClientMs ?? old.createdAt);
+        const startMs = resolveTicketStartMs(old.createdAt, old.createdAtClientMs);
         const durationMs = startMs ? Math.max(0, nowMs - startMs) : 0;
         const newLogEntry = { qty: qtyToServe, servedAt: nowMs, servedAtClientMs: nowMs, servedByUid: appUser.uid, servedByProfileId: currentProfile?.profileId ?? null, servedByProfileName: currentProfile?.name ?? null };
         const updatePayload: any = {
@@ -973,7 +966,9 @@ export default function KitchenPage() {
 
   const handleCancelRemaining = async ({ ticketId, sessionId, reason }: { ticketId: string; sessionId: string; reason: string }) => {
     if (!appUser || !activeStore) return;
-    const nowMs = Date.now();
+    // Written to the ticket as cancelledAtClientMs, so it gets the same
+    // server-time treatment as the serve stamps above.
+    const nowMs = serverNowMs(clientAheadMs, Date.now());
     try {
       await runTransaction(db, async (transaction: Transaction) => {
         const ticketRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'kitchentickets', ticketId);

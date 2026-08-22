@@ -14,36 +14,33 @@ import { format } from "date-fns";
 import type { KitchenTicket } from "@/lib/types";
 import { toJsDate, formatDuration } from "@/lib/utils/date";
 import { cleanupRadixOverlays } from "@/lib/ui/cleanup-radix";
+import { resolveTicketStartMs, ticketAgeMs } from "@/lib/kitchen/server-clock";
+import { useServerClockOffset } from "@/hooks/use-server-clock";
 
-function getStartMs(input: any): number | null {
-  if (!input) return null;
-  if (typeof input === "number" && Number.isFinite(input)) return input;
-  if (input instanceof Date) { const t = input.getTime(); return Number.isFinite(t) ? t : null; }
-  if (typeof input.toMillis === "function") return input.toMillis();
-  if (typeof input.seconds === "number") {
-    const ns = typeof input.nanoseconds === "number" ? input.nanoseconds : 0;
-    return input.seconds * 1000 + Math.floor(ns / 1e6);
-  }
-  return null;
-}
 
 export { DEFAULT_SLA_MINUTES } from "@/lib/kitchen/sla";
 import { DEFAULT_SLA_MINUTES } from "@/lib/kitchen/sla";
 
 // Live ticket age in ms, ticking every second. Single source of truth for both
 // the elapsed display and the SLA "late" state on the card.
+//
+// Measured server-time-to-server-time: `resolveTicketStartMs` prefers the
+// serverTimestamp both writers set, and the device's own drift is subtracted
+// from `now`. Differencing two machines' clocks is what made a customer-app
+// order land showing 47s on a tablet running 47s fast.
 function useTicketAge(createdAt: any, createdAtClientMs?: number | null): number | null {
-  const startMs = useMemo(() => {
-    return Number.isFinite(createdAtClientMs as number) ? (createdAtClientMs as number) : getStartMs(createdAt);
-  }, [createdAt, createdAtClientMs]);
+  const clientAheadMs = useServerClockOffset();
+  const startMs = useMemo(
+    () => resolveTicketStartMs(createdAt, createdAtClientMs),
+    [createdAt, createdAtClientMs]
+  );
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!Number.isFinite(startMs as number)) return;
+    if (startMs == null) return;
     const timerId = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timerId);
   }, [startMs]);
-  if (!Number.isFinite(startMs as number)) return null;
-  return Math.max(0, now - (startMs as number));
+  return ticketAgeMs(startMs, now, clientAheadMs);
 }
 
 function TimeLapse({ elapsedMs, isLate }: { elapsedMs: number | null; isLate: boolean }) {
