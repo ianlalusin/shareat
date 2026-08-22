@@ -18,10 +18,15 @@ env:
   # needs BUILD availability to get inlined. Was only ever in local .env.local,
   # so the deployed bundle shipped with an empty key and the picker silently
   # fell back to plain lat/lng inputs.
+  # RUNTIME added 2026-08-22: the holiday-calendar cron reverse-geocodes each
+  # store's pin server-side to anchor its locale to the right city. NEXT_PUBLIC_*
+  # is normally inlined at build, but relying on that alone would fail silently
+  # (geocode skipped -> address-only locale) with no error to notice.
   - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
     value: AIzaSyA7qSg5QpBKLYUapW2EmougwrJPiYab__U
     availability:
       - BUILD
+      - RUNTIME
       - RUNTIME
   # Genkit Google GenAI plugin looks for GEMINI_API_KEY (or GOOGLE_API_KEY)
   - variable: GEMINI_API_KEY

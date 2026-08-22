@@ -9,17 +9,25 @@ import { generateHolidayCalendar } from "@/ai/flows/generate-holiday-calendar";
 import { monthKey, pickDueStores, yearsToGenerate } from "@/lib/holidays/holiday-cron";
 import { recomputeHolidayEffectsForStore } from "@/lib/server/holiday-effects";
 import type { HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
+import { reverseGeocode, buildLocale, type GeoPoint } from "@/lib/holidays/geo-locale";
 
 const MODEL = "googleai/gemini-3.6-flash";
 const HOLIDAY_CRON_LOG = "system/holidayCronLog";
 
 /** One Gemini call → per-year `holidayCalendar/{YYYY}` docs (deep-merged). */
 export async function generateAndStoreHolidayCalendar(
-  store: { id: string; address?: string },
+  store: { id: string; address?: string; geo?: GeoPoint | null },
   years: number[],
-): Promise<{ storeId: string; yearsWritten: number; entriesWritten: number }> {
+): Promise<{ storeId: string; yearsWritten: number; entriesWritten: number; locale: string }> {
   const db = getAdminDb();
-  const locale = store.address?.trim() || "Philippines";
+
+  // The pin anchors city/province so a vague address cannot land the store in
+  // the wrong town; the address still supplies barangay detail. Geocoding
+  // failure is non-fatal — buildLocale then returns the address alone.
+  // NEXT_PUBLIC_* is inlined at build time, so this must stay a static
+  // reference, not a dynamic process.env lookup.
+  const anchor = await reverseGeocode(store.geo, process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY);
+  const locale = buildLocale(store.address, anchor);
 
   const { entries } = await generateHolidayCalendar({ locale, years });
 
@@ -48,7 +56,7 @@ export async function generateAndStoreHolidayCalendar(
   }
   await batch.commit();
 
-  return { storeId: store.id, yearsWritten: byYear.size, entriesWritten };
+  return { storeId: store.id, yearsWritten: byYear.size, entriesWritten, locale };
 }
 
 async function markStoreDone(periodKey: string, storeId: string): Promise<void> {
@@ -87,6 +95,7 @@ export async function runHolidayCalendarForAllDueStores(): Promise<{
     reason?: string;
     yearsWritten?: number;
     entriesWritten?: number;
+    locale?: string;
   }>;
 }> {
   const db = getAdminDb();
@@ -101,11 +110,11 @@ export async function runHolidayCalendarForAllDueStores(): Promise<{
 
   const activeStores = await getActiveStores(db);
   const aiStoreIds: string[] = [];
-  const storeById = new Map<string, { id: string; address?: string }>();
+  const storeById = new Map<string, { id: string; address?: string; geo?: GeoPoint | null }>();
   for (const s of activeStores) {
     if (s.aiEnabled !== true) continue;
     aiStoreIds.push(s.id);
-    storeById.set(s.id, { id: s.id, address: s.address ?? undefined });
+    storeById.set(s.id, { id: s.id, address: s.address ?? undefined, geo: s.geo ?? null });
   }
 
   const due = pickDueStores(aiStoreIds, doneStoreIds);
@@ -115,6 +124,7 @@ export async function runHolidayCalendarForAllDueStores(): Promise<{
     reason?: string;
     yearsWritten?: number;
     entriesWritten?: number;
+    locale?: string;
   }> = [];
 
   for (const storeId of due) {
@@ -134,6 +144,7 @@ export async function runHolidayCalendarForAllDueStores(): Promise<{
         status: "generated",
         yearsWritten: result.yearsWritten,
         entriesWritten: result.entriesWritten,
+        locale: result.locale,
       });
     } catch (err: any) {
       // Deliberately NOT marked done — a failed store is retried on the next
