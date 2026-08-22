@@ -89,6 +89,8 @@ export type CustomerCatalogEntry = {
   subCategory: string;
   imageUrl: string | null;
   kind: "single" | "group";
+  /** Surfaced under "Popular" on the customer menu. Omitted when false. */
+  popular?: boolean;
   price: number; // single: its price; group: lowest variant price ("from")
   /**
    * Whether a diner may order this themselves.
@@ -202,6 +204,16 @@ export async function rebuildCustomerCatalog(
   function invImage(productId: string): string | null {
     const inv = invByProductId.get(String(productId));
     return inv?.imageUrl ?? null;
+  }
+
+  /**
+   * Whether this store flags the item as popular.
+   *
+   * Reads the same per-store inventory row as price and ordering, so an item a
+   * branch does not carry can never be popular there.
+   */
+  function resolvePopular(productId: string): boolean {
+    return invByProductId.get(String(productId))?.isPopular === true;
   }
 
   /**
@@ -319,7 +331,13 @@ export async function rebuildCustomerCatalog(
         orderable: variants.some((v) => v.orderable),
         variants,
       };
+      // A family root normally carries no inventory row of its own, so the flag
+      // lives on the variants the store actually stocks — same reasoning as
+      // `orderable` above.
+      const popular =
+        resolvePopular(p.id) || variants.some((v) => resolvePopular(v.productId));
       // Only attach optional fields when present — Firestore rejects `undefined`.
+      if (popular) entry.popular = true;
       if (optionGroups) entry.optionGroups = optionGroups;
       if (description) entry.description = description;
       entries.push(entry);
@@ -341,6 +359,7 @@ export async function rebuildCustomerCatalog(
         kitchenLocationName: ordering.kitchenLocationName,
         inventoryId: invIdByProductId.get(String(p.id)) ?? null,
       };
+      if (resolvePopular(p.id)) entry.popular = true;
       if (optionGroups) entry.optionGroups = optionGroups;
       if (description) entry.description = description;
       entries.push(entry);

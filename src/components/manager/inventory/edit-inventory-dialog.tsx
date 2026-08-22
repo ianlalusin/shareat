@@ -75,7 +75,7 @@ const refinedFormSchema = formSchema.superRefine((data, ctx) => {
 });
 
 type FormValues = z.infer<typeof formSchema>;
-type ToggleField = "isActive" | "onlineEnabled" | "customerEnabled";
+type ToggleField = "isActive" | "onlineEnabled" | "customerEnabled" | "isPopular";
 
 interface EditInventoryDialogProps {
   isOpen: boolean;
@@ -460,6 +460,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
   const [isActive, setIsActive] = React.useState(!!item.isActive);
   const [onlineEnabled, setOnlineEnabled] = React.useState(item.onlineEnabled === true);
   const [customerEnabled, setCustomerEnabled] = React.useState(item.customerEnabled === true);
+  const [isPopular, setIsPopular] = React.useState(item.isPopular === true);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -476,6 +477,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
     setIsActive(!!item.isActive);
     setOnlineEnabled(item.onlineEnabled === true);
     setCustomerEnabled(item.customerEnabled === true);
+    setIsPopular(item.isPopular === true);
   }, [isOpen, item, form]);
 
   const handleToggleClick = (field: ToggleField) => {
@@ -483,6 +485,7 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
     if (field === "isActive") setIsActive((v) => !v);
     if (field === "onlineEnabled") setOnlineEnabled((v) => !v);
     if (field === "customerEnabled") setCustomerEnabled((v) => !v);
+    if (field === "isPopular") setIsPopular((v) => !v);
   };
 
   const onSubmit = (data: FormValues) => {
@@ -604,6 +607,19 @@ export function EditInventoryDialog({ isOpen, onClose, item, storeId, onSave, on
                 <p className="text-xs text-muted-foreground">
                   Always charges the store price (₱{Number(form.watch("sellingPrice") ?? item.sellingPrice ?? 0).toFixed(2)}) — there's no separate customer app price, so it can never drift from the counter.
                 </p>
+
+                <AvailabilitySwitch
+                  label="Popular"
+                  description="Also list this item under Popular, at the front of the menu."
+                  checked={isPopular}
+                  onCheckedChange={() => handleToggleClick("isPopular")}
+                  disabled={!customerEnabled}
+                />
+                {!customerEnabled ? (
+                  <p className="text-xs text-muted-foreground">
+                    Turn on Customer App Enabled first — an item this store doesn't publish can't be popular on a menu it isn't on.
+                  </p>
+                ) : null}
               </TabsContent>
 
               <TabsContent value="photo" className="space-y-4">
