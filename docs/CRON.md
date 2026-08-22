@@ -53,7 +53,7 @@ from this doc. All jobs are `Asia/Manila`.
 | `update-accuracy` | `GET /api/cron/update-accuracy` | `0 4 * * *` (4 AM) | asia-southeast1 | ENABLED |
 | `generate-forecast` | `GET /api/cron/generate-forecast` | `0 5-9 * * *` (5–9 AM) | asia-southeast1 | ENABLED |
 | `reconcile-analytics` | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` | asia-southeast1 | ENABLED |
-| `purge-expired-pins` | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM) | asia-southeast1 | **PAUSED** — see below |
+| `purge-expired-pins` | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM) | asia-southeast1 | ENABLED |
 | `rebuild-presets` | `GET /api/cron/rebuild-presets` | `30 0 * * *` (12:30 AM) | **asia-east1** | ENABLED |
 | `holiday-calendar` | `GET /api/cron/holiday-calendar` | — | — | **NO JOB EXISTS** |
 
@@ -77,102 +77,28 @@ Discrepancies this table corrects, all confirmed live:
   feature having been built but never rolled out. Either create the job or stop
   documenting it as scheduled; not decided here.
 
-### `purge-expired-pins` is paused on purpose
+### `purge-expired-pins` rollout notes
 
-It was created 2026-08-22 and immediately paused because the route was committed
-but **not yet deployed** — POS deploys on push, and the first fire would have
-been the next morning against a 404. Arm it once the route is live:
+Created 2026-08-22, held paused until the route was deployed (POS deploys on
+push, and the first fire would otherwise have hit a 404 the next morning), then
+resumed once live. Verified end-to-end before arming by calling the route with
+the real `CRON_SECRET` but **without** `?write=1` — HTTP 200,
+`{"ok":true,"write":false,"total":419,"candidates":4,"deleted":0}`, which proves
+auth, the Admin SDK and the query all work while deleting nothing.
+
+Useful commands (note the `--location`, it is not the default region):
 
 ```bash
-gcloud scheduler jobs resume purge-expired-pins \
-  --location=asia-southeast1 --project=shareat-hub-v2
+# force a run instead of waiting for Sunday — NOTE: the job URI carries
+# ?write=1, so this really deletes
+gcloud scheduler jobs run purge-expired-pins   --location=asia-southeast1 --project=shareat-hub-v2
 
-# optional: prove it end-to-end without waiting for Sunday
-gcloud scheduler jobs run purge-expired-pins \
-  --location=asia-southeast1 --project=shareat-hub-v2
+# report-only check, deletes nothing
+curl -H "Authorization: Bearer $CRON_SECRET"   https://app.shareat.net/api/cron/purge-expired-pins
+
+gcloud scheduler jobs pause  purge-expired-pins --location=asia-southeast1 --project=shareat-hub-v2
+gcloud scheduler jobs resume purge-expired-pins --location=asia-southeast1 --project=shareat-hub-v2
 ```
-
-`log-weather` polls OpenWeatherMap once per active store (geotagged via the store
-editor) and upserts each day's forecast into the monthly doc
-`stores/<storeId>/weatherForecasts/<YYYY-MM>`. The sales forecast reads those docs
-— it never calls the weather API itself, keeping usage well under the free tier.
-Stores without a geotag are skipped.
-
-`holiday-calendar` processes ONE "due" store per fire. A per-store AI holiday/
-occasion calendar is generated (`stores/<storeId>/holidayCalendar/<YYYY>`,
-Gemini, prior+current year so last year seeds learning) and the store's learned
-holiday lifts are recomputed deterministically into
-`stores/<storeId>/holidayEffects/summary`. "Due" = an active AI store not yet in
-`system/holidayCronLog.weeks[<ISO-week>].doneStoreIds`; once all are done the
-fires are cheap no-ops until the next ISO week, giving a ≈weekly refresh that
-also catches newly-proclaimed special days. Reuses `CRON_SECRET` + `GEMINI_API_KEY`.
-
-`generate-forecast` fires up to five times because the route self-deduplicates
-via `system/forecastCronLog.runs[<date>]` — the first successful run marks the
-day "success" and later attempts short-circuit. The extra fires only exist as
-fallbacks for transient Gemini or Firestore failures.
-
-`generate-daily-insight` computes **yesterday's** performance per active store
-— no AI involved — and writes `stores/<storeId>/dailyMetrics/<YYYYMMDD>`. This
-used to feed an AI-narrated manager brief; that generation was retired in
-favor of ERP's own AI brief (2026-08-08), so this route now only produces the
-deterministic metrics digest ERP pulls from. Reuses `CRON_SECRET` (auth); no
-Gemini call, no `GEMINI_API_KEY` dependency. See
-`docs/erp-daily-metrics-forwarding.md` for what's measured.
-
-**Cost control (forecast cron):** generation is **per-store idempotent** — a
-store already done for the day is skipped (no Gemini call), so a single flaky
-store never re-runs the whole fleet. Each fire processes only a small **batch**
-of not-yet-done stores at low concurrency, so the work spreads across the
-multiple off-peak fires and bursts stay under the Gemini rate limit. A day is
-marked `success` only once every active store is done; otherwise it stays
-`pending` and the next fire picks up the remainder / retries failures (capped
-by `MAX_DAILY_ATTEMPTS`). The forecast tracks completed stores in
-`system/forecastCronLog.runs[<date>].doneStoreIds`. `generate-daily-insight`
-uses the same idempotent/batched shape (tracked in
-`system/dailyMetricsCronLog`) purely to spread Firestore load, not for any
-rate-limit reason — there's no model call left to throttle.
-
-`reconcile-analytics` is the durable backstop for the analytics server lockdown
-(M-1). Analytics rollups are server-write-only (Firestore rules), and the client
-applies each delta through a server endpoint with retry. If a call still fails
-transiently, the receipt is left with a pending flag — `analyticsApplied:false`
-(payment/refund not applied) or `analyticsReversed:false` (void not reversed).
-This job sweeps each active store for those via **cheap single-field queries**
-(≈0 docs on a healthy system) and applies them with the same **idempotent**
-server writer, so analytics is never permanently dropped. It reuses `CRON_SECRET`;
-no new secret. (KDS ticket and receipt-edit deltas are not in this sweep — they
-rely on endpoint retry plus the admin **Backfill** tool as the manual backstop.)
-
-`rebuild-presets` re-sums the dashboard preset tiles (today / yesterday / last7 /
-last30 / thisMonth / lastMonth / thisWeek / ytd) from the per-day analytics docs
-for every active store, once daily. The live delta path only **adds** to a preset
-doc for whichever windows include an event when it happens — it never rolls a day
-back **off** once it leaves the rolling window, so the tiles inflate over time
-(observed in prod: a "This Month" tile reading 3×–11× the true receipt total). The
-per-day analytics docs are always correct (keyed by `dayId`), so re-summing them
-resets the tiles; the deltas keep them live during the day. Reuses `CRON_SECRET`;
-no new secret. Cheap (≈8 windowed reads per store).
-
-`purge-expired-pins` deletes docs from the root `pinRegistry` collection whose
-`expiresAtMs` lapsed more than 7 days ago. A PIN's TTL is 2 hours and it is dead
-once its session closes — it feeds no aggregate, so unlike kitchen tickets this
-needs no retention horizon and no rebuild guard. The 7-day grace window keeps the
-`/admin` pin list useful for support lookups. Filtering on `expiresAtMs` rather
-than `status` catches both archived pins and ones that expired without being
-archived, in a single-field query needing no composite index.
-
-**This route is report-only unless `?write=1` is on the URI** — the scheduler job
-must include it to actually delete. It also refuses to run if *every* pin matches
-the filter, so a wrong field or a clock problem can't take live sessions' PINs
-with it. Logic is shared verbatim with `scripts/purge-expired-pins.ts`
-(`npm run purge:pins`) via `src/lib/server/retention/purge-pins.ts`, so the manual
-tool and the job cannot drift.
-
-Weekly rather than daily on purpose: the registry gains only ~25 pins/day, so a
-nightly sweep would mostly be empty invocations. First run cleared 4,878 of 5,296
-pins (2026-08-22) — that backlog existed because CUSTOMER's
-`cleanup-archived-pins` admin route was never actually invoked.
 
 ## Auth
 
