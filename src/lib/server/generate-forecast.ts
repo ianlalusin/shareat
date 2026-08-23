@@ -5,7 +5,8 @@ import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
 import { getActiveStores } from "@/lib/server/active-stores-cache";
 import { forecastWeeklySales, type ForecastInput } from "@/ai/flows/forecast-weekly-sales";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { format, addDays, subDays } from "date-fns";
+import { addDays, subDays } from "date-fns";
+import { manilaDayAnchor, anchorYmd, anchorDayId, anchorDayOfWeek, anchorYear } from "@/lib/analytics/manila-day";
 import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from "@/lib/utils/forecast-helpers";
 import { buildUpcomingHolidays, type HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
 import { enrichUpcomingHolidays } from "@/lib/holidays/holiday-effects";
@@ -47,10 +48,10 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
 /** Inclusive list of YYYY-MM month ids spanning two dates. */
 function monthsBetween(start: Date, end: Date): string[] {
   const out: string[] = [];
-  let y = start.getFullYear();
-  let m = start.getMonth();
-  const endY = end.getFullYear();
-  const endM = end.getMonth();
+  let y = start.getUTCFullYear();
+  let m = start.getUTCMonth();
+  const endY = end.getUTCFullYear();
+  const endM = end.getUTCMonth();
   while (y < endY || (y === endY && m <= endM)) {
     out.push(`${y}-${String(m + 1).padStart(2, "0")}`);
     if (++m > 11) { m = 0; y++; }
@@ -67,13 +68,13 @@ function monthsBetween(start: Date, end: Date): string[] {
  * Days are evaluated in reverse chronological order (most recent first) but
  * each is independent, so partial failures still make progress.
  */
-async function backfillRecentAccuracy(storeId: string, now: Date, days = 7): Promise<void> {
+async function backfillRecentAccuracy(storeId: string, today: Date, days = 7): Promise<void> {
   const db = getAdminDb();
 
   for (let i = 1; i <= days; i++) {
-    const day = subDays(now, i);
-    const dateStr = format(day, "yyyy-MM-dd");
-    const dayId = dateStr.replace(/-/g, "");
+    const day = subDays(today, i);
+    const dateStr = anchorYmd(day);
+    const dayId = anchorDayId(day);
 
     try {
       const forecastRef = db.doc(`stores/${storeId}/salesForecasts/${dateStr}`);
@@ -107,9 +108,12 @@ async function backfillRecentAccuracy(storeId: string, now: Date, days = 7): Pro
   }
 }
 
-export async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; forecastsWritten?: number }> {
+export async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; skipped?: string; forecastsWritten?: number }> {
   const db = getAdminDb();
-  const now = new Date();
+  // Every date below is a Manila calendar day, matching how analytics docs are
+  // keyed. Using server-local dates here is what shifted the whole forecast
+  // window back a day — see manila-day.ts.
+  const today = manilaDayAnchor();
 
   // Master AI switch: skip Gemini entirely for stores with AI off (gates the
   // manual refresh route too; cron already filters disabled stores out).
@@ -119,14 +123,14 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
 
   try {
     // 1. Backfill accuracy for the last 7 days (idempotent, self-healing).
-    await backfillRecentAccuracy(store.id, now, 7);
+    await backfillRecentAccuracy(store.id, today, 7);
 
     // 2. Fetch 28 days of data
-    const historyEndDate = subDays(now, 1);
+    const historyEndDate = subDays(today, 1);
     const historyStartDate = subDays(historyEndDate, 27);
-    const startDayId = format(historyStartDate, "yyyyMMdd");
-    const endDayId = format(historyEndDate, "yyyyMMdd");
-    const todayDayId = format(now, "yyyyMMdd");
+    const startDayId = anchorDayId(historyStartDate);
+    const endDayId = anchorDayId(historyEndDate);
+    const todayDayId = anchorDayId(today);
 
     const [salesSnap, weatherSnap, dailyContextSnap] = await Promise.all([
       db.collection(`stores/${store.id}/analytics`)
@@ -140,27 +144,32 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
         .get(),
       db.collection(`stores/${store.id}/dailyContext`)
         .where("dayId", ">=", startDayId)
-        .where("dayId", "<=", format(addDays(now, 6), "yyyyMMdd"))
+        .where("dayId", "<=", anchorDayId(addDays(today, 6)))
         .get(),
     ]);
 
     const historicalSales = salesSnap.docs.map(d => {
       const data = d.data();
       return {
-        date: format(new Date(data.meta.dayStartMs!), "yyyy-MM-dd"),
+        date: anchorYmd(manilaDayAnchor(data.meta.dayStartMs!)),
         netSales: data.payments?.totalGross ?? 0,
       };
     });
 
     if (historicalSales.length < 7) {
-      return { storeId: store.id, ok: false, error: "Not enough history (need ≥7 days)" };
+      // A brand-new branch genuinely cannot be forecast yet. Reporting that as
+      // a FAILURE meant the daily run never reached "success" and burned its
+      // whole retry budget on a store that could not possibly succeed — Davao
+      // held the cron at pending/attempts=5 every day for a week. It is a skip:
+      // marked done for today, retried tomorrow when it may have enough.
+      return { storeId: store.id, ok: true, skipped: "Not enough history (need >=7 days)", forecastsWritten: 0 };
     }
 
     // Weather now lives primarily in monthly weatherForecasts docs (API-logged).
     // Read the months covering the history window + the next 7 days, then build
     // both the historical series and the upcoming forecast from them; fall back
     // to legacy per-day weatherRecords for any day the API hasn't covered.
-    const monthIds = monthsBetween(historyStartDate, addDays(now, 7));
+    const monthIds = monthsBetween(historyStartDate, addDays(today, 7));
     const wfSnaps = await Promise.all(
       monthIds.map((ym) => db.doc(`stores/${store.id}/weatherForecasts/${ym}`).get()),
     );
@@ -172,14 +181,16 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     }
     const readable = (c: any) => (typeof c === "string" ? c.replace(/_/g, " ") : c);
 
-    const todayDate = format(now, "yyyy-MM-dd");
+    const todayDate = anchorYmd(today);
     const histByDate = new Map<string, string>();
     // Legacy weatherRecords (fallback so pre-existing manual history still counts).
     weatherSnap.docs.forEach((d) => {
       const data = d.data() as WeatherRecord;
       const counts = data.entries.reduce((acc, e) => { acc[e.condition] = (acc[e.condition] || 0) + 1; return acc; }, {} as Record<string, number>);
       const summary = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || "clear";
-      const date = format(new Date(data.dayId.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")), "yyyy-MM-dd");
+      // Pure string reshape of an already-Manila dayId — no Date round-trip,
+      // which would reintroduce a machine-timezone dependency here.
+      const date = data.dayId.replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
       histByDate.set(date, summary.replace("_", " "));
     });
     // API-logged days override for any past day they cover.
@@ -212,7 +223,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     // enriched with AM/PM split, avg temp, and rain probability.
     const forecastWeather: { date: string; condition: string; am: string; pm: string; tempC: number | null; popPct: number | null }[] = [];
     for (let i = 0; i < 7; i++) {
-      const id = format(addDays(now, i), "yyyyMMdd");
+      const id = anchorDayId(addDays(today, i));
       const w = wfDays[id];
       if (!w) continue;
       forecastWeather.push({
@@ -234,7 +245,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     // Holidays: AI per-store calendar (+ dailyContext overrides), enriched with
     // this branch's learned lift. Falls back to config/default holidays when the
     // calendar hasn't been generated yet.
-    const calYears = [...new Set([format(now, "yyyy"), format(addDays(now, 6), "yyyy")])];
+    const calYears = [...new Set([anchorYear(today), anchorYear(addDays(today, 6))])];
     const calSnaps = await Promise.all(
       calYears.map((y) => db.doc(`stores/${store.id}/holidayCalendar/${y}`).get()),
     );
@@ -245,7 +256,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
     const effectsSnap = await db.doc(`stores/${store.id}/holidayEffects/summary`).get();
     const effects = (effectsSnap.exists ? effectsSnap.data()?.effects : {}) ?? {};
 
-    const windowDayIds = Array.from({ length: 7 }, (_, i) => format(addDays(now, i), "yyyyMMdd"));
+    const windowDayIds = Array.from({ length: 7 }, (_, i) => anchorDayId(addDays(today, i)));
     const overrides: Record<string, string | null> = {};
     for (const dc of dailyContextDocs) {
       if (dc.holiday?.name) overrides[dc.dayId] = dc.holiday.name;
@@ -283,7 +294,7 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
 
     // 4. Write forecasts for next 7 days
     const batch = db.batch();
-    const todayDayIndex = now.getDay();
+    const todayDayIndex = anchorDayOfWeek(today);
     let writtenCount = 0;
 
     for (const daily of result.forecast) {
@@ -293,8 +304,8 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
       let dayDiff = forecastDayIndex - todayDayIndex;
       if (dayDiff < 0) dayDiff += 7;
 
-      const forecastDate = addDays(now, dayDiff);
-      const forecastDateStr = format(forecastDate, "yyyy-MM-dd");
+      const forecastDate = addDays(today, dayDiff);
+      const forecastDateStr = anchorYmd(forecastDate);
 
       const docRef = db.doc(`stores/${store.id}/salesForecasts/${forecastDateStr}`);
       batch.set(docRef, {
@@ -320,7 +331,7 @@ export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?:
   processed: number;
   remaining: number;
   okStoreIds: string[];
-  results: { storeId: string; ok: boolean; error?: string; forecastsWritten?: number }[];
+  results: { storeId: string; ok: boolean; error?: string; skipped?: string; forecastsWritten?: number }[];
 }> {
   const db = getAdminDb();
   const activeStores = await getActiveStores(db);
@@ -361,12 +372,12 @@ export async function updateAccuracyForAllActiveStores(): Promise<{
 }> {
   const db = getAdminDb();
   const activeStores = await getActiveStores(db);
-  const now = new Date();
+  const today = manilaDayAnchor();
 
   const results = await Promise.all(
     activeStores.map(async (s) => {
       try {
-        await backfillRecentAccuracy(s.id, now, 7);
+        await backfillRecentAccuracy(s.id, today, 7);
         return { storeId: s.id, ok: true };
       } catch (err: any) {
         console.error(`[updateAccuracy] store=${s.id} failed:`, err);
