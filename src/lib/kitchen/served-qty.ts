@@ -2,8 +2,9 @@
  * The quantity bookkeeping that closing a kitchen ticket as SERVED implies.
  *
  * Three places close a whole ticket: the KDS "Served" button
- * (`updateTicketStatus`), `completeSessionPayment`, and `settleOffline`. For a
- * long time only the first wrote these fields, and the gap was expensive:
+ * (`updateTicketStatus`), `completePaymentFromUnits`, and
+ * `completePaymentOffline`. For a long time only the first wrote these
+ * fields, and the gap was expensive:
  *
  *  - `computeKdsTargets` reads `qtyServed ?? fallback` — nullish, not falsy —
  *    so a ticket left with an explicit `qtyServed: 0` logs ZERO serves to KDS
