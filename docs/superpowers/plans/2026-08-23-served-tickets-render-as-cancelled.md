@@ -50,7 +50,7 @@ if (s === "served") return qtyServed > 0 ? "served" : "cancelled";
 Two independent producers, both live:
 
 1. **Stale KDS clients.** `updatePayload.qtyServed` was added to `updateTicketStatus` in POS `dcb3271` at **2026-08-21 03:46 +08:00** (`src/app/kitchen/page.tsx:559`). Malvar's KDS writes it (40/40). Lipa's and Davao's write it **never** (0/41, 0/34) across three and one staff profile respectively — those tablets are still running the pre-`dcb3271` JS bundle in a tab that has never been reloaded. TEST shows the boundary inside one session: `1gONQ8Ku53KybBk0dUik` has a Kimbap served 03:31:42 with `qtyServed: 0` and another served 03:37:40 with `qtyServed: 1`.
-2. **The payment sweep.** `completeSessionPayment` (`POS/src/components/cashier/firestore.ts:525-545`) and `settleOffline` (`POS/src/components/cashier/offlinePayment.ts:118-125`) flip every still-`preparing` ticket to `status: "served"` and write **no quantity fields at all**. This is 100% of Banay-Banay's served tickets — that branch never taps Served; the cashier's payment closes the tickets. This path is invisible to a diner (payment deletes `activeSessions/{id}`, so the customer route 404s afterwards) but it corrupts the record and the analytics.
+2. **The payment sweep.** `completePaymentFromUnits` (`POS/src/components/cashier/firestore.ts:525-545`) and `completePaymentOffline` (`POS/src/components/cashier/offlinePayment.ts:118-125`) flip every still-`preparing` ticket to `status: "served"` and write **no quantity fields at all**. This is 100% of Banay-Banay's served tickets — that branch never taps Served; the cashier's payment closes the tickets. This path is invisible to a diner (payment deletes `activeSessions/{id}`, so the customer route 404s afterwards) but it corrupts the record and the analytics.
 
 **The package ticket is the first order and the most exposed.** `startSession` (`POS/src/components/cashier/firestore.ts:307-330`) writes the package ticket with `qty: 1` and **no** `qtyOrdered`, `qtyServed`, `qtyCancelled`, `qtyRemaining`, or `serveLog` — the only ticket in the system created without that bookkeeping (`createKitchenTickets` at `firestore.ts:1400-1406` and CUSTOMER's `writeKitchenTicket` both set them). Every production package ticket in the scan reads `qtyOrdered=undefined qtyServed=undefined`, which is why the diner's *first* row is the one that always reads Cancelled.
 
@@ -436,7 +436,7 @@ Create `src/lib/kitchen/served-qty.ts`:
  * The quantity bookkeeping that closing a kitchen ticket as SERVED implies.
  *
  * Three places close a whole ticket: the KDS "Served" button
- * (`updateTicketStatus`), `completeSessionPayment`, and `settleOffline`. For a
+ * (`updateTicketStatus`), `completePaymentFromUnits`, and `completePaymentOffline`. For a
  * long time only the first wrote these fields, and the gap was expensive:
  *
  *  - `computeKdsTargets` reads `qtyServed ?? fallback` — nullish, not falsy —
@@ -521,7 +521,7 @@ slightly differently."
 - Consumes: `servedQtyFields` from `@/lib/kitchen/served-qty` (Task 3).
 - Produces: nothing new. Both sweeps now write `qtyServed` and `qtyRemaining` alongside `status: "served"`.
 
-- [ ] **Step 1: Fix `completeSessionPayment`**
+- [ ] **Step 1: Fix `completePaymentFromUnits`**
 
 In `src/components/cashier/firestore.ts`, add to the imports:
 
@@ -561,7 +561,7 @@ with:
 
 `oldTicketState` is already in scope on the line above.
 
-- [ ] **Step 2: Fix `settleOffline`**
+- [ ] **Step 2: Fix `completePaymentOffline`**
 
 In `src/components/cashier/offlinePayment.ts`, add to the imports:
 
@@ -645,7 +645,7 @@ No commit. Report the before/after counts.
 
 ## Out of scope — found while investigating, deliberately not bundled
 
-1. **Both payment sweeps ignore `partially_served`.** `completeSessionPayment` and `settleOffline` query `where("status", "in", ["preparing", "ready"])`, so a ticket that was partly served is never closed at payment: it stays `partially_served` forever and lingers in the `rtKdsTickets` projection. Widening the query is *not* a safe drive-by — a `partially_served` bill-on-serve ticket (`billOnServe: true`) would be flipped to served without the sweep creating or incrementing its bill line, so the diner would silently not be charged for the remainder. Fixing it properly means teaching the sweep the billing contract in `customer-order-billing.ts`. Worth its own plan.
+1. **Both payment sweeps ignore `partially_served`.** `completePaymentFromUnits` and `completePaymentOffline` query `where("status", "in", ["preparing", "ready"])`, so a ticket that was partly served is never closed at payment: it stays `partially_served` forever and lingers in the `rtKdsTickets` projection. Widening the query is *not* a safe drive-by — a `partially_served` bill-on-serve ticket (`billOnServe: true`) would be flipped to served without the sweep creating or incrementing its bill line, so the diner would silently not be charged for the remainder. Fixing it properly means teaching the sweep the billing contract in `customer-order-billing.ts`. Worth its own plan.
 
 2. **Backfilling historical tickets.** Task 1 makes the customer app read old tickets correctly with no migration, so a backfill buys only analytics accuracy — recomputing `qtyServed` for the ~4 months of tickets that never got one would let KDS serve stats reflect reality. It is not free: those tickets already carry applied `analyticsServedQty` / `analyticsKdsAppliedAt` markers, and changing `qtyServed` without reconciling the markers risks double-counting on any later delta (see `applyKdsTicketDelta` and `/api/analytics/kds-delta`). Decide whether the history is worth it; if yes, it needs its own plan with the marker reconciliation designed in.
 
