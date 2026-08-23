@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/firebase/client";
+import { servedQtyFields } from "@/lib/kitchen/served-qty";
 import type { AppUser } from "@/context/auth-context";
 import type { Payment, Store, ModeOfPayment } from "@/lib/types";
 import { stripUndefined } from "@/lib/firebase/utils";
@@ -121,7 +122,10 @@ export async function completePaymentOffline(
   activeTicketsSnap.docs.forEach((t) => {
     const st = t.data() as any;
     if (st.status === "served" || st.status === "cancelled") return;
-    batch.update(t.ref, { status: "served", servedAt: serverTs, servedAtClientMs: now, servedByUid: actor.uid, updatedAt: serverTs });
+    // Same quantity bookkeeping the KDS "Served" button writes — see
+    // `servedQtyFields`. KDS rollups are deferred on this path, so the fields
+    // have to be right on the ticket for the later reconcile to read them.
+    batch.update(t.ref, { status: "served", servedAt: serverTs, servedAtClientMs: now, servedByUid: actor.uid, updatedAt: serverTs, ...servedQtyFields(st) });
   });
 
   // close session (increment ownership revision)

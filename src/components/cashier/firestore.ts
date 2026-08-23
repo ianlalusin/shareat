@@ -29,6 +29,7 @@ import {
 
 import { db, auth } from '@/lib/firebase/client';
 import { selectTicketWriter } from '@/lib/offline/kitchenTicketWrites';
+import { servedQtyFields } from '@/lib/kitchen/served-qty';
 import { AppUser } from '@/context/auth-context';
 import type {
   Store,
@@ -534,6 +535,9 @@ export async function completePaymentFromUnits(
       const startMs = toJsDate(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt)?.getTime();
       const durationMs = startMs ? Math.max(0, now - startMs) : 0;
       
+      // Same quantity bookkeeping the KDS "Served" button writes. Without it
+      // this sweep leaves `qtyServed` unset, which logs zero serves to KDS
+      // analytics and used to read as "cancelled" in the customer app.
       const updatePayload: any = {
           status: 'served',
           servedAt: serverTs,
@@ -541,6 +545,7 @@ export async function completePaymentFromUnits(
           servedByUid: actor.uid,
           durationMs: durationMs,
           updatedAt: serverTs,
+          ...servedQtyFields(oldTicketState),
       };
 
       const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
