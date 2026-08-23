@@ -131,10 +131,19 @@ export type CustomerCatalog = {
   items: CustomerCatalogItem[];
 };
 
-export async function rebuildCustomerCatalog(
+/**
+ * Build the snapshot WITHOUT writing it.
+ *
+ * Split out so the nightly sweep (customer-catalog-sweep.ts) can inspect what a
+ * rebuild would produce before committing it — an unattended job that overwrote
+ * every store's menu with whatever the source happened to return could blank
+ * the estate in one pass. Callers that just want the old behaviour should keep
+ * using `rebuildCustomerCatalog`.
+ */
+export async function buildCustomerCatalogSnapshot(
   db: Firestore,
   storeId: string
-): Promise<{ itemCount: number; updatedAtMs: number }> {
+): Promise<CustomerCatalog> {
   if (!storeId) throw new Error("storeId required.");
 
   // Store-level self-ordering switch. Opt-in: absent means off, so shipping
@@ -399,7 +408,15 @@ export async function rebuildCustomerCatalog(
     items,
   };
 
-  await db.doc(`stores/${storeId}/catalogCache/main`).set(snapshot);
+  return snapshot;
+}
 
-  return { itemCount: items.length, updatedAtMs };
+/** Build and publish in one step. Unchanged behaviour for existing callers. */
+export async function rebuildCustomerCatalog(
+  db: Firestore,
+  storeId: string
+): Promise<{ itemCount: number; updatedAtMs: number }> {
+  const snapshot = await buildCustomerCatalogSnapshot(db, storeId);
+  await db.doc(`stores/${storeId}/catalogCache/main`).set(snapshot);
+  return { itemCount: snapshot.itemCount, updatedAtMs: snapshot.updatedAtMs };
 }

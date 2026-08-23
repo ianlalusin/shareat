@@ -50,6 +50,7 @@ from this doc. All jobs are `Asia/Manila`.
 | `generate-forecast` | `GET /api/cron/generate-forecast` | `0 5-9 * * *` (5–9 AM) | asia-southeast1 | ENABLED |
 | `reconcile-analytics` | `GET /api/cron/reconcile-analytics` | `*/15 * * * *` | asia-southeast1 | ENABLED |
 | `purge-expired-pins` | `GET /api/cron/purge-expired-pins?write=1` | `0 3 * * 0` (Sun 3 AM) | asia-southeast1 | ENABLED |
+| `rebuild-customer-catalog` | `GET /api/cron/rebuild-customer-catalog?write=1` | `15 3 * * *` (3:15 AM) | asia-southeast1 | ENABLED |
 | `rebuild-presets` | `GET /api/cron/rebuild-presets` | `30 0 * * *` (12:30 AM) | **asia-east1** | ENABLED |
 | `holiday-calendar` | `GET /api/cron/holiday-calendar` | `0 2 1 * *` (1st, 2 AM) | asia-southeast1 | ENABLED |
 
@@ -103,6 +104,41 @@ in the body; check `failed` in the response or the log line.
 ```bash
 # force a run (safe to repeat — already-done stores are skipped)
 gcloud scheduler jobs run holiday-calendar   --location=asia-southeast1 --project=shareat-hub-v2
+```
+
+### `rebuild-customer-catalog` — the catalog backstop
+
+`stores/{id}/catalogCache/main` is what the customer app and the admin preview
+both read. It has exactly one writer, `rebuildCustomerCatalog`, and that is only
+ever reached through `scheduleCustomerCatalogAutoPublish` — a **debounced,
+client-side, best-effort** call from three manager screens (inventory page,
+edit-inventory dialog, customer-ordering settings). Edit the menu from
+`/admin/menu/*`, or close the tab before the debounce fires, and the rebuild is
+silently lost.
+
+On 2026-08-23 that had left **four of seven stores** on a catalog last written
+2026-08-08 by a one-off backfill — real diners at Malvar and Banay-Banay were
+being served a two-week-old menu, with nothing anywhere reporting a problem.
+This job makes that self-heal within a day, exactly as `reconcile-analytics`
+backstops the per-receipt analytics deltas.
+
+**Safety rail:** the sweep builds each store's snapshot, compares it to what is
+published, and **refuses to write when a rebuild produces 0 items for a store
+that currently has a menu** — the one failure an unattended nightly job must
+never cause. A shrink is allowed (a store legitimately shrinks when it catches
+up to a newer builder); only a blanking is blocked, and it is logged as a
+`skip` with the store id for a human to look at. One failing store never stops
+the others.
+
+Report-only unless `?write=1`. Runs at 3:15 AM so it lands after the Sunday pin
+sweep rather than on top of it. Each store's build reads the whole `products`
+collection once, hence the 600s deadline.
+
+```bash
+# what would change tonight, writing nothing
+curl -H "Authorization: Bearer $CRON_SECRET"   https://app.shareat.net/api/cron/rebuild-customer-catalog
+
+gcloud scheduler jobs run rebuild-customer-catalog   --location=asia-southeast1 --project=shareat-hub-v2
 ```
 
 ### `purge-expired-pins` rollout notes
