@@ -46,6 +46,7 @@ For EACH requested year ({{#each years}}{{{this}}} {{/each}}), list every date t
 - LOCAL fiestas / town or city celebrations specific to {{{locale}}} (mark scope 'local').
 
 Rules:
+- The CITY/MUNICIPALITY named at the start of {{{locale}}} is authoritative and geo-verified. Any street, barangay or subdivision name that follows it is only a locator INSIDE that city. If such a name resembles a famous place in a different city, ignore the resemblance completely — e.g. a store in Lipa City on a street called "Calle Arzobispado" is NOT in Intramuros/Manila and must NOT get Manila fiestas. Never emit a local fiesta belonging to a city other than the one named.
 - Output a flat 'entries' array. One object per (date, occasion). 'dayId' MUST be YYYYMMDD for the specific year.
 - Only include real, dated events. Do NOT invent fiestas you are unsure of — use confidence 'low' if unsure, or omit.
 - 'driver' is the likely direction for a dine-in restaurant: 'up' (people dine out / celebrate), 'down' (people travel away or stay home), or 'neutral'.

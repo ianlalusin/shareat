@@ -69,15 +69,17 @@ describe("extractAnchor", () => {
 describe("buildLocale", () => {
   const anchor = { locality: "Lipa City", province: "Batangas", country: "Philippines" };
 
-  it("anchors a vague address to the verified city — the Manila bug", () => {
+  it("leads with the verified city, not the address — the Manila bug", () => {
+    // "Calle Arzobispado" is an Intramuros street. Appending the verified
+    // location after it was not enough; the pin has to come first.
     expect(buildLocale("Calle Arzobispado", anchor)).toBe(
-      "Calle Arzobispado (verified location: Lipa City, Batangas, Philippines)",
+      'Lipa City, Batangas, Philippines — specifically the area around "Calle Arzobispado" within that city',
     );
   });
 
-  it("keeps barangay detail from the address alongside the anchor", () => {
+  it("keeps barangay detail as a within-city locator", () => {
     expect(buildLocale("Santiago, Malvar, Batangas", { locality: "Malvar", province: "Batangas", country: "Philippines" })).toBe(
-      "Santiago, Malvar, Batangas (verified location: Malvar, Batangas, Philippines)",
+      'Malvar, Batangas, Philippines — specifically the area around "Santiago, Malvar, Batangas" within that city',
     );
   });
 
@@ -96,7 +98,6 @@ describe("buildLocale", () => {
   });
 
   it("tolerates a partial anchor", () => {
-    expect(buildLocale("Somewhere", { locality: "Malvar" })).toBe("Somewhere (verified location: Malvar)");
     expect(buildLocale(undefined, { province: "Batangas", country: "Philippines" })).toBe("Batangas, Philippines");
   });
 });

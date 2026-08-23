@@ -54,17 +54,27 @@ function anchorText(anchor: GeoAnchor): string {
 }
 
 /**
- * Compose the prompt locale. The verified suffix is appended even when the
- * address already names the city — the redundancy is harmless to the model,
- * whereas a missing anchor is exactly how the Manila bug happened.
+ * Compose the prompt locale, **verified city first**.
+ *
+ * Appending the verified location after the raw address was not enough. Lipa's
+ * address begins "Calle Arzobispado", a well-known Intramuros street, and the
+ * model kept emitting Araw ng Maynila and the Intramuros Grand Marian
+ * Procession as its local fiestas even with ", Lipa City, Batangas" in the same
+ * string and a verified suffix after it — the famous street name simply
+ * outweighed the rest.
+ *
+ * So the pin now leads and the address follows as a within-city locator, which
+ * is the only job it is actually good at (barangay-level naming: "Santiago,
+ * Malvar" is what finds the Barangay Santiago fiesta). The prompt carries a
+ * matching rule telling the model the named city governs.
  */
 export function buildLocale(address: string | undefined | null, anchor: GeoAnchor | null): string {
   const addr = (address ?? "").trim();
   const anchored = anchor ? anchorText(anchor) : "";
 
-  if (addr && anchored) return `${addr} (verified location: ${anchored})`;
-  if (addr) return addr;
+  if (anchored && addr) return `${anchored} — specifically the area around "${addr}" within that city`;
   if (anchored) return anchored;
+  if (addr) return addr;
   return "Philippines";
 }
 
