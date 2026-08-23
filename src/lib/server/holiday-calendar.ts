@@ -6,7 +6,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { isStoreAiEnabled } from "@/lib/server/ai-enabled";
 import { getActiveStores } from "@/lib/server/active-stores-cache";
 import { generateHolidayCalendar } from "@/ai/flows/generate-holiday-calendar";
-import { monthKey, pickDueStores, yearsToGenerate } from "@/lib/holidays/holiday-cron";
+import { monthKey, pickDueStores, yearsToGenerate, decideCalendarWrite } from "@/lib/holidays/holiday-cron";
 import { recomputeHolidayEffectsForStore } from "@/lib/server/holiday-effects";
 import type { HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
 import { reverseGeocode, buildLocale, type GeoPoint } from "@/lib/holidays/geo-locale";
@@ -44,19 +44,40 @@ export async function generateAndStoreHolidayCalendar(
 
   const batch = db.batch();
   let entriesWritten = 0;
+  let yearsWritten = 0;
   const now = Date.now();
   for (const [y, days] of byYear) {
     const ref = db.doc(`stores/${store.id}/holidayCalendar/${y}`);
-    batch.set(
-      ref,
-      { year: y, storeId: store.id, locale, source: "ai", model: MODEL, generatedAtMs: now, days },
-      { merge: true }, // deep-merges `days` so proclaimed dates append without dropping prior ones
-    );
-    entriesWritten += Object.keys(days).length;
+
+    // Written WHOLESALE, not deep-merged. Merging meant a wrong entry could
+    // never be removed: Lipa carried "Araw ng Maynila" and the "Intramuros
+    // Grand Marian Procession" for weeks after its address was corrected,
+    // because a regeneration could only ever add keys. Wholesale makes a
+    // regeneration an actual correction; decideCalendarWrite replaces the
+    // protection merge was incidentally providing against a thin response.
+    const currentCount = Object.keys((await ref.get()).data()?.days ?? {}).length;
+    const nextCount = Object.keys(days).length;
+    const decision = decideCalendarWrite(currentCount, nextCount);
+    if (decision.action === "skip") {
+      console.warn(`[holiday-calendar] ${store.id} ${y}: ${decision.reason}`);
+      continue;
+    }
+
+    batch.set(ref, {
+      year: y,
+      storeId: store.id,
+      locale,
+      source: "ai",
+      model: MODEL,
+      generatedAtMs: now,
+      days,
+    });
+    entriesWritten += nextCount;
+    yearsWritten += 1;
   }
   await batch.commit();
 
-  return { storeId: store.id, yearsWritten: byYear.size, entriesWritten, locale };
+  return { storeId: store.id, yearsWritten, entriesWritten, locale };
 }
 
 async function markStoreDone(periodKey: string, storeId: string): Promise<void> {
