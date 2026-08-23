@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { stripUndefined } from "@/lib/firebase/utils";
 import { buildCustomerOrderBillLine, pendingBillLineFor, shouldVoidBilledQty } from "@/lib/kitchen/customer-order-billing";
+import { servedQtyFields } from '@/lib/kitchen/served-qty';
 import type { KitchenTicket, OrderItemStatus, RtKdsStationDoc, DailyMetric } from "@/lib/types";
 import { computeSessionLabel } from "@/lib/utils/session";
 import { toJsDate } from "@/lib/utils/date";
@@ -527,7 +528,6 @@ export default function KitchenPage() {
 
             const ticketQtyOrdered = oldTicketState.qtyOrdered ?? oldTicketState.qty ?? 1;
             const alreadyServed = oldTicketState.qtyServed ?? 0;
-            const alreadyCancelled = oldTicketState.qtyCancelled ?? 0;
 
             const updatePayload: any = { status: newStatus, updatedAt: serverTimestamp() };
             let newTicketState: KitchenTicket;
@@ -555,9 +555,9 @@ export default function KitchenPage() {
                 // `qtyServed ?? fallback`, and a ticket written with
                 // `qtyServed: 0` (as both POS and the customer app do) would
                 // otherwise report ZERO serves to KDS analytics.
-                const qtyNowServed = Math.max(0, ticketQtyOrdered - alreadyCancelled);
+                const { qtyServed: qtyNowServed, qtyRemaining } = servedQtyFields(oldTicketState);
                 updatePayload.qtyServed = qtyNowServed;
-                updatePayload.qtyRemaining = 0;
+                updatePayload.qtyRemaining = qtyRemaining;
 
                 if (pendingBill && billLineRef && billLineSnap) {
                     const qtyToBill = Math.max(0, qtyNowServed - alreadyServed);
