@@ -120,6 +120,19 @@ service firebase.storage {
         && isImageUnder(6);
     }
 
+    // -- Flash ad images (CUSTOMER app promo overlay) --
+    // Uploaded by FlashAdsPanel, shared by /admin/flash-ads (admin) and
+    // /manager/ads (branch manager) in the CUSTOMER repo. This path had no
+    // match block at all, so every upload fell through to the deny-all root
+    // rule below and failed for every role, admin included, with no message
+    // in the UI other than a failed save. Manager/admin + store membership,
+    // matching who can actually reach those two pages.
+    match /flashAdImages/{storeId}/{fileName} {
+      allow write: if request.auth != null
+        && isStoreManagerOrAdmin(request.auth.uid, storeId)
+        && isImageUnder(4);
+    }
+
     // -- Payment proofs --
     // Photo of the customer's e-wallet confirmation screen, taken after they
     // scan a saved QR. ANY active store staffer may write: this is the
