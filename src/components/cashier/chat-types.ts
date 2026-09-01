@@ -18,4 +18,9 @@ export type ChatMessage = {
   text: string;
   staffName?: string | null;
   createdAtClientMs: number;
+  respondedAtClientMs?: number | null;
+  responseMs?: number | null;
+  respondedByProfileId?: string | null;
+  respondedByName?: string | null;
+  onDutyProfileIdAtArrival?: string | null;
 };

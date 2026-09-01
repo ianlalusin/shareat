@@ -46,7 +46,7 @@ export function ChatThreadPane({
   isClosed?: boolean;
   onClosed?: () => void;
 }) {
-  const { appUser } = useAuthContext();
+  const { appUser, user } = useAuthContext();
   const { currentProfile } = useLocalProfile();
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -87,6 +87,27 @@ export function ChatThreadPane({
         unreadForStaff: 0,
         updatedAt: serverTimestamp(),
       });
+      const pendingIds = messages
+        .filter((m) => m.sender === "customer" && m.respondedAtClientMs == null)
+        .map((m) => m.id);
+      if (pendingIds.length > 0 && currentProfile && user) {
+        try {
+          const idToken = await user.getIdToken();
+          await fetch("/api/analytics/chat-response", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+            body: JSON.stringify({
+              storeId, threadId,
+              respondedByProfileId: currentProfile.profileId,
+              respondedByName: currentProfile.name,
+              respondedAtClientMs: now,
+              pendingMessageIds: pendingIds,
+            }),
+          });
+        } catch (e) {
+          console.error("[ChatThreadPane] chat-response analytics call failed:", e);
+        }
+      }
       setReply("");
     } catch (e) {
       console.error("[ChatThreadPane] sendReply failed:", e);
@@ -122,6 +143,27 @@ export function ChatThreadPane({
         unreadForStaff: 0,
         updatedAt: serverTimestamp(),
       });
+      const pendingIds = messages
+        .filter((m) => m.sender === "customer" && m.respondedAtClientMs == null)
+        .map((m) => m.id);
+      if (pendingIds.length > 0 && currentProfile && user) {
+        try {
+          const idToken = await user.getIdToken();
+          await fetch("/api/analytics/chat-response", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+            body: JSON.stringify({
+              storeId, threadId,
+              respondedByProfileId: currentProfile.profileId,
+              respondedByName: currentProfile.name,
+              respondedAtClientMs: now,
+              pendingMessageIds: pendingIds,
+            }),
+          });
+        } catch (e) {
+          console.error("[ChatThreadPane] chat-response analytics call failed:", e);
+        }
+      }
       await updateDoc(doc(db, `stores/${storeId}/chatThreads/${threadId}`), {
         status: "closed",
         closedAt: serverTimestamp(),
