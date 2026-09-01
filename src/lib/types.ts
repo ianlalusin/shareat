@@ -1397,6 +1397,17 @@ export type DailyMetric = {
         confirmMsSumByUser?: Record<string, number>;
         confirmCountByUser?: Record<string, number>;
     };
+    // Chat response timing + on-duty attribution. Timeliness fields are keyed
+    // by RESPONDER; efficiency fields are keyed by whoever was on duty when
+    // the message arrived (may differ — see chat-responsiveness design spec).
+    chat?: {
+        responseMsSumByUser?: Record<string, number>;
+        responseCountByUser?: Record<string, number>;
+        within2MinCountByUser?: Record<string, number>;
+        receivedWhileOnDutyByUser?: Record<string, number>;
+        answeredWhileOnDutyByUser?: Record<string, number>;
+        totalReceived?: number;
+    };
     // profileId -> display name, for labeling per-user metrics in reports.
     staffNames?: Record<string, string>;
     sessions?: {

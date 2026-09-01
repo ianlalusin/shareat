@@ -29,10 +29,18 @@ export async function GET(request: Request) {
   const startMs = Date.parse(`${date}T00:00:00+08:00`);
   const endMs = startMs + 24 * 60 * 60 * 1000 - 1;
 
-  type Metric = { serveMsSum: number; serveCount: number; confirmMsSum: number; confirmCount: number; grossSales: number; txCount: number };
+  type Metric = {
+    serveMsSum: number; serveCount: number; confirmMsSum: number; confirmCount: number;
+    grossSales: number; txCount: number;
+    chatResponseMsSum: number; chatResponseCount: number; chatWithin2MinCount: number;
+    chatReceivedWhileOnDuty: number; chatAnsweredWhileOnDuty: number;
+  };
   const metrics: Record<string, Metric> = {};
   const ensure = (pid: string): Metric =>
-    (metrics[pid] ??= { serveMsSum: 0, serveCount: 0, confirmMsSum: 0, confirmCount: 0, grossSales: 0, txCount: 0 });
+    (metrics[pid] ??= {
+      serveMsSum: 0, serveCount: 0, confirmMsSum: 0, confirmCount: 0, grossSales: 0, txCount: 0,
+      chatResponseMsSum: 0, chatResponseCount: 0, chatWithin2MinCount: 0, chatReceivedWhileOnDuty: 0, chatAnsweredWhileOnDuty: 0,
+    });
   const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
   try {
@@ -67,6 +75,15 @@ export async function GET(request: Request) {
       };
       merge(k.servingMsSumByUser ?? {}, k.servingCountByUser ?? {}, "serveMsSum", "serveCount");
       merge(s.confirmMsSumByUser ?? {}, s.confirmCountByUser ?? {}, "confirmMsSum", "confirmCount");
+      const c = d?.chat ?? {};
+      const mergeChat = (
+        msMap: Record<string, number>, cntField: keyof Metric,
+      ) => { for (const [pid, v] of Object.entries(msMap ?? {})) (ensure(pid) as any)[cntField] += num(v); };
+      mergeChat(c.responseMsSumByUser ?? {}, "chatResponseMsSum");
+      mergeChat(c.responseCountByUser ?? {}, "chatResponseCount");
+      mergeChat(c.within2MinCountByUser ?? {}, "chatWithin2MinCount");
+      mergeChat(c.receivedWhileOnDutyByUser ?? {}, "chatReceivedWhileOnDuty");
+      mergeChat(c.answeredWhileOnDutyByUser ?? {}, "chatAnsweredWhileOnDuty");
       // Label any profile the doc knows about (e.g. deleted profiles) too.
       for (const [pid, name] of Object.entries((d?.staffNames ?? {}) as Record<string, string>)) {
         if (!staffNames[pid] && name) staffNames[pid] = String(name);
