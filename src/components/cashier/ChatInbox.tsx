@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  addDoc,
   collection,
   doc,
   getDocs,
@@ -45,6 +46,47 @@ function fmtClock(ms?: number | null): string {
 export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   const { appUser } = useAuthContext();
   const { currentProfile } = useLocalProfile();
+
+  // Presence log for chat on-duty attribution. Scoped to THIS component
+  // (mounted only on cashier-station views) so a KDS/server device's local
+  // profile never pollutes "who's on duty for chat". Logs a signout for the
+  // previous profile immediately followed by a signin for the new one, and a
+  // signout on unmount.
+  const prevProfileRef = useRef<{ profileId: string; profileName: string } | null>(null);
+  useEffect(() => {
+    if (!storeId) return;
+    const prev = prevProfileRef.current;
+    const next = currentProfile ? { profileId: currentProfile.profileId, profileName: currentProfile.name } : null;
+    if (prev?.profileId === next?.profileId) return;
+    const now = Date.now();
+    const logRef = collection(db, `stores/${storeId}/chatPresenceLog`);
+    (async () => {
+      try {
+        if (prev) {
+          await addDoc(logRef, { profileId: prev.profileId, profileName: prev.profileName, event: "signout", atClientMs: now, atServer: serverTimestamp() });
+        }
+        if (next) {
+          await addDoc(logRef, { profileId: next.profileId, profileName: next.profileName, event: "signin", atClientMs: now, atServer: serverTimestamp() });
+        }
+      } catch (e) {
+        console.error("[ChatInbox] presence log write failed:", e);
+      }
+    })();
+    prevProfileRef.current = next;
+  }, [storeId, currentProfile]);
+
+  useEffect(() => {
+    return () => {
+      const prev = prevProfileRef.current;
+      if (!storeId || !prev) return;
+      void addDoc(collection(db, `stores/${storeId}/chatPresenceLog`), {
+        profileId: prev.profileId, profileName: prev.profileName, event: "signout",
+        atClientMs: Date.now(), atServer: serverTimestamp(),
+      }).catch((e) => console.error("[ChatInbox] presence signout on unmount failed:", e));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
+
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [open, setOpen] = useState(false);
   const [listTab, setListTab] = useState<"open" | "closed">("open");
