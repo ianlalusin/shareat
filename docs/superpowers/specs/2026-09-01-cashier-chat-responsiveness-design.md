@@ -225,6 +225,18 @@ same way.
   wins. Acceptable for the current single-front-register store model; a
   future device-scoped presence log would be a separate change if that
   assumption stops holding.
+- A multi-store role (manager/admin) who switches the active store via
+  `StoreSwitcher` while `ChatInbox` stays mounted (no remount, since it isn't
+  keyed by `storeId`) can leave the newly-selected store's presence log
+  without a fresh signin entry until the next explicit sign-out/in on that
+  store — found during Task 3's review, traced by hand: `resolveOnDutyAt`
+  only clears the tracked on-duty profile on a signout whose `profileId`
+  matches, so a stray cross-store event from this gap is a silent no-op, not
+  a misattribution. Chats answered during the gap just get
+  `onDutyProfileIdAtArrival: null` (fails safe — nobody is wrongly blamed).
+  Deferred rather than fixed inline, since Task 8 adds several more mount
+  sites and any fix (e.g. keying `ChatInbox` by `storeId`) is worth doing
+  once, after those land.
 - No changes to the Shareat Website repo — the customer-facing widget and
   Cloud Functions are untouched; all new logic lives on the POS (staff) side
   of the existing shared Firestore project.
