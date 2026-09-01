@@ -23,6 +23,7 @@ import { MessageSquare, Loader2, ArrowLeft, Check, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fireKitchenAlert, primeKitchenAudio } from "@/lib/notifications/kitchenAlert";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
+import { getLastLoggedProfile, setLastLoggedProfile } from "@/lib/chat/chatPresenceTracker";
 import { ChatThreadPane } from "./ChatThreadPane";
 import type { ChatThread } from "./chat-types";
 
@@ -50,14 +51,35 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   // Presence log for chat on-duty attribution. Scoped to THIS component
   // (mounted only on cashier-station views) so a KDS/server device's local
   // profile never pollutes "who's on duty for chat". Logs a signout for the
-  // previous profile immediately followed by a signin for the new one, and a
-  // signout on unmount.
-  const prevProfileRef = useRef<{ profileId: string; profileName: string } | null>(null);
+  // previous profile immediately followed by a signin for the new one.
+  //
+  // The "previous profile" lives in module state (chatPresenceTracker), NOT a
+  // useRef: ChatInbox is mounted on five pages, so navigating between any two
+  // of them destroys this instance and builds a fresh one. With a ref, that
+  // remount started from null and re-logged a signout+signin pair — every
+  // navigation looked like a shift change, which both reset the cashier's
+  // "on duty since" to the moment they clicked a nav link (making a genuinely
+  // slow reply score as instant) and could land both halves of the pair on the
+  // same millisecond. The tracker survives the remount, so a navigation with
+  // an unchanged profile writes nothing at all.
+  //
+  // There is deliberately NO signout-on-unmount: an unmount cannot tell a route
+  // change apart from the cashier actually leaving, and writing a signout for
+  // the former is precisely the bug above. Real transitions come through this
+  // same effect — signing out via the profile switcher sets currentProfile to
+  // null, which logs the signout here. A tab closed without signing out leaves
+  // the last signin standing, so resolveOnDutyAt keeps attributing to the last
+  // known cashier until the next real transition; that is the same fail-safe
+  // direction the rest of the app already takes for local-profile lifetime.
   useEffect(() => {
     if (!storeId) return;
-    const prev = prevProfileRef.current;
+    const prev = getLastLoggedProfile(storeId);
     const next = currentProfile ? { profileId: currentProfile.profileId, profileName: currentProfile.name } : null;
     if (prev?.profileId === next?.profileId) return;
+    // Claim the transition synchronously, before awaiting anything: two
+    // ChatInbox instances can briefly overlap during a route change, and the
+    // second must see the transition as already handled.
+    setLastLoggedProfile(storeId, next);
     const now = Date.now();
     const logRef = collection(db, `stores/${storeId}/chatPresenceLog`);
     (async () => {
@@ -72,20 +94,7 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
         console.error("[ChatInbox] presence log write failed:", e);
       }
     })();
-    prevProfileRef.current = next;
   }, [storeId, currentProfile]);
-
-  useEffect(() => {
-    return () => {
-      const prev = prevProfileRef.current;
-      if (!storeId || !prev) return;
-      void addDoc(collection(db, `stores/${storeId}/chatPresenceLog`), {
-        profileId: prev.profileId, profileName: prev.profileName, event: "signout",
-        atClientMs: Date.now(), atServer: serverTimestamp(),
-      }).catch((e) => console.error("[ChatInbox] presence signout on unmount failed:", e));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeId]);
 
   const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [open, setOpen] = useState(false);
