@@ -278,6 +278,33 @@ service cloud.firestore {
       allow read, write: if hasStoreAccess(storeId);
     }
 
+    // -----------------------------
+    // CHAT PRESENCE LOG (append-only)
+    // -----------------------------
+    // Who was signed in on a cashier station at each moment. The chat-response
+    // scorer replays this log to decide whose performance score a slow or
+    // unanswered customer message lands on, so a past event must never be
+    // editable or erasable — rewriting one retroactively rewrites who was on
+    // duty, and with it someone's rating. Same reasoning as paymentIntents
+    // below ("a cashier device cannot forge a 'paid' status"), applied to the
+    // record instead of the status.
+    //
+    // create stays open to any store-scoped staff: ChatInbox writes these
+    // straight from the client on every profile change, and it is exactly the
+    // grant the catch-all already gave. read likewise stays open (on-duty
+    // display and debugging; low sensitivity).
+    //
+    // NOTE: `allow update, delete: if false` here is not self-sufficient —
+    // rules OR across every matching block, so the catch-all below would grant
+    // them straight back. chatPresenceLog is therefore ALSO excluded from the
+    // catch-all's write/delete list; both halves are required for the
+    // append-only guarantee to hold. Do not remove one without the other.
+    match /stores/{storeId}/chatPresenceLog/{eventId} {
+      allow read: if hasStoreAccess(storeId);
+      allow create: if hasStoreAccess(storeId);
+      allow update, delete: if false;
+    }
+
     // Store scoped (everything else). Analytics rollups
     // (analytics / analyticsMonths / analyticsYears / dashPresets / dailySessions)
     // are SERVER-ONLY
@@ -324,6 +351,13 @@ service cloud.firestore {
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
         && coll != 'serverProfileSecrets'
+        // chatPresenceLog has its own block above making it append-only
+        // (create yes, update/delete never). Because rules OR, leaving it in
+        // here would hand back the very update/delete that block denies, and a
+        // staff member could retroactively rewrite who was on duty when a
+        // customer message went unanswered — i.e. edit a colleague's (or their
+        // own) performance score. create is still granted by that block.
+        && coll != 'chatPresenceLog'
         // catalogCache (CUSTOMER app menu/price cache, written by
         // rebuildCustomerCatalog) and inventoryCache (the internal shared
         // inventory-scan cache both rebuildCustomerCatalog and
