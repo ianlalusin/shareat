@@ -24,6 +24,7 @@ import { OnlineAvailabilityControl } from "@/components/admin/online-orders/Onli
 import { DeliveryAvailabilityControl } from "@/components/admin/online-orders/DeliveryAvailabilityControl";
 import { DeliveryPricingSettings } from "@/components/admin/online-orders/DeliveryPricingSettings";
 import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
+import { ChatInbox } from "@/components/cashier/ChatInbox";
 import { normalizePhone } from "@/lib/phone";
 import { paymentLabel } from "@/lib/payment-label";
 
@@ -907,6 +908,8 @@ export default function OnlineOrdersClient() {
       {storeId && (
         <DeliveryPricingSettings storeId={storeId} open={pricingOpen} onClose={() => setPricingOpen(false)} />
       )}
+
+      {activeStore?.id && <ChatInbox storeId={activeStore.id} />}
     </RoleGuard>
   );
 }

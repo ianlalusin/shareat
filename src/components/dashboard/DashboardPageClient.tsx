@@ -31,6 +31,7 @@ import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccuracyTrendCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
+import { ChatInbox } from "@/components/cashier/ChatInbox";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
 import { format } from "date-fns";
@@ -331,6 +332,8 @@ export default function DashboardPageClient() {
                     isToday={datePreset === "today"}
                 />
             )}
+
+            {activeStore?.id && <ChatInbox storeId={activeStore.id} />}
         </RoleGuard>
     );
 }

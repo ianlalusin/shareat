@@ -24,6 +24,7 @@ import type { Reservation, ReservationStatus, ReservationEventType } from "@/lib
 import { STATUS_META, OPEN_STATUSES } from "@/lib/reservations/status";
 import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
 import { ReservationFormModal } from "./ReservationFormModal";
+import { ChatInbox } from "@/components/cashier/ChatInbox";
 
 function dayIdToInputValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -351,6 +352,7 @@ export function ReservationsClient() {
         defaultDateMs={selectedDay.getTime()}
       />
       {ConfirmDialog}
+      {activeStore?.id && <ChatInbox storeId={activeStore.id} />}
     </>
   );
 }

@@ -8,6 +8,8 @@ import dynamic from 'next/dynamic';
 import { useToast } from "@/hooks/use-toast";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { useIdleTimer } from "@/hooks/useIdleTimer";
+import { useStoreContext } from "@/context/store-context";
+import { ChatInbox } from "@/components/cashier/ChatInbox";
 
 const SessionDetailView = dynamic(
   () => import('@/components/cashier/session-detail-view').then((mod) => mod.SessionDetailView),
@@ -30,6 +32,7 @@ function CashierPageContent() {
   const sessionId = searchParams?.get('sessionId') ?? null;
   const { toast } = useToast();
   const { currentProfile, signOut } = useLocalProfile();
+  const { activeStore } = useStoreContext();
 
   // Idle auto sign-out (30 minutes), mirroring the server station.
   const { isIdle } = useIdleTimer({ idleMs: 30 * 60_000 });
@@ -43,6 +46,7 @@ function CashierPageContent() {
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
       {sessionId ? <SessionDetailView sessionId={sessionId} /> : <SessionListView />}
+      <ChatInbox storeId={activeStore?.id} />
     </RoleGuard>
   );
 }

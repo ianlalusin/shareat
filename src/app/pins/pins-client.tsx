@@ -13,6 +13,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomersAdmin } from "@/components/pins/customers-admin";
+import { ChatInbox } from "@/components/cashier/ChatInbox";
 
 type ActiveSession = {
   id: string;
@@ -789,6 +790,7 @@ export default function PinsClient() {
           </Tabs>
         )}
       </div>
+      {activeStore?.id && <ChatInbox storeId={activeStore.id} />}
     </RoleGuard>
   );
 }
