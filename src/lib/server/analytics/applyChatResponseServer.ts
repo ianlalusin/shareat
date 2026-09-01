@@ -24,6 +24,19 @@ function bump(rec: Record<string, number>, key: string, by = 1) {
   rec[key] = (rec[key] ?? 0) + by;
 }
 
+// Profile ids reach the rollups as Firestore field-path SEGMENTS
+// (chat.responseCountByUser.<pid>), and respondedByProfileId arrives from the
+// client. A dot in one would silently split into a nested path and a slash
+// reads as a document boundary, so both are sanitized before use — the same
+// per-module helper every other delta writer here keeps (applyKdsTicketDelta,
+// applyKdsTicketDeltaServer, applyPaymentConversionServer).
+function safeKey(s: string) {
+  return (s || "Uncategorized")
+    .trim()
+    .replace(/\./g, "·")     // dot is not allowed in field path
+    .replace(/\//g, "∕");    // avoid slash confusion
+}
+
 /**
  * Applies one staff reply's effect: re-derives each pending message's actual
  * state from Firestore (never trusts client-supplied timestamps for
@@ -39,27 +52,34 @@ export function computeChatResponseDeltas(
   respondedByName: string,
   respondedAtClientMs: number,
 ): { stamps: Map<string, { responseMs: number; onDutyProfileIdAtArrival: string | null }>; dayAggs: Map<string, DayAgg> } {
+  // Raw id for identity work (matching presence-log rows, comparing who's who);
+  // sanitized id everywhere it becomes a field-path segment or a stamped value
+  // that has to line up with those rollup keys.
   const responderOnDutyStart = resolveOnDutySince(presenceEvents, respondedByProfileId, respondedAtClientMs);
+  const responderKey = safeKey(respondedByProfileId);
   const stamps = new Map<string, { responseMs: number; onDutyProfileIdAtArrival: string | null }>();
   const dayAggs = new Map<string, DayAgg>();
 
   for (const msg of pendingMessages) {
     const fairMs = computeFairResponseMs(msg.createdAtClientMs, responderOnDutyStart, respondedAtClientMs);
     const onDuty = resolveOnDutyAt(presenceEvents, msg.createdAtClientMs);
-    stamps.set(msg.id, { responseMs: fairMs, onDutyProfileIdAtArrival: onDuty?.profileId ?? null });
+    stamps.set(msg.id, { responseMs: fairMs, onDutyProfileIdAtArrival: onDuty ? safeKey(onDuty.profileId) : null });
 
     const dayId = getDayIdFromTimestamp(msg.createdAtClientMs);
     const day = dayAggs.get(dayId) ?? emptyDayAgg();
-    bump(day.responseMsSum, respondedByProfileId, fairMs);
-    bump(day.responseCount, respondedByProfileId, 1);
-    if (isWithinStandard(fairMs)) bump(day.within2Min, respondedByProfileId, 1);
+    bump(day.responseMsSum, responderKey, fairMs);
+    bump(day.responseCount, responderKey, 1);
+    if (isWithinStandard(fairMs)) bump(day.within2Min, responderKey, 1);
     if (onDuty) {
-      bump(day.receivedWhileOnDuty, onDuty.profileId, 1);
-      if (onDuty.profileId === respondedByProfileId) bump(day.answeredWhileOnDuty, onDuty.profileId, 1);
-      day.staffNames[onDuty.profileId] = onDuty.profileName;
+      const onDutyKey = safeKey(onDuty.profileId);
+      bump(day.receivedWhileOnDuty, onDutyKey, 1);
+      // Compared on the RAW ids: that is the real identity test, independent of
+      // whether two exotic ids happen to sanitize to the same key.
+      if (onDuty.profileId === respondedByProfileId) bump(day.answeredWhileOnDuty, onDutyKey, 1);
+      day.staffNames[onDutyKey] = onDuty.profileName;
     }
     day.totalReceived += 1;
-    day.staffNames[respondedByProfileId] = respondedByName;
+    day.staffNames[responderKey] = respondedByName;
     dayAggs.set(dayId, day);
   }
 
@@ -69,18 +89,30 @@ export function computeChatResponseDeltas(
 /** Runs computeChatResponseDeltas against live reads inside a transaction and
  *  writes the stamps + rollup increments. Re-verifies each message is still
  *  an unanswered customer message before stamping (idempotent under a race
- *  between two staff replying to the same thread near-simultaneously). */
+ *  between two staff replying to the same thread near-simultaneously).
+ *
+ *  The scoring instant is generated HERE, server-side, and never accepted from
+ *  the caller: a client-supplied instant is both forgeable (an authenticated
+ *  cashier could claim any timestamp and manufacture a perfect score) and
+ *  silently wrong on a device with a skewed clock. Matches the sibling
+ *  /api/analytics/kds-delta route, which likewise derives its own timing. */
 export async function applyChatResponseServer(
   db: AdminFirestore,
   storeId: string,
   threadId: string,
   respondedByProfileId: string,
   respondedByName: string,
-  respondedAtClientMs: number,
   pendingMessageIds: string[],
 ): Promise<{ stampedCount: number }> {
+  // Taken once, outside the callback, so a transaction retry re-scores against
+  // the same instant rather than drifting.
+  const respondedAtMs = Date.now();
+  // A repeated id in the array would otherwise be counted once per occurrence
+  // by the loop below (inflating responseCount/within2Min/totalReceived) while
+  // the stamps Map collapsed it to one — an inflated rollup from a single reply.
+  const uniqueIds = [...new Set(pendingMessageIds)];
   return db.runTransaction(async (tx: Transaction) => {
-    const msgRefs = pendingMessageIds.map((id) => db.doc(`stores/${storeId}/chatThreads/${threadId}/messages/${id}`));
+    const msgRefs = uniqueIds.map((id) => db.doc(`stores/${storeId}/chatThreads/${threadId}/messages/${id}`));
     const msgSnaps = await Promise.all(msgRefs.map((r) => tx.get(r)));
     const pendingMessages = msgSnaps
       .map((snap) => (snap.exists ? { id: snap.id, data: snap.data() as any } : null))
@@ -93,21 +125,22 @@ export async function applyChatResponseServer(
     // 500 most-recent events at-or-before this reply covers many weeks of
     // shift changes without an unbounded per-reply read as the log grows.
     const presenceQuery = db.collection(`stores/${storeId}/chatPresenceLog`)
-      .where("atClientMs", "<=", respondedAtClientMs)
+      .where("atClientMs", "<=", respondedAtMs)
       .orderBy("atClientMs", "desc")
       .limit(500);
     const presenceSnap = await tx.get(presenceQuery);
     const presenceEvents: PresenceEvent[] = presenceSnap.docs.map((d) => d.data() as PresenceEvent);
 
     const { stamps, dayAggs } = computeChatResponseDeltas(
-      pendingMessages, presenceEvents, respondedByProfileId, respondedByName, respondedAtClientMs,
+      pendingMessages, presenceEvents, respondedByProfileId, respondedByName, respondedAtMs,
     );
 
+    const responderKey = safeKey(respondedByProfileId);
     for (const [id, stamp] of stamps) {
       tx.update(db.doc(`stores/${storeId}/chatThreads/${threadId}/messages/${id}`), {
-        respondedAtClientMs,
+        respondedAtClientMs: respondedAtMs,
         responseMs: stamp.responseMs,
-        respondedByProfileId,
+        respondedByProfileId: responderKey,
         respondedByName,
         onDutyProfileIdAtArrival: stamp.onDutyProfileIdAtArrival,
       });
@@ -117,13 +150,16 @@ export async function applyChatResponseServer(
       const monthId = dayId.slice(0, 6);
       const yearId = dayId.slice(0, 4);
       const payload: Record<string, unknown> = { "meta.updatedAt": FieldValue.serverTimestamp() };
-      for (const [pid, v] of Object.entries(agg.responseMsSum)) payload[`chat.responseMsSumByUser.${pid}`] = FieldValue.increment(v);
-      for (const [pid, v] of Object.entries(agg.responseCount)) payload[`chat.responseCountByUser.${pid}`] = FieldValue.increment(v);
-      for (const [pid, v] of Object.entries(agg.within2Min)) payload[`chat.within2MinCountByUser.${pid}`] = FieldValue.increment(v);
-      for (const [pid, v] of Object.entries(agg.receivedWhileOnDuty)) payload[`chat.receivedWhileOnDutyByUser.${pid}`] = FieldValue.increment(v);
-      for (const [pid, v] of Object.entries(agg.answeredWhileOnDuty)) payload[`chat.answeredWhileOnDutyByUser.${pid}`] = FieldValue.increment(v);
+      // Keys arrive already sanitized from computeChatResponseDeltas; safeKey is
+      // idempotent, so re-applying it here keeps the guard local to the line
+      // that actually builds the field path.
+      for (const [pid, v] of Object.entries(agg.responseMsSum)) payload[`chat.responseMsSumByUser.${safeKey(pid)}`] = FieldValue.increment(v);
+      for (const [pid, v] of Object.entries(agg.responseCount)) payload[`chat.responseCountByUser.${safeKey(pid)}`] = FieldValue.increment(v);
+      for (const [pid, v] of Object.entries(agg.within2Min)) payload[`chat.within2MinCountByUser.${safeKey(pid)}`] = FieldValue.increment(v);
+      for (const [pid, v] of Object.entries(agg.receivedWhileOnDuty)) payload[`chat.receivedWhileOnDutyByUser.${safeKey(pid)}`] = FieldValue.increment(v);
+      for (const [pid, v] of Object.entries(agg.answeredWhileOnDuty)) payload[`chat.answeredWhileOnDutyByUser.${safeKey(pid)}`] = FieldValue.increment(v);
       payload["chat.totalReceived"] = FieldValue.increment(agg.totalReceived);
-      for (const [pid, name] of Object.entries(agg.staffNames)) payload[`staffNames.${pid}`] = name;
+      for (const [pid, name] of Object.entries(agg.staffNames)) payload[`staffNames.${safeKey(pid)}`] = name;
 
       for (const path of [
         `stores/${storeId}/analytics/${dayId}`,

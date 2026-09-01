@@ -66,6 +66,38 @@ export function ChatThreadPane({
     return () => unsub();
   }, [storeId, threadId]);
 
+  // Tells the server a staff reply just landed so it can score the customer
+  // messages that were still waiting. Fire-and-forget for the UI: a failure
+  // here costs a metric, never the reply itself, so it is logged and swallowed.
+  //
+  // No timestamp is sent — the route derives the scoring instant server-side so
+  // a forged or skewed client clock can't move anyone's score.
+  async function notifyChatResponse(pendingIds: string[]) {
+    if (pendingIds.length === 0 || !currentProfile || !user) return;
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/analytics/chat-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          storeId, threadId,
+          respondedByProfileId: currentProfile.profileId,
+          respondedByName: currentProfile.name,
+          pendingMessageIds: pendingIds,
+        }),
+      });
+      if (!res.ok) {
+        console.error("[ChatThreadPane] chat-response analytics call rejected:", res.status, await res.text().catch(() => ""));
+      }
+    } catch (e) {
+      console.error("[ChatThreadPane] chat-response analytics call failed:", e);
+    }
+  }
+
+  function pendingCustomerMessageIds(): string[] {
+    return messages.filter((m) => m.sender === "customer" && m.respondedAtClientMs == null).map((m) => m.id);
+  }
+
   async function sendReply() {
     const text = reply.trim();
     if (!storeId || !threadId || !text || sending) return;
@@ -87,27 +119,7 @@ export function ChatThreadPane({
         unreadForStaff: 0,
         updatedAt: serverTimestamp(),
       });
-      const pendingIds = messages
-        .filter((m) => m.sender === "customer" && m.respondedAtClientMs == null)
-        .map((m) => m.id);
-      if (pendingIds.length > 0 && currentProfile && user) {
-        try {
-          const idToken = await user.getIdToken();
-          await fetch("/api/analytics/chat-response", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-            body: JSON.stringify({
-              storeId, threadId,
-              respondedByProfileId: currentProfile.profileId,
-              respondedByName: currentProfile.name,
-              respondedAtClientMs: now,
-              pendingMessageIds: pendingIds,
-            }),
-          });
-        } catch (e) {
-          console.error("[ChatThreadPane] chat-response analytics call failed:", e);
-        }
-      }
+      await notifyChatResponse(pendingCustomerMessageIds());
       setReply("");
     } catch (e) {
       console.error("[ChatThreadPane] sendReply failed:", e);
@@ -143,27 +155,7 @@ export function ChatThreadPane({
         unreadForStaff: 0,
         updatedAt: serverTimestamp(),
       });
-      const pendingIds = messages
-        .filter((m) => m.sender === "customer" && m.respondedAtClientMs == null)
-        .map((m) => m.id);
-      if (pendingIds.length > 0 && currentProfile && user) {
-        try {
-          const idToken = await user.getIdToken();
-          await fetch("/api/analytics/chat-response", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-            body: JSON.stringify({
-              storeId, threadId,
-              respondedByProfileId: currentProfile.profileId,
-              respondedByName: currentProfile.name,
-              respondedAtClientMs: now,
-              pendingMessageIds: pendingIds,
-            }),
-          });
-        } catch (e) {
-          console.error("[ChatThreadPane] chat-response analytics call failed:", e);
-        }
-      }
+      await notifyChatResponse(pendingCustomerMessageIds());
       await updateDoc(doc(db, `stores/${storeId}/chatThreads/${threadId}`), {
         status: "closed",
         closedAt: serverTimestamp(),

@@ -41,12 +41,14 @@ export async function POST(req: Request) {
   const threadId = String(body.threadId || "");
   const respondedByProfileId = String(body.respondedByProfileId || "");
   const respondedByName = String(body.respondedByName || "Staff");
-  const respondedAtClientMs = Number(body.respondedAtClientMs);
+  // The scoring instant is NOT read from the body: applyChatResponseServer
+  // stamps its own Date.now(), so a forged or clock-skewed client timestamp
+  // can't move a score. Mirrors /api/analytics/kds-delta.
   const pendingMessageIds: string[] = Array.isArray(body.pendingMessageIds)
     ? body.pendingMessageIds.map((id: unknown) => String(id)).filter(Boolean)
     : [];
-  if (!storeId || !threadId || !respondedByProfileId || !Number.isFinite(respondedAtClientMs) || pendingMessageIds.length === 0) {
-    return bad("Missing storeId, threadId, respondedByProfileId, respondedAtClientMs, or pendingMessageIds.");
+  if (!storeId || !threadId || !respondedByProfileId || pendingMessageIds.length === 0) {
+    return bad("Missing storeId, threadId, respondedByProfileId, or pendingMessageIds.");
   }
 
   try {
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
     await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "cashier"]);
 
     const result = await applyChatResponseServer(
-      db, storeId, threadId, respondedByProfileId, respondedByName, respondedAtClientMs, pendingMessageIds,
+      db, storeId, threadId, respondedByProfileId, respondedByName, pendingMessageIds,
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
