@@ -96,16 +96,34 @@ messages only):
 }
 ```
 
-Computed in `ChatThreadPane.sendReply()`: before writing the staff message,
-query the thread's messages where `sender == "customer"` and
-`respondedAtClientMs` is unset, created before `now`. For each:
-- Stamp `respondedAtClientMs`, `responseMs`, `respondedByProfileId/Name` from
-  the current local profile.
-- Look up `onDutyProfileIdAtArrival` via the presence-log helper above, using
-  the message's own `createdAtClientMs`.
-- Also look up the responder's own most recent `signin` ≤ `now` to get their
-  on-duty-start; the "fair" elapsed time used for scoring is
-  `now - max(createdAtClientMs, responderOnDutyStart ?? createdAtClientMs)`.
+**Correction from the initial draft of this spec:** POS's `firestore.rules`
+explicitly documents `analytics`/`analyticsMonths`/`analyticsYears` as
+server-only writes (every writer goes through the admin SDK, which bypasses
+rules) — a direct client write from `ChatThreadPane` would be silently
+rejected. So the message-stamping AND the rollup increment both happen
+server-side, in one Firestore transaction, via a new route:
+
+`ChatThreadPane.sendReply()` writes the staff message + thread update
+client-side as it already does today, then calls
+`POST /api/analytics/chat-response` with
+`{storeId, threadId, respondedByProfileId, respondedByName, respondedAtClientMs, pendingMessageIds}`
+(the pending IDs come from customer messages already held in the component's
+local state with no `respondedAtClientMs` yet — no extra read needed). The
+route (admin SDK, bearer-token auth, mirrors the existing
+`/api/analytics/kds-delta` pattern) re-reads each message doc inside the
+transaction (never trusts client-supplied timestamps for scoring — only the
+message ID), re-derives everything server-side:
+- Stamps `respondedAtClientMs`, `responseMs`, `respondedByProfileId/Name`.
+- Looks up `onDutyProfileIdAtArrival` via the presence-log helper, using the
+  message's own `createdAtClientMs`.
+- Looks up the responder's own most recent `signin` ≤ `respondedAtClientMs`
+  to get their on-duty-start; the fair elapsed time used for scoring is
+  `respondedAtClientMs - max(createdAtClientMs, responderOnDutyStart ?? createdAtClientMs)`.
+
+This also makes the write idempotent under a race (two staff replying to the
+same thread near-simultaneously): each message is only stamped if it still
+qualifies (customer sender, no existing `respondedAtClientMs`) when the
+transaction actually reads it.
 
 A single staff reply can answer multiple queued customer messages (one reply
 covering a customer's burst of 2–3 messages) — each gets its own fair elapsed
@@ -130,10 +148,11 @@ chat: {
 }
 ```
 
-Written alongside the message-stamping step in `sendReply()`, batched with
-the existing thread-update write. Same day/month/year fan-out as
-`applyKdsTicketDelta.ts` (`analytics/{dayId}`, `analyticsMonths/{monthId}`,
-`analyticsYears/{yearId}`).
+Written server-side by the `/api/analytics/chat-response` route (admin SDK),
+in the same transaction as the message stamping above. Same day/month/year
+fan-out as `applyKdsTicketDeltaServer.ts` (`analytics/{dayId}`,
+`analyticsMonths/{monthId}`, `analyticsYears/{yearId}`) — not the client-side
+`applyKdsTicketDelta.ts`, since analytics collections are server-only writes.
 
 Note the efficiency counters are keyed by the **on-duty-at-arrival** profile,
 independent of the timeliness counters (keyed by **responder**) — this is
