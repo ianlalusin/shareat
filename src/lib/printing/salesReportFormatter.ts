@@ -31,6 +31,12 @@ export interface SalesReportData {
   kitchenServingByUser?: { name: string; avgMs: number; count: number }[];
   serverConfirmAvgMs?: number;
   serverConfirmByUser?: { name: string; avgMs: number; count: number }[];
+  // Chat responsiveness (store-wide, that day). Undefined/0 total => the whole
+  // block is omitted — no chat interaction that day.
+  chatResponseAvgMs?: number;
+  chatWithin2MinPct?: number; // 0-100
+  chatRatingLabel?: string;   // "very poor" | "poor" | "average" | "good" | "very good"
+  chatTotalReceived?: number;
 }
 
 // Compact duration for thermal output: "5m 12s" / "48s".
@@ -169,6 +175,16 @@ export function formatSalesReportText(data: SalesReportData, width: 58 | 80 = 80
       lines.push(justify("Avg confirm (server)", fmtDur(data.serverConfirmAvgMs ?? 0)));
       for (const u of sUsers) lines.push(justify("  " + u.name, fmtDur(u.avgMs)));
     }
+    lines.push(hr());
+  }
+
+  // --- Chat Response ---
+  if ((data.chatTotalReceived ?? 0) > 0) {
+    lines.push(center("CHAT RESPONSE"));
+    lines.push(hr());
+    lines.push(justify("Chat response avg", fmtDur(data.chatResponseAvgMs ?? 0)));
+    lines.push(justify("Chat answered <2min", `${Math.round(data.chatWithin2MinPct ?? 0)}%`));
+    lines.push(justify("Chat rating", (data.chatRatingLabel ?? "").toUpperCase()));
     lines.push(hr());
   }
 

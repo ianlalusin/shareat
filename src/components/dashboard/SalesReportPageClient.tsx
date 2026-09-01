@@ -46,6 +46,7 @@ import {
   printViaNativeBluetooth,
 } from "@/lib/printing/printHub";
 import { getReceiptSettings } from "@/lib/receipts/receipt-settings";
+import { computeChatScore, chatRatingLabel } from "@/lib/chat/responseTiming";
 
 function aggregateMetrics(metrics: DailyMetric[]) {
   const byMethod: Record<string, number> = {};
@@ -166,6 +167,37 @@ function aggregateServiceTimes(metrics: DailyMetric[]) {
     kitchenServingByUser: toRows(kByUser),
     serverConfirmAvgMs: sConfCnt > 0 ? sConfMs / sConfCnt : 0,
     serverConfirmByUser: toRows(sByUser),
+  };
+}
+
+// Store-wide chat responsiveness for the selected day/month, from the same
+// analytics rollup as service times. Omitted entirely when there was no chat
+// interaction in the period (totalReceived === 0).
+function aggregateChatMetrics(metrics: DailyMetric[]) {
+  let responseMsSum = 0, responseCount = 0, within2Min = 0;
+  let receivedWhileOnDuty = 0, answeredWhileOnDuty = 0, totalReceived = 0;
+
+  for (const m of metrics) {
+    const c = (m as any).chat ?? {};
+    for (const v of Object.values(c.responseMsSumByUser ?? {}) as number[]) responseMsSum += v || 0;
+    for (const v of Object.values(c.responseCountByUser ?? {}) as number[]) responseCount += v || 0;
+    for (const v of Object.values(c.within2MinCountByUser ?? {}) as number[]) within2Min += v || 0;
+    for (const v of Object.values(c.receivedWhileOnDutyByUser ?? {}) as number[]) receivedWhileOnDuty += v || 0;
+    for (const v of Object.values(c.answeredWhileOnDutyByUser ?? {}) as number[]) answeredWhileOnDuty += v || 0;
+    totalReceived += c.totalReceived ?? 0;
+  }
+
+  if (totalReceived === 0) return { chatTotalReceived: 0 };
+
+  const timelinessPct = responseCount > 0 ? (within2Min / responseCount) * 100 : null;
+  const efficiencyPct = receivedWhileOnDuty > 0 ? (answeredWhileOnDuty / receivedWhileOnDuty) * 100 : null;
+  const score = computeChatScore(timelinessPct, efficiencyPct);
+
+  return {
+    chatTotalReceived: totalReceived,
+    chatResponseAvgMs: responseCount > 0 ? responseMsSum / responseCount : 0,
+    chatWithin2MinPct: timelinessPct ?? 0,
+    chatRatingLabel: score != null ? chatRatingLabel(score) : undefined,
   };
 }
 
@@ -304,6 +336,7 @@ export default function SalesReportPageClient() {
 
     const agg = aggregateMetrics(dailyMetrics);
     const svc = aggregateServiceTimes(dailyMetrics);
+    const chat = aggregateChatMetrics(dailyMetrics);
     const { cashRemitted, onlineRemitted } = classifyRemittance(agg.byMethod, paymentMethods);
 
     const dateLabel =
@@ -321,6 +354,7 @@ export default function SalesReportPageClient() {
       generatedBy: appUser?.displayName ?? appUser?.email ?? undefined,
       ...agg,
       ...svc,
+      ...chat,
       cashRemitted,
       onlineRemitted,
     };
@@ -559,6 +593,17 @@ export default function SalesReportPageClient() {
                       <Row key={u.name} label={u.name} value={formatDuration(u.avgMs)} sub={`${u.count} sess`} muted />
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {(agg.chatTotalReceived ?? 0) > 0 && (
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-2"><CardTitle className="text-base">Chat Response</CardTitle></CardHeader>
+                <CardContent className="pt-0">
+                  <Row label="Avg response time" value={formatDuration(agg.chatResponseAvgMs ?? 0)} strong />
+                  <Row label="Answered within 2 min" value={`${Math.round(agg.chatWithin2MinPct ?? 0)}%`} />
+                  <Row label="Rating" value={(agg.chatRatingLabel ?? "").toUpperCase()} strong />
                 </CardContent>
               </Card>
             )}
