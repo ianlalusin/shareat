@@ -25,6 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TopRefillsCard } from "@/components/dashboard/top-refills-card";
+import { CustomerFeedbackCard } from "@/components/dashboard/customer-feedback-card";
 import { WeeklySalesChart } from "@/components/dashboard/WeeklySalesChart";
 import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
@@ -301,6 +302,7 @@ export default function DashboardPageClient() {
                         isLoading={isLoading}
                         topRefills={topRefills}
                     />
+                    <CustomerFeedbackCard storeId={activeStore?.id} dateRange={dateRange} />
                 </div>
             </div>
 
