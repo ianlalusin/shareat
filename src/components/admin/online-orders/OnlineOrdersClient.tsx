@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -225,26 +225,27 @@ export default function OnlineOrdersClient() {
   // Does an order-bound chat thread exist for the selected order? The website
   // creates the thread (deterministic id order_{orderId}), never the cashier —
   // ChatThreadPane.sendReply calls updateDoc on the thread doc, which throws
-  // if it doesn't exist yet. Opening an order with unread customer messages
-  // also marks them read here, mirroring ChatInbox.tsx's openThread().
+  // if it doesn't exist yet.
+  //
+  // This listener used to ALSO write `unreadForStaff: 0` whenever it saw a
+  // non-zero count — meaning merely selecting an order card silently cleared
+  // the customer's unread badge before anyone had replied. That is the same
+  // read-state-as-reply-state bug that lost the Malvar message, in its most
+  // aggressive form (no chat interaction required at all). The counter is now
+  // cleared only by an actual reply, in ChatThreadPane's send paths.
   const [threadExists, setThreadExists] = useState<boolean | null>(null);
   useEffect(() => {
     if (!selected || !storeId) { setThreadExists(null); return; }
     const threadRef = doc(db, `stores/${storeId}/chatThreads/order_${selected.id}`);
     const unsub = onSnapshot(
       threadRef,
-      (snap) => {
-        setThreadExists(snap.exists());
-        if (snap.exists() && (Number((snap.data() as any)?.unreadForStaff) || 0) > 0) {
-          updateDoc(threadRef, { unreadForStaff: 0 }).catch(() => {});
-        }
-      },
+      (snap) => setThreadExists(snap.exists()),
       () => setThreadExists(false)
     );
     return () => unsub();
   }, [storeId, selected?.id]);
 
-  // Red badge on an order's card when the customer has an unread message.
+  // Red badge on an order's card while the customer is still awaiting a reply.
   // One listener for the whole collection (mirrors ChatInbox.tsx's pattern)
   // rather than one per card — cheaper, and consistent with how the site-wide
   // chat inbox already reads this same collection.
@@ -258,7 +259,9 @@ export default function OnlineOrdersClient() {
         snap.docs.forEach((d) => {
           const data = d.data() as any;
           const unread = Number(data?.unreadForStaff) || 0;
-          if (unread <= 0) return;
+          // Reply-state, not read-state: an order whose last word was the
+          // customer's keeps its badge until staff actually answers.
+          if (unread <= 0 || data?.status !== "open" || data?.lastMessageBy !== "customer") return;
           const orderId =
             typeof data?.orderId === "string" && data.orderId
               ? data.orderId

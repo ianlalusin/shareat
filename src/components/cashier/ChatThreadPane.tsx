@@ -21,14 +21,10 @@ import { Send, Loader2, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { ChatMessage } from "./chat-types";
+import { fmtStamp } from "./chat-utils";
 
 const CLOSING_SPIEL =
   "Thank you for reaching out to us! We'll be closing this chat for now. You can reach us anytime through our phone, our Facebook page, or right here — we're always happy to help.";
-
-function fmtClock(ms?: number | null): string {
-  if (!ms) return "";
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
 
 // Renders a chat thread's transcript and reply composer. Does not own the
 // thread list, the Sheet chrome, or the header's "End chat" flow — those stay
@@ -184,7 +180,7 @@ export function ChatThreadPane({
                 )}>
                   {staff && m.staffName && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{m.staffName}</div>}
                   <div className="whitespace-pre-wrap break-words">{m.text}</div>
-                  <div className="text-[10px] opacity-60 mt-0.5 text-right">{fmtClock(m.createdAtClientMs)}</div>
+                  <div className="text-[10px] opacity-60 mt-0.5 text-right">{fmtStamp(m.createdAtClientMs)}</div>
                 </div>
               </div>
             );

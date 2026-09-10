@@ -26,8 +26,15 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { getLastLoggedProfile, setLastLoggedProfile } from "@/lib/chat/chatPresenceTracker";
 import { ChatThreadPane } from "./ChatThreadPane";
 import type { ChatThread } from "./chat-types";
+import {
+  countAwaitingReply,
+  countOpenFollowUp,
+  fmtStamp,
+  threadIsOpenFollowUp,
+  threadNeedsReply,
+} from "./chat-utils";
 
-// A customer message left unread/unreplied longer than this shows a red dot.
+// A customer message left unreplied longer than this makes the red dot pulse.
 const STALE_UNREAD_MS = 5 * 60 * 1000;
 
 // Order threads (id `order_{orderId}`, source: "order") are surfaced inside
@@ -37,11 +44,6 @@ const STALE_UNREAD_MS = 5 * 60 * 1000;
 // Pure so it's trivially testable without rendering the component.
 export function excludeOrderThreads(threads: ChatThread[]): ChatThread[] {
   return threads.filter((t) => t.source !== "order");
-}
-
-function fmtClock(ms?: number | null): string {
-  if (!ms) return "";
-  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
@@ -164,6 +166,13 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   const filteredThreads = useMemo(() => excludeOrderThreads(threads), [threads]);
   const filteredClosedThreads = useMemo(() => excludeOrderThreads(closedThreads), [closedThreads]);
 
+  // RED: customers waiting on us. Survives opening/closing the panel because
+  // it reads lastMessageBy, which only an actual staff reply can clear.
+  const awaitingReply = useMemo(() => countAwaitingReply(filteredThreads), [filteredThreads]);
+  // GREEN: live conversations we answered last — nudge to follow up.
+  const openFollowUp = useMemo(() => countOpenFollowUp(filteredThreads), [filteredThreads]);
+
+  // Still message-grained: drives the per-thread count chip inside the list.
   const totalUnread = useMemo(
     () => filteredThreads.reduce((n, t) => n + (t.unreadForStaff || 0), 0),
     [filteredThreads],
@@ -179,6 +188,47 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
     prevUnread.current = totalUnread;
   }, [totalUnread, open, activeThreadId]);
 
+  // --- Auto-open the panel when a customer message lands -------------------
+  //
+  // Gated on the till being idle. A right-side Sheet that appears while the
+  // cashier is taking payment steals taps mid-transaction, so a rise in
+  // awaitingReply only ARMS the intent; the panel opens on the first tick where
+  // nothing else is on screen. `isTillBusy` deliberately probes the DOM rather
+  // than any one page's state: ChatInbox is mounted on five different pages
+  // (cashier, pins, online orders, dashboard, reservations) and every blocking
+  // surface on all of them is a Radix dialog/alertdialog, so one check covers
+  // them without threading a "busy" prop through five call sites.
+  const prevAwaiting = useRef<number | null>(null);
+  const [autoOpenArmed, setAutoOpenArmed] = useState(false);
+
+  useEffect(() => {
+    if (prevAwaiting.current != null && awaitingReply > prevAwaiting.current) setAutoOpenArmed(true);
+    prevAwaiting.current = awaitingReply;
+  }, [awaitingReply]);
+
+  useEffect(() => {
+    if (!autoOpenArmed) return;
+    // Nothing left to answer (someone else replied first) — stand down.
+    if (awaitingReply === 0) { setAutoOpenArmed(false); return; }
+    if (open) { setAutoOpenArmed(false); return; }
+
+    const isTillBusy = () => {
+      if (typeof document === "undefined") return true;
+      // Any open modal/sheet/confirm — payment, order edit, PIN entry, etc.
+      if (document.querySelector('[role="dialog"],[role="alertdialog"]')) return true;
+      // Mid-keystroke in a form (tendered amount, discount, search).
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return true;
+      return false;
+    };
+
+    if (!isTillBusy()) { setOpen(true); setAutoOpenArmed(false); return; }
+    const id = setInterval(() => {
+      if (!isTillBusy()) { setOpen(true); setAutoOpenArmed(false); }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [autoOpenArmed, awaitingReply, open]);
+
   const activeThread =
     filteredThreads.find((t) => t.id === activeThreadId) ??
     filteredClosedThreads.find((t) => t.id === activeThreadId) ??
@@ -186,11 +236,13 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
   const isActiveClosed = activeThread?.status === "closed";
   const displayedThreads = listTab === "open" ? filteredThreads : filteredClosedThreads;
 
-  async function openThread(t: ChatThread) {
+  // Opening a thread is NOT the same as answering it. This used to write
+  // `unreadForStaff: 0` here, which is the root cause of the missed Malvar
+  // message: a cashier who read a thread and walked away silently cleared the
+  // badge, the ping, the bounce and the stale dot while the customer was still
+  // waiting. Only ChatThreadPane's send paths clear the counter now.
+  function openThread(t: ChatThread) {
     setActiveThreadId(t.id);
-    if (storeId && (t.unreadForStaff || 0) > 0) {
-      try { await updateDoc(doc(db, `stores/${storeId}/chatThreads/${t.id}`), { unreadForStaff: 0 }); } catch {}
-    }
   }
 
   async function closeThreadInternal() {
@@ -220,9 +272,15 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
 
   return (
     <>
-      {/* Floating button — stacked above the weather FAB (bottom-6) */}
+      {/* Floating button — stacked above the weather FAB (bottom-6).
+          Two mutually exclusive counters:
+            RED   = customers waiting on a reply (urgent, pulses)
+            GREEN = answered-but-open conversations (follow-up nudge, calm)
+          Red wins when both apply, so the till is never shown a soothing green
+          while someone is actually waiting. The badge itself is NOT gated on
+          the panel being shut — closing the sheet no longer dismisses it. */}
       <div className="fixed bottom-24 right-6 z-40">
-        {totalUnread > 0 && !open && (
+        {awaitingReply > 0 && !open && (
           <span aria-hidden className="absolute inset-0 rounded-full bg-destructive/60 animate-ping" />
         )}
         <button
@@ -231,17 +289,38 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
           className={cn(
             "relative h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-2xl",
             "flex items-center justify-center hover:scale-105 active:scale-95 transition-transform ring-4 ring-primary/20",
-            totalUnread > 0 && !open && "animate-bounce",
+            awaitingReply > 0 && !open && "animate-bounce",
           )}
-          aria-label="Website chats"
-          title={totalUnread > 0 ? `${totalUnread} unread chat message(s)` : "Website chats"}
+          aria-label={
+            awaitingReply > 0
+              ? `Website chats — ${awaitingReply} awaiting reply`
+              : openFollowUp > 0
+              ? `Website chats — ${openFollowUp} open conversation(s)`
+              : "Website chats"
+          }
+          title={
+            awaitingReply > 0
+              ? `${awaitingReply} conversation(s) awaiting your reply`
+              : openFollowUp > 0
+              ? `${openFollowUp} open conversation(s) — follow up?`
+              : "Website chats"
+          }
         >
           <MessageSquare className="h-6 w-6" />
-          {totalUnread > 0 && (
-            <Badge variant="destructive" className="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 justify-center text-xs font-bold">
-              {totalUnread}
+          {awaitingReply > 0 ? (
+            <Badge
+              variant="destructive"
+              className="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 justify-center text-xs font-bold"
+            >
+              {awaitingReply}
             </Badge>
-          )}
+          ) : openFollowUp > 0 ? (
+            <Badge
+              className="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 justify-center text-xs font-bold border-transparent bg-emerald-500 text-white hover:bg-emerald-500"
+            >
+              {openFollowUp}
+            </Badge>
+          ) : null}
         </button>
       </div>
 
@@ -273,11 +352,10 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
                 ) : (
                   <div className="space-y-2">
                     {displayedThreads.map((t) => {
-                      const unread = (t.unreadForStaff || 0) > 0;
-                      const stale =
-                        unread &&
-                        t.lastMessageBy === "customer" &&
-                        nowTick - (t.lastMessageAtClientMs || 0) > STALE_UNREAD_MS;
+                      const needsReply = threadNeedsReply(t);
+                      const followUp = threadIsOpenFollowUp(t);
+                      const stale = needsReply && nowTick - (t.lastMessageAtClientMs || 0) > STALE_UNREAD_MS;
+                      const pendingMsgs = t.unreadForStaff || 0;
                       return (
                       <button
                         key={t.id}
@@ -286,21 +364,31 @@ export function ChatInbox({ storeId }: { storeId: string | null | undefined }) {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            {unread && (
+                            {(needsReply || followUp) && (
                               <span
                                 className={cn(
                                   "h-2.5 w-2.5 rounded-full shrink-0",
-                                  stale ? "bg-red-500 animate-pulse" : "bg-emerald-500",
+                                  needsReply
+                                    ? stale
+                                      ? "bg-red-500 animate-pulse"
+                                      : "bg-red-500"
+                                    : "bg-emerald-500",
                                 )}
-                                title={stale ? "Unread for over 5 minutes — needs a reply" : "Unread message"}
+                                title={
+                                  needsReply
+                                    ? stale
+                                      ? "Waiting over 5 minutes — needs a reply"
+                                      : "Waiting for your reply"
+                                    : "Open conversation — follow up?"
+                                }
                               />
                             )}
                             <div className="font-semibold text-sm truncate">{t.customerName || "Website visitor"}</div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[10px] text-muted-foreground">{fmtClock(t.lastMessageAtClientMs)}</span>
-                            {unread && (
-                              <Badge variant="destructive" className="h-5 min-w-5 px-1.5 justify-center text-xs">{t.unreadForStaff}</Badge>
+                            <span className="text-[10px] text-muted-foreground">{fmtStamp(t.lastMessageAtClientMs, nowTick)}</span>
+                            {needsReply && pendingMsgs > 0 && (
+                              <Badge variant="destructive" className="h-5 min-w-5 px-1.5 justify-center text-xs">{pendingMsgs}</Badge>
                             )}
                           </div>
                         </div>
