@@ -2,7 +2,7 @@ import "server-only";
 
 import { FieldValue } from "firebase-admin/firestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { getManilaDayId } from "@/lib/pins/day-id";
 import { endAllParticipants } from "@/lib/server/customer-participants";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
@@ -106,13 +106,21 @@ export async function finalizePinLogic(params: {
     return { ok: true, pin: currentPin || null, reason, archivedDayId: dayId };
   });
 
-  const revokedCount = await endAllParticipants(adminDb, storeId, sessionId, "ended", actorUid, `finalize_${reason}`);
+  const { revoked: revokedCount, authDeleted } = await endAllParticipants(
+    adminDb,
+    getAdminAuth(),
+    storeId,
+    sessionId,
+    "ended",
+    actorUid,
+    `finalize_${reason}`
+  );
   await writeServerActivityLog(adminDb, {
     storeId,
     sessionId,
     actorUid,
     action: "CUSTOMER_PARTICIPANTS_RESET",
-    meta: { revokedCount, reason },
+    meta: { revokedCount, authDeleted, reason },
     dayId: getManilaDayId(Date.now()),
   });
 

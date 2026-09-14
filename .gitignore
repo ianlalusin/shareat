@@ -54,3 +54,6 @@ firebase-debug.log
 
 # local git worktrees (subagent-driven-development scratch workspaces)
 .worktrees/
+
+# local auth-purge backups (written by scripts/purge-customer-auth-users.ts --write)
+.purge-backups/

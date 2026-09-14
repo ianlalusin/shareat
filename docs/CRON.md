@@ -53,6 +53,7 @@ from this doc. All jobs are `Asia/Manila`.
 | `rebuild-customer-catalog` | `GET /api/cron/rebuild-customer-catalog?write=1` | `15 3 * * *` (3:15 AM) | asia-southeast1 | ENABLED |
 | `rebuild-presets` | `GET /api/cron/rebuild-presets` | `30 0 * * *` (12:30 AM) | **asia-east1** | ENABLED |
 | `holiday-calendar` | `GET /api/cron/holiday-calendar` | `0 2 1 * *` (1st, 2 AM) | asia-southeast1 | ENABLED |
+| `purge-customer-auth-users` | `GET /api/cron/purge-customer-auth-users?write=1` | `30 4 * * *` (daily 4:30 AM) | asia-southeast1 | **PAUSED** (created 2026-09-13) |
 
 Discrepancies this table corrects, all confirmed live:
 
@@ -164,6 +165,99 @@ gcloud scheduler jobs pause  purge-expired-pins --location=asia-southeast1 --pro
 gcloud scheduler jobs resume purge-expired-pins --location=asia-southeast1 --project=shareat-hub-v2
 ```
 
+### `purge-customer-auth-users` rollout notes
+
+**Created PAUSED on 2026-09-13** by the owner's session, with the command
+below. It is still paused and **must be resumed after the POS deploy that
+carries the route** — exactly as with `purge-expired-pins`, resuming it before
+the route is live means the first fire hits a 404 the next morning.
+
+```bash
+gcloud scheduler jobs resume purge-customer-auth-users   --location=asia-southeast1 --project=shareat-hub-v2
+```
+
+What it sweeps: the customer app signs diners in with
+`auth.createCustomToken(uid)`, and `signInWithCustomToken` auto-creates a
+Firebase Auth user per uid — `cust_part_<16-hex device hash>` today,
+`cust_<PIN>_<20-char id>` in the legacy scheme. Nothing has ever deleted one.
+Census on 2026-09-13 via `listUsers`: **7,386 auth users**, of which 5,741
+`cust_part_*`, 1,587 legacy `cust_*`, 46 email users (staff) and 12
+phone-number uids (Sharelebrator loyalty, the uid *is* the phone number). Only
+**146** of the `cust_part_*` users had any activity in the last 48 hours.
+
+**So expect the first armed run to delete roughly 5,600 users, in about 6
+batches** (1,000 uids per `deleteUsers()` call, ~1.1s apart for the 1 QPS
+limit). Steady state after that is a few hundred, and each nightly run is
+small.
+
+Safety rail: a user is a candidate only if the uid matches
+`^cust_(part_)?[A-Za-z0-9_-]+$` **and** has no `email`, no `phoneNumber` and an
+empty `providerData`. Staff are email/password users and loyalty accounts are
+phone users, so both populations are excluded structurally — by what they are,
+not by a list anyone has to maintain. A user whose last activity timestamp does
+not parse is never a candidate. See
+`src/lib/server/retention/purge-customer-auth-users.ts`.
+
+Verify end-to-end before arming, the same way the pin sweep was: call the route
+with the real `CRON_SECRET` but **without** `?write=1`. That proves auth, the
+Admin SDK and the full `listUsers` walk all work while deleting nothing.
+
+```bash
+# report-only check, deletes nothing
+curl -H "Authorization: Bearer $CRON_SECRET"   https://app.shareat.net/api/cron/purge-customer-auth-users
+
+# report-only with a different idle window
+curl -H "Authorization: Bearer $CRON_SECRET"   "https://app.shareat.net/api/cron/purge-customer-auth-users?hours=72"
+
+# create it PAUSED, resume after the route is deployed.
+# NOTE the ?write=1 — without it this route only reports and deletes nothing.
+gcloud scheduler jobs create http purge-customer-auth-users \
+  --location=asia-southeast1 \
+  --schedule="30 4 * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="https://app.shareat.net/api/cron/purge-customer-auth-users?write=1" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=300s \
+  --project=shareat-hub-v2
+gcloud scheduler jobs pause purge-customer-auth-users --location=asia-southeast1 --project=shareat-hub-v2
+
+# after the deploy is live
+gcloud scheduler jobs resume purge-customer-auth-users --location=asia-southeast1 --project=shareat-hub-v2
+
+# force a run — NOTE: the job URI carries ?write=1, so this really deletes
+gcloud scheduler jobs run purge-customer-auth-users   --location=asia-southeast1 --project=shareat-hub-v2
+```
+
+Local equivalent, dry run by default:
+
+```bash
+npx tsx scripts/purge-customer-auth-users.ts            # counts + a 5-uid sample
+npx tsx scripts/purge-customer-auth-users.ts --write    # actually delete
+npx tsx scripts/purge-customer-auth-users.ts --hours=72
+```
+
+It runs at **4:30 AM**, not 4:00: it used to share the 4 AM minute with
+`update-accuracy`, and although the two contend for very little — this job's
+only Firestore write is the backup doc — an armed sweep that now writes several
+thousand records is no longer the zero-Firestore job that made sharing a minute
+free. The half-hour offset costs nothing and removes the question. The 300s
+deadline covers the full-pool walk plus the backup write plus the ~6s of
+rate-limited deletes; if a first run ever times out mid-sweep the next night
+simply picks up what is left, since the sweep is idempotent and holds no cursor.
+
+**Backup before delete.** Every armed run first writes the full candidate list
+— uid plus `creationTime`, `lastSignInTime` and `lastRefreshTime` for each — to
+`system/authUserPurgeRuns/runs/<ISO timestamp, colons as dashes>`, splitting the
+payload into `.../chunks/<n>` subcollection docs beyond 4,000 records so no doc
+approaches Firestore's 1 MiB limit; `system/*` is excluded from both client
+catch-alls in `firestore.rules`, so this audit trail is server-only. If that
+write fails the sweep **deletes nothing at all** and returns `deleted: 0` with
+`backedUp: false` and `aborted: "backup_failed"` — Firebase Auth has no
+undelete, so an unbacked deletion is unrecoverable and stopping is the only safe
+answer. (The local script does the same thing to
+`./.purge-backups/auth-users-<timestamp>.json`, which is gitignored.)
+
 ## Auth
 
 Both routes check `Authorization: Bearer <CRON_SECRET>`. The secret is declared
@@ -252,6 +346,17 @@ gcloud scheduler jobs create http purge-expired-pins \
   --schedule="0 3 * * 0" \
   --time-zone="Asia/Manila" \
   --uri="$BACKEND_URL/api/cron/purge-expired-pins?write=1" \
+  --http-method=GET \
+  --headers="Authorization=Bearer $CRON_SECRET" \
+  --attempt-deadline=300s
+
+# NOTE the ?write=1, and create this one PAUSED until the route is deployed —
+# see the rollout notes above.
+gcloud scheduler jobs create http purge-customer-auth-users \
+  --location="$REGION" \
+  --schedule="30 4 * * *" \
+  --time-zone="Asia/Manila" \
+  --uri="$BACKEND_URL/api/cron/purge-customer-auth-users?write=1" \
   --http-method=GET \
   --headers="Authorization=Bearer $CRON_SECRET" \
   --attempt-deadline=300s

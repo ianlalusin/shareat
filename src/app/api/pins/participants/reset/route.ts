@@ -21,7 +21,15 @@ export async function POST(request: Request) {
     const adminDb = getAdminDb();
     const { uid: actorUid } = await requireStaffStoreAccess(adminDb, decoded, storeId, ["admin", "manager", "cashier"]);
 
-    const revokedCount = await endAllParticipants(adminDb, storeId, sessionId, "revoked", actorUid, "manual_reset");
+    const { revoked: revokedCount, authDeleted } = await endAllParticipants(
+      adminDb,
+      getAdminAuth(),
+      storeId,
+      sessionId,
+      "revoked",
+      actorUid,
+      "manual_reset"
+    );
 
     await adminDb.doc(`stores/${storeId}/activeSessions/${sessionId}`).set({
       customerParticipantActiveCount: 0,
@@ -29,7 +37,7 @@ export async function POST(request: Request) {
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    return NextResponse.json({ ok: true, revokedCount });
+    return NextResponse.json({ ok: true, revokedCount, authDeleted });
   } catch (e: any) {
     const message = e?.message || "Reset failed.";
     const status =

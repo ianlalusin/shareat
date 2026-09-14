@@ -19,7 +19,8 @@
     "build:storeConfig": "tsx scripts/build-store-config.ts",
     "seed:grillerCharge": "tsx scripts/seed-griller-charge.ts",
     "backfill:onlineEnabled": "tsx scripts/backfill-online-enabled.ts",
-    "purge:pins": "tsx scripts/purge-expired-pins.ts"
+    "purge:pins": "tsx scripts/purge-expired-pins.ts",
+    "purge:authUsers": "tsx scripts/purge-customer-auth-users.ts"
   },
   "engines": {
     "node": ">=20 <21"

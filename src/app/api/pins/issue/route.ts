@@ -114,11 +114,19 @@ export async function POST(request: Request) {
     });
 
     if (result.isReissue) {
-      const revokedCount = await endAllParticipants(adminDb, storeId, sessionId, "revoked", actorUid, "pin_reissued");
+      const { revoked: revokedCount, authDeleted } = await endAllParticipants(
+        adminDb,
+        getAdminAuth(),
+        storeId,
+        sessionId,
+        "revoked",
+        actorUid,
+        "pin_reissued"
+      );
       await writeServerActivityLog(adminDb, {
         storeId, sessionId, actorUid,
         action: "CUSTOMER_PARTICIPANTS_RESET",
-        meta: { revokedCount, reason: "pin_reissued" },
+        meta: { revokedCount, authDeleted, reason: "pin_reissued" },
         dayId: getManilaDayId(Date.now()),
       });
     }
