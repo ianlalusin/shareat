@@ -20,6 +20,7 @@
     "seed:grillerCharge": "tsx scripts/seed-griller-charge.ts",
     "backfill:onlineEnabled": "tsx scripts/backfill-online-enabled.ts",
     "purge:pins": "tsx scripts/purge-expired-pins.ts",
+    "seed:legacy": "tsx scripts/seed-legacy-loyalty.ts",
     "purge:authUsers": "tsx scripts/purge-customer-auth-users.ts"
   },
   "engines": {

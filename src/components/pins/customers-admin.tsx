@@ -14,6 +14,7 @@ import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, Scrol
 import { format, formatDistanceToNow } from "date-fns";
 import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
+import { LegacyPointsPanel } from "@/components/pins/legacy-points-panel";
 
 type LedgerEntry = {
   id: string;
@@ -882,6 +883,10 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
         </Card>
       </div>
       </div>
+
+      {/* Legacy (old Google Sheet) loyalty customers — same gate as the reset
+          controls, so cashiers never see the claim flow. */}
+      {canReset && <LegacyPointsPanel />}
     </div>
   );
 }

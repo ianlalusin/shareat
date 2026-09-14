@@ -412,6 +412,14 @@ service cloud.firestore {
     }
 
     // -----------------------------
+    // LEGACY (PRE-HUB) LOYALTY CUSTOMERS
+    // -----------------------------
+    // server-only; staff reach it through /api/loyalty/legacy
+    match /legacyLoyaltyCustomers/{id} {
+      allow read, list, create, update, delete: if false;
+    }
+
+    // -----------------------------
     // SHARELEBRATOR LOYALTY CUSTOMERS
     // Top-level (cross-branch). Server-only writes via Admin SDK.
     // -----------------------------
@@ -549,6 +557,11 @@ service cloud.firestore {
     // keeps scoped to hasStoreAccess() — leaving 'system' open here would have
     // let any active staff member read every other store's info through the
     // cache doc, regardless of store assignment.
+    //
+    // 'legacyLoyaltyCustomers' is excluded for the paymongoIntentIndex reason:
+    // its own block above says `if false`, but rule evaluation is OR, so the
+    // explicit deny does nothing unless this fallback also skips it. The rows
+    // carry names, emails and visit history of pre-Hub customers.
     match /{collection}/{docId} {
       allow read: if isActiveStaff()
         && collection != 'paymongoIntentIndex'
@@ -556,7 +569,8 @@ service cloud.firestore {
         && collection != 'system'
         && collection != 'customers'
         && collection != 'loyaltyLogs'
-        && collection != 'loyaltyLogsDaily';
+        && collection != 'loyaltyLogsDaily'
+        && collection != 'legacyLoyaltyCustomers';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
@@ -573,7 +587,8 @@ service cloud.firestore {
         && collection != 'system'
         && collection != 'customers'
         && collection != 'loyaltyLogs'
-        && collection != 'loyaltyLogsDaily';
+        && collection != 'loyaltyLogsDaily'
+        && collection != 'legacyLoyaltyCustomers';
       allow create, update, delete: if false;
     }
   }
