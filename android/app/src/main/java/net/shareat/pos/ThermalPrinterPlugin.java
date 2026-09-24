@@ -63,6 +63,12 @@ public class ThermalPrinterPlugin extends Plugin {
     private String connectedAddress;
     private static final int MAX_RETRIES = 3;
     private static final int RETRY_DELAY_MS = 1500;
+
+    // How the PIN-slip QR reaches the paper (qrMode). See writeQrBlock.
+    private static final String QR_MODE_TRIM   = "raster-trim";
+    private static final String QR_MODE_MARGIN = "raster-margin";
+    private static final String QR_MODE_FULL   = "raster-full";
+    private static final String QR_MODE_NATIVE = "native";
     // Delays before each connect attempt (ms). First attempt is immediate; subsequent
     // ones wait progressively longer for another app (e.g. GrabFood) to release the socket.
     private static final int[] CONNECT_RETRY_DELAYS_MS = {0, 1500, 3000, 5000};
@@ -233,6 +239,9 @@ public class ThermalPrinterPlugin extends Plugin {
         String encoding       = call.getString("encoding", "CP437");
         String qrImageBase64  = call.getString("qrImageBase64", "");
         int    paperWidthMm   = call.getInt("paperWidthMm", 80);
+        // Absent → the pre-2026-09 behaviour (full-width raster, or native when no image).
+        String qrMode         = call.getString("qrMode", QR_MODE_FULL);
+        int    qrModules      = call.getInt("qrModules", 0);
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -241,6 +250,7 @@ public class ThermalPrinterPlugin extends Plugin {
 
         Exception lastError = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            boolean qrStarted = false;
             try {
                 // Init + slow down print speed
             outputStream.write(new byte[]{0x1B, 0x40});
@@ -264,53 +274,14 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.write(new byte[]{0x0A, 0x0A});
             outputStream.flush();
 
-            if (qrImageBase64 != null && !qrImageBase64.isEmpty()) {
-                // Bitmap path — preferred. The native GS QR command on some
-                // printers ignores ESC a center alignment, so the QR clips
-                // against the left margin. Rendering as a raster image with
-                // per-row left-padding centers reliably and lets JS control
-                // dot density and physical size.
-                byte[] qrBytes = Base64.decode(qrImageBase64, Base64.DEFAULT);
-                Bitmap qrSrc = BitmapFactory.decodeByteArray(qrBytes, 0, qrBytes.length);
-                if (qrSrc == null) throw new IOException("Failed to decode qrImageBase64.");
-
-                int maxWidthPx = paperWidthMm == 58 ? 384 : 576;
-                // Threshold to 1-bit without dithering (preserves QR module crispness).
-                Bitmap qrMono = qrToMonochrome(qrSrc);
-                qrSrc.recycle();
-
-                byte[] raster = bitmapToEscPosRaster(qrMono, maxWidthPx);
-                qrMono.recycle();
-
-                outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left (raster handles centering)
-                outputStream.flush();
-                // Stream the raster in small chunks with brief pauses so the
-                // printer's Bluetooth buffer can drain between writes. 80mm
-                // rasters are ~15KB and overflow many printer buffers if sent
-                // in a single shot — symptoms are mid-QR truncation followed
-                // by garbage characters as the printer mis-interprets the
-                // remaining raster bytes as new ESC/POS commands.
-                writeChunked(raster, 512, 30);
-                outputStream.write(new byte[]{0x0A, 0x0A});
-                outputStream.flush();
-                Thread.sleep(300);
-            } else {
-                // Legacy native QR command path (kept for backward compat).
-                byte[] qrBytes = qrData.getBytes("UTF-8");
-                int storeLen = qrBytes.length + 3;
-                byte pL = (byte)(storeLen & 0xFF);
-                byte pH = (byte)((storeLen >> 8) & 0xFF);
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
-                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) qrSize}); // size
-                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // ECC M
-                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
-                outputStream.write(qrBytes);
-                outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print
-                outputStream.write(new byte[]{0x0A, 0x0A});
-                outputStream.flush();
-                Thread.sleep(500);
-            }
+            // From here on a failure must not retry: a half-sent GS v 0 leaves the
+            // printer waiting for raster bytes, so a retry's ESC @ + text would be
+            // swallowed as image data and print as streaks, then a second slip.
+            qrStarted = true;
+            writeQrBlock(qrMode, qrImageBase64, qrData, qrSize, qrModules, paperWidthMm);
+            outputStream.write(new byte[]{0x0A, 0x0A});
+            outputStream.flush();
+            Thread.sleep(300);
 
             // BOTTOM TEXT — PIN line gets double height/width, rest normal
             if (bottomText != null && !bottomText.isEmpty()) {
@@ -346,6 +317,10 @@ public class ThermalPrinterPlugin extends Plugin {
             } catch (IOException e) {
                 lastError = e;
                 Log.w(TAG, "printPinSlip attempt " + (attempt + 1) + " failed: " + e.getMessage());
+                if (qrStarted) {
+                    call.reject("Printing stopped partway through the QR. Press Print again.");
+                    return;
+                }
                 if (attempt < MAX_RETRIES) {
                     try {
                         Thread.sleep(RETRY_DELAY_MS);
@@ -531,6 +506,130 @@ public class ThermalPrinterPlugin extends Plugin {
     }
 
     /**
+     * Prints one labelled QR per mode on a single slip, so the cashier can scan each
+     * and keep the one this printer renders cleanly. Native goes last: a printer
+     * without GS ( k support may print its bytes as junk text, which must not
+     * spoil the raster samples above it.
+     */
+    @PluginMethod
+    public void printQrTest(PluginCall call) {
+        String qrImageBase64 = call.getString("qrImageBase64", "");
+        String qrData        = call.getString("qrData", "https://customer.shareat.net");
+        int    qrModules     = call.getInt("qrModules", 0);
+        int    moduleDots    = call.getInt("moduleDots", 5);
+        int    paperWidthMm  = call.getInt("paperWidthMm", 80);
+
+        if (outputStream == null) {
+            call.reject("Printer not connected.");
+            return;
+        }
+        String[][] samples = {
+            {QR_MODE_TRIM,   "A  Trimmed image"},
+            {QR_MODE_MARGIN, "B  Image + left margin"},
+            {QR_MODE_FULL,   "C  Full-width image (old)"},
+            {QR_MODE_NATIVE, "D  Printer-drawn"},
+        };
+        try {
+            outputStream.write(new byte[]{0x1B, 0x40});
+            outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+            outputStream.write("PIN QR TEST\nScan each. Keep the best.\n\n".getBytes("US-ASCII"));
+            outputStream.flush();
+            Thread.sleep(300);
+            for (String[] sample : samples) {
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+                outputStream.write((sample[1] + "\n\n").getBytes("US-ASCII"));
+                outputStream.flush();
+                writeQrBlock(sample[0], qrImageBase64, qrData, moduleDots, qrModules, paperWidthMm);
+                outputStream.write(new byte[]{0x0A, 0x0A, 0x0A});
+                outputStream.flush();
+                Thread.sleep(400);
+            }
+            outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
+            outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
+            outputStream.flush();
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("printQrTest failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Sends the QR in the given mode. Leaves alignment left and the left margin reset.
+     *
+     *  raster-trim   - image rows carry only the left padding + the QR, not the blank
+     *                  right half. Centred by padding alone, so no command support needed.
+     *  raster-margin - rows carry only the QR; GS L shifts it to centre. Least image data.
+     *  raster-full   - every row padded to the full paper width (the pre-2026-09 path).
+     *  native        - the printer draws the QR from the text (GS ( k), centred with
+     *                  GS L because this firmware ignores ESC a for GS ( k. ~200 bytes.
+     */
+    private void writeQrBlock(String mode, String qrImageBase64, String qrData,
+                              int moduleDots, int qrModules, int paperWidthMm) throws Exception {
+        int maxWidthPx = paperWidthMm == 58 ? 384 : 576;
+        boolean haveImage = qrImageBase64 != null && !qrImageBase64.isEmpty();
+        if (!haveImage) mode = QR_MODE_NATIVE;
+
+        outputStream.write(new byte[]{0x1B, 0x61, 0x00}); // left: centring is done here
+        outputStream.flush();
+
+        if (QR_MODE_NATIVE.equals(mode)) {
+            int dots = Math.max(1, Math.min(16, moduleDots));
+            // Centre the symbol; the printer adds its own quiet zone. Unknown size: no shift.
+            int marginDots = qrModules > 0 ? Math.max(0, (maxWidthPx - qrModules * dots) / 2) : 0;
+            setLeftMargin(marginDots);
+            byte[] qrBytes = qrData.getBytes("UTF-8");
+            int storeLen = qrBytes.length + 3;
+            byte pL = (byte)(storeLen & 0xFF);
+            byte pH = (byte)((storeLen >> 8) & 0xFF);
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00}); // model 2
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) dots}); // module size
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31}); // ECC M
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30}); // store data
+            outputStream.write(qrBytes);
+            outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print
+            outputStream.flush();
+            Thread.sleep(500);
+            setLeftMargin(0);
+            return;
+        }
+
+        byte[] imgBytes = Base64.decode(qrImageBase64, Base64.DEFAULT);
+        Bitmap qrSrc = BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
+        if (qrSrc == null) throw new IOException("Failed to decode qrImageBase64.");
+        // Threshold to 1-bit without dithering (preserves QR module crispness).
+        Bitmap qrMono = qrToMonochrome(qrSrc);
+        qrSrc.recycle();
+
+        int paperBytes = (maxWidthPx + 7) / 8;
+        int imgRowBytes = (qrMono.getWidth() + 7) / 8;
+        int padBytes = Math.max(0, (paperBytes - imgRowBytes) / 2);
+
+        byte[] raster;
+        if (QR_MODE_MARGIN.equals(mode)) {
+            setLeftMargin(padBytes * 8);
+            raster = bitmapToEscPosRaster(qrMono, imgRowBytes, 0);
+        } else if (QR_MODE_TRIM.equals(mode)) {
+            raster = bitmapToEscPosRaster(qrMono, padBytes + imgRowBytes, padBytes);
+        } else {
+            raster = bitmapToEscPosRaster(qrMono, maxWidthPx);
+        }
+        qrMono.recycle();
+
+        // Stream the raster in small chunks with brief pauses so the printer's
+        // Bluetooth buffer can drain between writes. A full-width 80mm QR raster
+        // is ~15KB and overflows many printer buffers if sent in one shot -
+        // symptoms are mid-QR truncation followed by garbage as the printer
+        // mis-reads the remaining raster bytes as ESC/POS commands.
+        writeChunked(raster, 512, 30);
+        if (QR_MODE_MARGIN.equals(mode)) setLeftMargin(0);
+    }
+
+    /** GS L nL nH - left margin in dots. Only takes effect at the start of a line. */
+    private void setLeftMargin(int dots) throws IOException {
+        outputStream.write(new byte[]{0x1D, 0x4C, (byte)(dots & 0xFF), (byte)((dots >> 8) & 0xFF)});
+    }
+
+    /**
      * Write a large byte buffer to the printer in fixed-size chunks with a
      * brief pause between each. Prevents Bluetooth buffer overflow on
      * printers with small input buffers (which would otherwise drop bytes
@@ -670,14 +769,18 @@ public class ThermalPrinterPlugin extends Plugin {
      * full dot width (maxWidthPx).
      */
     private byte[] bitmapToEscPosRaster(Bitmap mono, int maxWidthPx) {
-        int imgWidth = mono.getWidth();
-        int imgHeight = mono.getHeight();
-
         // Bytes per row — must cover full printer width for proper centering
         int bytesPerRow = (maxWidthPx + 7) / 8;
-        int imgBytesPerRow = (imgWidth + 7) / 8;
+        int imgBytesPerRow = (mono.getWidth() + 7) / 8;
         int leftPadBytes = (bytesPerRow - imgBytesPerRow) / 2;
         if (leftPadBytes < 0) leftPadBytes = 0;
+        return bitmapToEscPosRaster(mono, bytesPerRow, leftPadBytes);
+    }
+
+    /** As above, with the row width and left padding (both in bytes) chosen by the caller. */
+    private byte[] bitmapToEscPosRaster(Bitmap mono, int bytesPerRow, int leftPadBytes) {
+        int imgWidth = mono.getWidth();
+        int imgHeight = mono.getHeight();
 
         // Rows per GS v 0 command. Small bands print reliably on cheap printers.
         final int BAND_ROWS = 24;

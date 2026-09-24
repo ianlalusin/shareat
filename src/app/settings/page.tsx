@@ -12,6 +12,7 @@ import ThermalPrinter, { type BluetoothDevice } from "@/lib/printing/thermalPrin
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Capacitor } from '@capacitor/core';
 import { getLastPrinterAddress, setLastPrinterAddress, printViaNativeBluetooth, printViaWebUSB } from "@/lib/printing/printHub";
+import { getPinQrMode, setPinQrMode, renderPinQr, PIN_QR_MODES, PIN_QR_MODULE_DOTS, type PinQrMode } from "@/lib/printing/pinQr";
 import { getKitchenPrinterAddress, setKitchenPrinterAddress, printKitchenText } from "@/lib/printing/kitchenPrinter";
 
 export default function SettingsPage() {
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   const [isNative, setIsNative] = useState(false);
   const [hasWebUSB, setHasWebUSB] = useState(false);
   const [webusbSelected, setWebusbSelected] = useState(false);
+  const [pinQrMode, setPinQrModeState] = useState<PinQrMode>('raster-trim');
 
   useEffect(() => {
     const native = Capacitor.isNativePlatform();
@@ -33,6 +35,7 @@ export default function SettingsPage() {
     if (stored) setConnectedAddress(stored);
     const storedKitchen = getKitchenPrinterAddress();
     if (storedKitchen) setKitchenAddressState(storedKitchen);
+    setPinQrModeState(getPinQrMode());
     if (native) refreshDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -101,6 +104,41 @@ export default function SettingsPage() {
         beep: false,
       });
       toast({ title: 'Test Sent', description: 'Check your printer output.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePinQrModeChange = (mode: string) => {
+    const next = mode as PinQrMode;
+    setPinQrMode(next);
+    setPinQrModeState(next);
+  };
+
+  // Same length as a real join URL, so the samples are the same QR size (v8/v9)
+  // and density the customer actually scans.
+  const handleQrTestPrint = async () => {
+    const address = getLastPrinterAddress();
+    if (!address) return;
+    setIsLoading(true);
+    try {
+      const qrData = `https://customer.shareat.net/join?t=QRTEST.${'x'.repeat(100)}`;
+      const { qrImageBase64, qrModules } = await renderPinQr(qrData);
+      await ThermalPrinter.connectBluetoothPrinter({ address });
+      try {
+        await ThermalPrinter.printQrTest({
+          qrImageBase64,
+          qrData,
+          qrModules,
+          moduleDots: PIN_QR_MODULE_DOTS,
+          paperWidthMm: parseInt(paperWidth) as 58 | 80,
+        });
+      } finally {
+        try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
+      }
+      toast({ title: 'QR Test Sent', description: 'Scan A-D and pick the cleanest below.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
     } finally {
@@ -180,6 +218,27 @@ export default function SettingsPage() {
                   <Button onClick={handleTestPrintBluetooth} disabled={isLoading || !connectedAddress}>
                     <Printer className="mr-2 h-4 w-4" /> Print Test
                   </Button>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">PIN slip QR</div>
+                  <div className="flex items-center gap-2">
+                    <Select value={pinQrMode} onValueChange={handlePinQrModeChange}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PIN_QR_MODES.map(m => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button variant="outline" onClick={handleQrTestPrint} disabled={isLoading || !connectedAddress}>
+                      <Printer className="mr-2 h-4 w-4" /> QR Test
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    QR Test prints samples A-D on one slip. Scan each, then pick the one that scans first try. Saved on this device.
+                  </p>
                 </div>
               </>
             )}

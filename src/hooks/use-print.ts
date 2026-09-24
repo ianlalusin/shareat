@@ -17,7 +17,7 @@ import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
-import QRCode from 'qrcode';
+import { getPinQrMode, renderPinQr, PIN_QR_MODULE_DOTS } from '@/lib/printing/pinQr';
 import {
   isNativeBluetoothAvailable,
   getLastPrinterAddress,
@@ -193,32 +193,25 @@ export function usePinPrint({
         const paperWidth: 58 | 80 = paperSize === '58mm' ? 58 : 80;
         const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
 
-        // Render the QR as a PNG bitmap client-side and let the native plugin
-        // print it via the raster path. That sidesteps printer-firmware QR
-        // command quirks (this printer ignores center-alignment for GS QR,
-        // so the QR clipped against the left margin) and lets us pick the
-        // physical size + density precisely. scale = dots per QR module.
-        // scale 4 → ~25mm-wide compact QR with sharp edges, easy to scan.
+        // The QR is rendered client-side as a PNG; the plugin then sends it in the
+        // mode chosen under Settings → PIN slip QR (see pinQr.ts). Image size is set
+        // by trimming the blank padding, not by shrinking the QR: the old 4-dot QR
+        // sent ~15KB per slip, mostly blank row padding, and overran the printer's
+        // Bluetooth buffer (clipped QR, streaks). The print head is a fixed 203dpi;
+        // a smaller+crisper QR would need a shorter join URL.
         const qrText = joinUrl || 'https://customer.shareat.net';
-        // Compact QR: scale 4 = 4 printer dots per module (~25mm), which prints and
-        // scans reliably. A larger QR means a much bigger raster that is actually MORE
-        // prone to mid-print distortion, so we keep it small. The print head is a fixed
-        // 203dpi — there is no higher-DPI mode to sharpen a same-size QR in software;
-        // a genuinely smaller+crisper QR would require shortening the join URL. The
-        // banding in the native raster path is what removes the mid-image distortion.
-        const qrDataUrl = await QRCode.toDataURL(qrText, {
-          errorCorrectionLevel: 'M',
-          margin: 1,
-          scale: 4,
-        });
-        const qrImageBase64 = qrDataUrl.replace(/^data:image\/png;base64,/, '');
+        const { qrImageBase64, qrModules } = await renderPinQr(qrText);
 
         await ThermalPrinter.connectBluetoothPrinter({ address: lastAddress });
         try {
           await ThermalPrinter.printPinSlip({
             top,
             bottom,
+            qrData: qrText,
+            qrSize: PIN_QR_MODULE_DOTS,
             qrImageBase64,
+            qrModules,
+            qrMode: getPinQrMode(),
             paperWidthMm: paperWidth,
             encoding: 'CP437',
           });

@@ -1,6 +1,7 @@
 'use client';
 
 import { registerPlugin, Capacitor } from '@capacitor/core';
+import type { PinQrMode } from './pinQr';
 
 export interface BluetoothDevice {
   name: string;
@@ -28,6 +29,18 @@ export interface ThermalPrinterPlugin {
     qrImageBase64?: string;
     /** Required when qrImageBase64 is set, so the plugin centers correctly. */
     paperWidthMm?: 58 | 80;
+    /** How the QR is sent (see pinQr.ts). Omitted = 'raster-full', the pre-2026-09 path. */
+    qrMode?: PinQrMode;
+    /** QR symbol width in modules; native mode needs it to centre the printer-drawn QR. */
+    qrModules?: number;
+  }): Promise<void>;
+  /** One slip with a labelled sample of every PinQrMode, for picking what this printer scans best. */
+  printQrTest(options: {
+    qrImageBase64: string;
+    qrData: string;
+    qrModules: number;
+    moduleDots: number;
+    paperWidthMm: 58 | 80;
   }): Promise<void>;
   printReceipt(options: {
     text: string;
