@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePinQrMode, renderPinQr, DEFAULT_PIN_QR_MODE } from './pinQr';
+import { parsePinQrMode, renderPinQr, DEFAULT_PIN_QR_MODE, PIN_QR_NATIVE_DOTS } from './pinQr';
 
 describe('parsePinQrMode', () => {
   it('keeps every known mode', () => {
@@ -9,11 +9,11 @@ describe('parsePinQrMode', () => {
     expect(parsePinQrMode('native')).toBe('native');
   });
 
-  it('falls back to the trimmed image for missing or unknown values', () => {
-    expect(DEFAULT_PIN_QR_MODE).toBe('raster-trim');
-    expect(parsePinQrMode(null)).toBe('raster-trim');
-    expect(parsePinQrMode('')).toBe('raster-trim');
-    expect(parsePinQrMode('bogus')).toBe('raster-trim');
+  it('falls back to the printer-drawn QR for missing or unknown values', () => {
+    expect(DEFAULT_PIN_QR_MODE).toBe('native');
+    expect(parsePinQrMode(null)).toBe('native');
+    expect(parsePinQrMode('')).toBe('native');
+    expect(parsePinQrMode('bogus')).toBe('native');
   });
 });
 
@@ -33,6 +33,13 @@ describe('renderPinQr', () => {
     expect(qrModules).toBe(49); // version 8
     expect(png.width).toBe((49 + 2) * 5);
     expect(png.height).toBe((49 + 2) * 5);
+  });
+
+  it('prints the printer-drawn QR at 6 dots and it fits 58mm paper (384 dots)', async () => {
+    const { qrModules } = await renderPinQr(`${joinUrl}${'c'.repeat(23)}`);
+    expect(PIN_QR_NATIVE_DOTS).toBe(6);
+    expect(qrModules).toBe(53); // version 9, the longest join URL
+    expect(qrModules * PIN_QR_NATIVE_DOTS).toBeLessThanOrEqual(384);
   });
 
   it('fits 58mm paper (384 dots) for the longest join URLs', async () => {

@@ -12,7 +12,7 @@ import ThermalPrinter, { type BluetoothDevice } from "@/lib/printing/thermalPrin
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Capacitor } from '@capacitor/core';
 import { getLastPrinterAddress, setLastPrinterAddress, printViaNativeBluetooth, printViaWebUSB } from "@/lib/printing/printHub";
-import { getPinQrMode, setPinQrMode, renderPinQr, PIN_QR_MODES, PIN_QR_MODULE_DOTS, type PinQrMode } from "@/lib/printing/pinQr";
+import { getPinQrMode, setPinQrMode, renderPinQr, PIN_QR_MODES, PIN_QR_NATIVE_DOTS, DEFAULT_PIN_QR_MODE, type PinQrMode } from "@/lib/printing/pinQr";
 import { getKitchenPrinterAddress, setKitchenPrinterAddress, printKitchenText } from "@/lib/printing/kitchenPrinter";
 
 export default function SettingsPage() {
@@ -25,7 +25,7 @@ export default function SettingsPage() {
   const [isNative, setIsNative] = useState(false);
   const [hasWebUSB, setHasWebUSB] = useState(false);
   const [webusbSelected, setWebusbSelected] = useState(false);
-  const [pinQrMode, setPinQrModeState] = useState<PinQrMode>('raster-trim');
+  const [pinQrMode, setPinQrModeState] = useState<PinQrMode>(DEFAULT_PIN_QR_MODE);
 
   useEffect(() => {
     const native = Capacitor.isNativePlatform();
@@ -132,7 +132,7 @@ export default function SettingsPage() {
           qrImageBase64,
           qrData,
           qrModules,
-          moduleDots: PIN_QR_MODULE_DOTS,
+          moduleDots: PIN_QR_NATIVE_DOTS,
           paperWidthMm: parseInt(paperWidth) as 58 | 80,
         });
       } finally {

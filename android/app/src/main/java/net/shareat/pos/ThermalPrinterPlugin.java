@@ -285,6 +285,7 @@ public class ThermalPrinterPlugin extends Plugin {
 
             // BOTTOM TEXT — PIN line gets double height/width, rest normal
             if (bottomText != null && !bottomText.isEmpty()) {
+                setLeftMargin(0); // never let a QR's margin shift the PIN off-centre
                 outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
                 // Split bottom text to find PIN line (all caps, 6 chars)
                 String[] bottomLines = bottomText.split("\n");
@@ -536,6 +537,7 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.flush();
             Thread.sleep(300);
             for (String[] sample : samples) {
+                setLeftMargin(0);
                 outputStream.write(new byte[]{0x1B, 0x61, 0x01});
                 outputStream.write((sample[1] + "\n\n").getBytes("US-ASCII"));
                 outputStream.flush();
@@ -589,7 +591,7 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print
             outputStream.flush();
             Thread.sleep(500);
-            setLeftMargin(0);
+            resetLeftMargin();
             return;
         }
 
@@ -621,7 +623,18 @@ public class ThermalPrinterPlugin extends Plugin {
         // symptoms are mid-QR truncation followed by garbage as the printer
         // mis-reads the remaining raster bytes as ESC/POS commands.
         writeChunked(raster, 512, 30);
-        if (QR_MODE_MARGIN.equals(mode)) setLeftMargin(0);
+        if (QR_MODE_MARGIN.equals(mode)) resetLeftMargin();
+    }
+
+    /**
+     * Ends the QR's line, then clears GS L. The store printer ignored a GS L 0 sent
+     * straight after the QR (test slip 2026-09-24: every later line printed shifted
+     * right), so the reset goes out only once a line feed has put it at line start.
+     */
+    private void resetLeftMargin() throws IOException {
+        outputStream.write(new byte[]{0x0A});
+        setLeftMargin(0);
+        outputStream.flush();
     }
 
     /** GS L nL nH - left margin in dots. Only takes effect at the start of a line. */

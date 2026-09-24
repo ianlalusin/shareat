@@ -17,7 +17,7 @@ import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
 import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
-import { getPinQrMode, renderPinQr, PIN_QR_MODULE_DOTS } from '@/lib/printing/pinQr';
+import { getPinQrMode, renderPinQr, PIN_QR_NATIVE_DOTS } from '@/lib/printing/pinQr';
 import {
   isNativeBluetoothAvailable,
   getLastPrinterAddress,
@@ -208,7 +208,7 @@ export function usePinPrint({
             top,
             bottom,
             qrData: qrText,
-            qrSize: PIN_QR_MODULE_DOTS,
+            qrSize: PIN_QR_NATIVE_DOTS,
             qrImageBase64,
             qrModules,
             qrMode: getPinQrMode(),

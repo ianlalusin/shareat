@@ -3,10 +3,13 @@ import QRCode from 'qrcode';
 /**
  * How the PIN-slip QR reaches the thermal paper. Mirrors QR_MODE_* in
  * android/.../ThermalPrinterPlugin.java — keep the two in step.
- *  raster-trim   — our image, rows cut to padding + QR (no printer commands needed). Default.
- *  raster-margin — our image, rows cut to the QR only, centred with GS L. Least image data.
+ *  raster-trim   — our image, rows cut to padding + QR (no printer commands needed).
+ *  raster-margin — our image, rows cut to the QR only, centred with GS L. The store
+ *                  printer ignores GS L for images (test slip 2026-09-24): prints left.
  *  raster-full   — our image padded to the full paper width (the pre-2026-09 path).
- *  native        — the printer draws the QR itself from the link text (~200 bytes).
+ *  native        — the printer draws the QR itself from the link text (~200 bytes). Default:
+ *                  too little data to overrun the Bluetooth buffer, and it printed
+ *                  centred on the store printer's test slip.
  */
 export type PinQrMode = 'raster-trim' | 'raster-margin' | 'raster-full' | 'native';
 
@@ -17,14 +20,21 @@ export const PIN_QR_MODES: { value: PinQrMode; label: string }[] = [
   { value: 'native', label: 'D · Printer-drawn' },
 ];
 
-export const DEFAULT_PIN_QR_MODE: PinQrMode = 'raster-trim';
+export const DEFAULT_PIN_QR_MODE: PinQrMode = 'native';
 
 /**
- * Printer dots per QR module. 5 dots = 0.625mm at 203dpi, so a v8/v9 join URL
- * prints ~32-34mm wide: bigger than the old 4-dot slip, and it still fits 58mm
- * paper (384 dots) with room to spare.
+ * Printer dots per QR module for the image modes. 5 dots = 0.625mm at 203dpi, so a
+ * v8/v9 join URL prints ~32-34mm wide. Kept at 5: every extra dot grows the image
+ * data the printer has to buffer.
  */
 export const PIN_QR_MODULE_DOTS = 5;
+
+/**
+ * Printer dots per QR module when the printer draws the QR (native). Size is free
+ * there, since only the link text crosses Bluetooth. 6 dots = 0.75mm, ~37-40mm
+ * wide for a v8/v9 join URL; v9 is 53 x 6 = 318 dots, inside 58mm paper (384).
+ */
+export const PIN_QR_NATIVE_DOTS = 6;
 
 const STORAGE_KEY = 'pinQrMode';
 

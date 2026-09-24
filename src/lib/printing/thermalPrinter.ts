@@ -39,6 +39,7 @@ export interface ThermalPrinterPlugin {
     qrImageBase64: string;
     qrData: string;
     qrModules: number;
+    /** Module size for the printer-drawn sample (D); image samples use the PNG as rendered. */
     moduleDots: number;
     paperWidthMm: 58 | 80;
   }): Promise<void>;
