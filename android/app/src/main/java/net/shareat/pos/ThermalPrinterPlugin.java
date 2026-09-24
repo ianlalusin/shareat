@@ -257,13 +257,9 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.flush();
             Thread.sleep(300);
 
-            // TOP TEXT — normal size, centered
+            // TOP TEXT — centered, per-line styles (see writePinSlipLines)
             if (topText != null && !topText.isEmpty()) {
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-                outputStream.write(new byte[]{0x1D, 0x21, 0x00}); // normal size
-                try { outputStream.write(topText.getBytes(encoding)); }
-                catch (Exception e) { outputStream.write(topText.getBytes("UTF-8")); }
-                outputStream.write(new byte[]{0x0A});
+                writePinSlipLines(topText, encoding);
             }
             outputStream.flush();
             Thread.sleep(400);
@@ -283,30 +279,10 @@ public class ThermalPrinterPlugin extends Plugin {
             outputStream.flush();
             Thread.sleep(300);
 
-            // BOTTOM TEXT — PIN line gets double height/width, rest normal
+            // BOTTOM TEXT — PIN line gets double height/width, rest per-line styles
             if (bottomText != null && !bottomText.isEmpty()) {
                 setLeftMargin(0); // never let a QR's margin shift the PIN off-centre
-                outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
-                // Split bottom text to find PIN line (all caps, 6 chars)
-                String[] bottomLines = bottomText.split("\n");
-                for (String line : bottomLines) {
-                    String trimmed = line.trim();
-                    // Detect PIN line: 6 uppercase alphanumeric chars
-                    boolean isPinLine = trimmed.matches("[A-Z0-9]{6}");
-                    if (isPinLine) {
-                        // Double width + double height for PIN
-                        outputStream.write(new byte[]{0x1D, 0x21, 0x11});
-                        outputStream.write(new byte[]{0x1B, 0x45, 0x01}); // bold on
-                    } else {
-                        outputStream.write(new byte[]{0x1D, 0x21, 0x00}); // normal
-                        outputStream.write(new byte[]{0x1B, 0x45, 0x00}); // bold off
-                    }
-                    try { outputStream.write((line + "\n").getBytes(encoding)); }
-                    catch (Exception e) { outputStream.write((line + "\n").getBytes("UTF-8")); }
-                }
-                // Reset to normal
-                outputStream.write(new byte[]{0x1D, 0x21, 0x00});
-                outputStream.write(new byte[]{0x1B, 0x45, 0x00});
+                writePinSlipLines(bottomText, encoding);
             }
 
             // Feed + cut
@@ -504,6 +480,28 @@ public class ThermalPrinterPlugin extends Plugin {
             }
         }
         call.reject("printImage failed after retries: " + (lastError != null ? lastError.getMessage() : "unknown"));
+    }
+
+    /**
+     * Writes PIN-slip text centred, one line at a time:
+     *  - a line of exactly 6 uppercase letters/digits is the PIN: bold, double width+height
+     *  - a line starting with "**" is bold at normal size (the marker is not printed)
+     *  - anything else is normal
+     * Ends with normal size and bold off.
+     */
+    private void writePinSlipLines(String text, String encoding) throws IOException {
+        outputStream.write(new byte[]{0x1B, 0x61, 0x01}); // center
+        for (String line : text.split("\n", -1)) {
+            boolean isPinLine = line.trim().matches("[A-Z0-9]{6}");
+            boolean isBold = line.startsWith("**");
+            if (isBold) line = line.substring(2);
+            outputStream.write(new byte[]{0x1D, 0x21, (byte) (isPinLine ? 0x11 : 0x00)});
+            outputStream.write(new byte[]{0x1B, 0x45, (byte) (isPinLine || isBold ? 0x01 : 0x00)});
+            try { outputStream.write((line + "\n").getBytes(encoding)); }
+            catch (Exception e) { outputStream.write((line + "\n").getBytes("UTF-8")); }
+        }
+        outputStream.write(new byte[]{0x1D, 0x21, 0x00});
+        outputStream.write(new byte[]{0x1B, 0x45, 0x00});
     }
 
     /**

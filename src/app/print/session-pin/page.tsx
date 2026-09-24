@@ -184,19 +184,13 @@ export default function PrintPinPage() {
         </p>
 
         <p className="text-xs leading-snug mt-2">
-          We are glad you are here to
+          Scan the QR code or go to
           <br />
-          <b className="uppercase">SHARELEBRATE</b>
+          <b>CUSTOMER.SHAREAT.NET</b>
           <br />
-          with us.
-        </p>
-
-        <p className="text-xs leading-snug mt-2">
-          Scan the QR code to join instantly
+          and enter this PIN to access
           <br />
-          or go to <b>customer.shareat.net</b>
-          <br />
-          and enter your PIN below.
+          our smart refilling system.
         </p>
 
         <div className="my-3 flex flex-col items-center gap-2">
@@ -204,17 +198,10 @@ export default function PrintPinPage() {
         </div>
 
         <div className="my-2">
-          <div className="text-sm font-bold">PIN</div>
           <div className="text-2xl font-bold tracking-wider font-mono bg-zinc-100 px-3 py-2 rounded-lg inline-block min-w-[140px]">
             {pin}
           </div>
         </div>
-
-        <p className="text-[10px] leading-snug mt-2">
-          If you need any help please call the attention of our staff.
-          <br />
-          Have a nice stay!
-        </p>
 
         <p className="text-[10px] mt-2 font-bold">
           - {activeStore?.name || 'The SharEat Team'}

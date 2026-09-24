@@ -160,35 +160,27 @@ export function formatPinText(opts: {
   width: 58 | 80;
   qrPosition?: "top" | "middle" | "bottom";
 }): PinTextParts {
-  const charsPerLine = opts.width === 58 ? 32 : 38;
   const qrPos = opts.qrPosition ?? 'middle';
 
   // No software centering — printer handles alignment via ESC a 01
   const center = (text: string) => text.trim();
-  const hr = () => '-'.repeat(charsPerLine);
 
+  // Line markup read by the native plugin (writePinSlipLines): a "**" prefix prints
+  // the line bold, and a line of exactly 6 uppercase letters/digits is the PIN
+  // (bold, double size). Every line here is ≤32 chars, so none wraps on 58mm.
   const headerLines: string[] = [
     ...(opts.customerName ? [center('Welcome ' + opts.customerName + ',')] : [center('Welcome,')]),
     '',
-    center('We are glad you are here to'),
-    center('SHARELEBRATE'),
-    center('with us.'),
-    '',
-    center('Scan the QR code to join instantly'),
-    center('or go to customer.shareat.net'),
-    center('and enter your PIN below.'),
+    center('Scan the QR code or go to'),
+    '**' + center('CUSTOMER.SHAREAT.NET'),
+    center('and enter this PIN to access'),
+    center('our smart refilling system.'),
     '',
   ];
 
   const footerLines: string[] = [
     '',
-    hr(),
-    center('YOUR PIN'),
     center(opts.pin),
-    hr(),
-    '',
-    center('If you need help, call our staff.'),
-    center('Have a nice stay!'),
     '',
     center(`- ${opts.storeName || 'The SharEat Team'}`),
     '\n\n\n\n',
