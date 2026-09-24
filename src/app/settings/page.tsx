@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Printer, Bluetooth, RefreshCw, Usb, Check, ChefHat } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import ThermalPrinter, { type BluetoothDevice } from "@/lib/printing/thermalPrinter";
+import ThermalPrinter, { type BluetoothDevice, type PrintDarkness, PRINT_DARKNESS_OPTIONS } from "@/lib/printing/thermalPrinter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Capacitor } from '@capacitor/core';
 import { getLastPrinterAddress, setLastPrinterAddress, printViaNativeBluetooth, printViaWebUSB } from "@/lib/printing/printHub";
@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [hasWebUSB, setHasWebUSB] = useState(false);
   const [webusbSelected, setWebusbSelected] = useState(false);
   const [pinQrMode, setPinQrModeState] = useState<PinQrMode>(DEFAULT_PIN_QR_MODE);
+  const [darkness, setDarkness] = useState<PrintDarkness>('normal');
 
   useEffect(() => {
     const native = Capacitor.isNativePlatform();
@@ -36,6 +37,11 @@ export default function SettingsPage() {
     const storedKitchen = getKitchenPrinterAddress();
     if (storedKitchen) setKitchenAddressState(storedKitchen);
     setPinQrModeState(getPinQrMode());
+    if (native && stored) {
+      ThermalPrinter.getPrintDarkness({ address: stored })
+        .then(({ mode }) => setDarkness(mode))
+        .catch(() => {});
+    }
     if (native) refreshDevices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -104,6 +110,36 @@ export default function SettingsPage() {
         beep: false,
       });
       toast({ title: 'Test Sent', description: 'Check your printer output.' });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDarknessChange = async (mode: string) => {
+    const address = getLastPrinterAddress();
+    if (!address) return;
+    try {
+      await ThermalPrinter.setPrintDarkness({ mode: mode as PrintDarkness, address });
+      setDarkness(mode as PrintDarkness);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Could not save darkness', description: e.message });
+    }
+  };
+
+  const handleDarknessTestPrint = async () => {
+    const address = getLastPrinterAddress();
+    if (!address) return;
+    setIsLoading(true);
+    try {
+      await ThermalPrinter.connectBluetoothPrinter({ address });
+      try {
+        await ThermalPrinter.printDarknessTest({ paperWidthMm: parseInt(paperWidth) as 58 | 80 });
+      } finally {
+        try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
+      }
+      toast({ title: 'Darkness Test Sent', description: 'Pick the darkest clean section below.' });
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Print Failed', description: e.message });
     } finally {
@@ -238,6 +274,27 @@ export default function SettingsPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     QR Test prints samples A-D on one slip. Scan each, then pick the one that scans first try. Saved on this device.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Print darkness</div>
+                  <div className="flex items-center gap-2">
+                    <Select value={darkness} onValueChange={handleDarknessChange} disabled={!connectedAddress}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRINT_DARKNESS_OPTIONS.map(o => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button variant="outline" onClick={handleDarknessTestPrint} disabled={isLoading || !connectedAddress}>
+                      <Printer className="mr-2 h-4 w-4" /> Darkness Test
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Darkness Test prints sections 0-3. Pick the number whose section came out darkest without smudging. Applies to every print on this printer. If the test leaves the printer too dark or too light, turn it off and on.
                   </p>
                 </div>
               </>

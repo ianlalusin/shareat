@@ -4,6 +4,7 @@ import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -69,6 +70,15 @@ public class ThermalPrinterPlugin extends Plugin {
     private static final String QR_MODE_MARGIN = "raster-margin";
     private static final String QR_MODE_FULL   = "raster-full";
     private static final String QR_MODE_NATIVE = "native";
+
+    // Print darkness, saved per printer address (see setPrintDarkness). There is no
+    // one ESC/POS darkness command: which of these a printer obeys is found by the
+    // darkness test slip. "normal" sends nothing, so it can never break a printer.
+    private static final String DARK_NORMAL  = "normal";
+    private static final String DARK_EPSON   = "density-gs";  // GS ( K 49: Epson-style density
+    private static final String DARK_DC2     = "density-dc2"; // DC2 #: CSN/Xprinter-style density
+    private static final String DARK_HEAT    = "heat-esc7";   // ESC 7: longer heating time
+    private static final String PREFS_NAME   = "thermalPrinter";
     // Delays before each connect attempt (ms). First attempt is immediate; subsequent
     // ones wait progressively longer for another app (e.g. GrabFood) to release the socket.
     private static final int[] CONNECT_RETRY_DELAYS_MS = {0, 1500, 3000, 5000};
@@ -186,6 +196,7 @@ public class ThermalPrinterPlugin extends Plugin {
                 if (!skipInit) {
                     outputStream.write(new byte[]{0x1B, 0x40});
                 }
+                writeDarkness(darknessFor(connectedAddress));
                 // Built-in font + size for the whole body. Thermal printers only
                 // have ROM fonts: Font A (normal) and the denser Font B (small).
                 // "large" doubles the height only — character WIDTH is unchanged,
@@ -254,6 +265,7 @@ public class ThermalPrinterPlugin extends Plugin {
             try {
                 // Init + slow down print speed
             outputStream.write(new byte[]{0x1B, 0x40});
+            writeDarkness(darknessFor(connectedAddress));
             outputStream.flush();
             Thread.sleep(300);
 
@@ -333,6 +345,7 @@ public class ThermalPrinterPlugin extends Plugin {
             try {
             byte[] dataBytes = data.getBytes("UTF-8");
             int dataLen = dataBytes.length;
+            writeDarkness(darknessFor(connectedAddress));
             outputStream.write(new byte[]{0x1B, 0x61, 0x01});
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00});
             outputStream.write(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, (byte) size});
@@ -443,6 +456,7 @@ public class ThermalPrinterPlugin extends Plugin {
                 // Build ESC/POS raster data
                 byte[] rasterData = bitmapToEscPosRaster(mono, maxWidthPx);
                 mono.recycle();
+                writeDarkness(darknessFor(connectedAddress));
 
                 // Set alignment
                 byte alignByte = 0x01; // center
@@ -504,6 +518,140 @@ public class ThermalPrinterPlugin extends Plugin {
         outputStream.write(new byte[]{0x1B, 0x45, 0x00});
     }
 
+    /** Saves the darkness for one printer address. Read back on every print to it. */
+    @PluginMethod
+    public void setPrintDarkness(PluginCall call) {
+        String address = call.getString("address", connectedAddress);
+        String mode = call.getString("mode", DARK_NORMAL);
+        if (address == null || address.isEmpty()) {
+            call.reject("No printer address.");
+            return;
+        }
+        prefs().edit().putString("darkness:" + address, normalizeDarkness(mode)).apply();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getPrintDarkness(PluginCall call) {
+        String address = call.getString("address", connectedAddress);
+        JSObject ret = new JSObject();
+        ret.put("mode", darknessFor(address));
+        call.resolve(ret);
+    }
+
+    /**
+     * One slip: the same sample under each darkness command, labelled, so the cashier
+     * can see which command this printer obeys. A command the printer does not know
+     * is ignored or prints a few junk characters. Each darker section restores that
+     * command's normal value after itself; power-cycling the printer also clears all.
+     */
+    @PluginMethod
+    public void printDarknessTest(PluginCall call) {
+        int paperDots = paperWidthDots(call.getInt("paperWidthMm", 80));
+        if (outputStream == null) {
+            call.reject("Printer not connected.");
+            return;
+        }
+        String[][] sections = {
+            {DARK_NORMAL, "0  Normal (nothing sent)"},
+            {DARK_EPSON,  "1  Density - GS ( K"},
+            {DARK_DC2,    "2  Density - DC2 #"},
+            {DARK_HEAT,   "3  Heat - ESC 7"},
+        };
+        try {
+            outputStream.write(new byte[]{0x1B, 0x40});
+            outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+            outputStream.write("DARKNESS TEST\nPick the darkest clean section.\n\n".getBytes("US-ASCII"));
+            outputStream.flush();
+            Thread.sleep(300);
+            for (String[] section : sections) {
+                writeDarkness(section[0]);
+                outputStream.write(new byte[]{0x1B, 0x61, 0x01});
+                outputStream.write(new byte[]{0x1B, 0x45, 0x00});
+                outputStream.write((section[1] + "\n").getBytes("US-ASCII"));
+                outputStream.write("Scan the QR code or go to\n".getBytes("US-ASCII"));
+                outputStream.write(new byte[]{0x1B, 0x45, 0x01});
+                outputStream.write("CUSTOMER.SHAREAT.NET\n".getBytes("US-ASCII"));
+                outputStream.write(new byte[]{0x1D, 0x21, 0x11});
+                outputStream.write("K7Q2ZX\n".getBytes("US-ASCII"));
+                outputStream.write(new byte[]{0x1D, 0x21, 0x00});
+                outputStream.write(new byte[]{0x1B, 0x45, 0x00});
+                // Solid bar: shows darkness and any faint streaks at a glance.
+                writeChunked(solidBar(paperDots / 2, 24, paperDots), 512, 30);
+                outputStream.write(new byte[]{0x0A, 0x0A});
+                writeDarknessRestore(section[0]);
+                outputStream.flush();
+                Thread.sleep(400);
+            }
+            outputStream.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
+            outputStream.write(new byte[]{0x1D, 0x56, 0x41, 0x03});
+            outputStream.flush();
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("printDarknessTest failed: " + e.getMessage());
+        }
+    }
+
+    private SharedPreferences prefs() {
+        return getContext().getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE);
+    }
+
+    private String normalizeDarkness(String mode) {
+        if (DARK_EPSON.equals(mode) || DARK_DC2.equals(mode) || DARK_HEAT.equals(mode)) return mode;
+        return DARK_NORMAL;
+    }
+
+    private String darknessFor(String address) {
+        if (address == null) return DARK_NORMAL;
+        return normalizeDarkness(prefs().getString("darkness:" + address, DARK_NORMAL));
+    }
+
+    /** Sends the darker setting for a mode. Normal sends nothing at all. */
+    private void writeDarkness(String mode) throws IOException {
+        if (DARK_EPSON.equals(mode)) {
+            // GS ( K pL pH fn=49 m: m = 1..6 darker than standard. +6 = darkest.
+            outputStream.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x31, 0x06});
+        } else if (DARK_DC2.equals(mode)) {
+            // DC2 # n: bits 0-4 density (50% + 5% x n), bits 5-7 break time.
+            // n = (2 << 5) | 20 -> 150% density.
+            outputStream.write(new byte[]{0x12, 0x23, (byte) ((2 << 5) | 20)});
+        } else if (DARK_HEAT.equals(mode)) {
+            // ESC 7 n1 n2 n3: max heating dots (8 x (n1+1)), heating time (10us units),
+            // heating interval (10us). Common default 7/80/2; 160 = twice the heat time.
+            outputStream.write(new byte[]{0x1B, 0x37, 0x07, (byte) 160, 0x02});
+        }
+    }
+
+    /** Puts one darkness command back to its usual default (test slip only). */
+    private void writeDarknessRestore(String mode) throws IOException {
+        if (DARK_EPSON.equals(mode)) {
+            outputStream.write(new byte[]{0x1D, 0x28, 0x4B, 0x02, 0x00, 0x31, 0x00});
+        } else if (DARK_DC2.equals(mode)) {
+            outputStream.write(new byte[]{0x12, 0x23, (byte) ((2 << 5) | 10)});
+        } else if (DARK_HEAT.equals(mode)) {
+            outputStream.write(new byte[]{0x1B, 0x37, 0x07, 80, 0x02});
+        }
+    }
+
+    private int paperWidthDots(int paperWidthMm) {
+        return paperWidthMm == 58 ? 384 : 576;
+    }
+
+    /** A centred solid black bar as one GS v 0 raster, rows padded to the left edge only. */
+    private byte[] solidBar(int widthDots, int rows, int paperDots) {
+        int barBytes = widthDots / 8;
+        int padBytes = Math.max(0, (paperDots / 8 - barBytes) / 2);
+        int rowBytes = padBytes + barBytes;
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        baos.write(0x1D); baos.write(0x76); baos.write(0x30); baos.write(0x00);
+        baos.write(rowBytes & 0xFF); baos.write((rowBytes >> 8) & 0xFF);
+        baos.write(rows & 0xFF); baos.write((rows >> 8) & 0xFF);
+        for (int r = 0; r < rows; r++) {
+            for (int i = 0; i < rowBytes; i++) baos.write(i < padBytes ? 0x00 : 0xFF);
+        }
+        return baos.toByteArray();
+    }
+
     /**
      * Prints one labelled QR per mode on a single slip, so the cashier can scan each
      * and keep the one this printer renders cleanly. Native goes last: a printer
@@ -530,6 +678,7 @@ public class ThermalPrinterPlugin extends Plugin {
         };
         try {
             outputStream.write(new byte[]{0x1B, 0x40});
+            writeDarkness(darknessFor(connectedAddress));
             outputStream.write(new byte[]{0x1B, 0x61, 0x01});
             outputStream.write("PIN QR TEST\nScan each. Keep the best.\n\n".getBytes("US-ASCII"));
             outputStream.flush();

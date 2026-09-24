@@ -43,6 +43,11 @@ export interface ThermalPrinterPlugin {
     moduleDots: number;
     paperWidthMm: 58 | 80;
   }): Promise<void>;
+  /** Saves print darkness for a printer (defaults to the connected one). Applied on every print to it. */
+  setPrintDarkness(options: { mode: PrintDarkness; address?: string }): Promise<void>;
+  getPrintDarkness(options?: { address?: string }): Promise<{ mode: PrintDarkness }>;
+  /** One slip showing the same sample under each darkness command, to find the one this printer obeys. */
+  printDarknessTest(options: { paperWidthMm: 58 | 80 }): Promise<void>;
   printReceipt(options: {
     text: string;
     widthMm: 58 | 80;
@@ -61,6 +66,20 @@ export interface ThermalPrinterPlugin {
     widthPct?: number;
   }): Promise<void>;
 }
+
+/**
+ * Mirrors DARK_* in ThermalPrinterPlugin.java. There is no single ESC/POS darkness
+ * command, so each option is the command one printer family obeys; the darkness test
+ * slip shows which one works. 'normal' sends nothing.
+ */
+export type PrintDarkness = 'normal' | 'density-gs' | 'density-dc2' | 'heat-esc7';
+
+export const PRINT_DARKNESS_OPTIONS: { value: PrintDarkness; label: string }[] = [
+  { value: 'normal', label: '0 · Normal' },
+  { value: 'density-gs', label: '1 · Darker (density GS ( K)' },
+  { value: 'density-dc2', label: '2 · Darker (density DC2 #)' },
+  { value: 'heat-esc7', label: '3 · Darker (heat ESC 7)' },
+];
 
 const ThermalPrinter = registerPlugin<ThermalPrinterPlugin>('ThermalPrinter');
 
