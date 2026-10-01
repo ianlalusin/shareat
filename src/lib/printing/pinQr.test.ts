@@ -35,9 +35,9 @@ describe('renderPinQr', () => {
     expect(png.height).toBe((49 + 2) * 5);
   });
 
-  it('prints the printer-drawn QR at 6 dots and it fits 58mm paper (384 dots)', async () => {
+  it('prints the printer-drawn QR at 5 dots and it fits 58mm paper (384 dots)', async () => {
     const { qrModules } = await renderPinQr(`${joinUrl}${'c'.repeat(23)}`);
-    expect(PIN_QR_NATIVE_DOTS).toBe(6);
+    expect(PIN_QR_NATIVE_DOTS).toBe(5);
     expect(qrModules).toBe(53); // version 9, the longest join URL
     expect(qrModules * PIN_QR_NATIVE_DOTS).toBeLessThanOrEqual(384);
   });

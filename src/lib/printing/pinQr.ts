@@ -31,10 +31,11 @@ export const PIN_QR_MODULE_DOTS = 5;
 
 /**
  * Printer dots per QR module when the printer draws the QR (native). Size is free
- * there, since only the link text crosses Bluetooth. 6 dots = 0.75mm, ~37-40mm
- * wide for a v8/v9 join URL; v9 is 53 x 6 = 318 dots, inside 58mm paper (384).
+ * there, since only the link text crosses Bluetooth. 5 dots = 0.625mm, ~31-33mm
+ * wide for a v8/v9 join URL; v9 is 53 x 5 = 265 dots. Dropped from 6, which
+ * printed too dark and dense on the store printer.
  */
-export const PIN_QR_NATIVE_DOTS = 6;
+export const PIN_QR_NATIVE_DOTS = 5;
 
 const STORAGE_KEY = 'pinQrMode';
 
