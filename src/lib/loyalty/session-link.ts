@@ -50,6 +50,15 @@ export function estimateEarnPoints(
   return Math.floor(amount * rate);
 }
 
+/**
+ * A cashier link (staff typed/scanned the number) proves nothing about the
+ * customer being present, so it earns points only: it grants no store presence
+ * and cannot be used to spend the customer's points or vouchers.
+ */
+export function isCashierLinked(session: { linkedBy?: unknown } | null | undefined): boolean {
+  return session?.linkedBy === "cashier";
+}
+
 export type CardPillModel = { linked: boolean; label: string; viaCashier: boolean };
 
 export function cardPillModel(s: {

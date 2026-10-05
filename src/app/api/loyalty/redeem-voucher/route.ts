@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { applyLoyaltyVoucher } from "@/lib/server/loyalty";
+import { CASHIER_LINK_NO_REDEEM_ERROR, isSessionCashierLinked } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,9 @@ export async function POST(req: Request) {
   const assigned: string[] = Array.isArray(staffData.assignedStoreIds) ? staffData.assignedStoreIds : [];
   const isAdmin = staffData.role === "admin" || decoded.platformAdmin === true;
   if (!isAdmin && !assigned.includes(storeId)) return bad("No access to this store.", 403);
+
+  // A cashier-linked card earns points only; spending needs the customer's own link.
+  if (await isSessionCashierLinked(db, storeId, sessionId)) return bad(CASHIER_LINK_NO_REDEEM_ERROR, 403);
 
   const result = await applyLoyaltyVoucher({ storeId, sessionId, code, staffUid: uid });
   if (!result.ok) {

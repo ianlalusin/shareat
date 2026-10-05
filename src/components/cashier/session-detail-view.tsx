@@ -17,6 +17,7 @@ import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SessionHeader } from "@/components/cashier/session-header";
 import { LoyaltyRedeemCard } from "@/components/cashier/LoyaltyRedeemCard";
+import { isCashierLinked } from "@/lib/loyalty/session-link";
 import { BillableItems } from "@/components/cashier/billable-items";
 import { BillTotals } from "@/components/cashier/bill-totals";
 import { BillAdjustments, BillAppliedAdjustments } from "@/components/cashier/bill-adjustments";
@@ -658,14 +659,20 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         />
         {session && (session as any).linkedCustomerPhone && (
           <div className="px-4 pb-2">
-            <LoyaltyRedeemCard
-              storeId={storeId!}
-              sessionId={sessionId}
-              linkedPhone={(session as any).linkedCustomerPhone}
-              linkedName={(session as any).linkedCustomerName ?? null}
-              redemptions={loyaltyRedemptions}
-              disabled={isBillingLocked}
-            />
+            {isCashierLinked(session as any) ? (
+              <p className="text-xs text-muted-foreground">
+                Card linked by cashier — points earn only. Redemption needs the customer to link on their own phone.
+              </p>
+            ) : (
+              <LoyaltyRedeemCard
+                storeId={storeId!}
+                sessionId={sessionId}
+                linkedPhone={(session as any).linkedCustomerPhone}
+                linkedName={(session as any).linkedCustomerName ?? null}
+                redemptions={loyaltyRedemptions}
+                disabled={isBillingLocked}
+              />
+            )}
           </div>
         )}
       </div>

@@ -4,7 +4,7 @@ vi.mock("firebase-admin/firestore", () => ({
   FieldValue: { serverTimestamp: () => ({ __sentinel: "serverTimestamp" }) },
 }));
 
-import { linkCardToSession } from "./session-link";
+import { isSessionCashierLinked, linkCardToSession } from "./session-link";
 
 const STORE = "storeA";
 const SID = "sess1";
@@ -17,7 +17,10 @@ let docs: Record<string, any>;
 let writes: Array<{ path: string; data: any }>;
 
 function fakeDb() {
-  const ref = (path: string) => ({ path });
+  const ref = (path: string) => ({
+    path,
+    get: async () => ({ exists: docs[path] !== undefined, data: () => docs[path] }),
+  });
   return {
     doc: ref,
     runTransaction: async (fn: (tx: any) => Promise<any>) =>
@@ -102,5 +105,22 @@ describe("linkCardToSession", () => {
     const r = await linkCardToSession(fakeDb(), args);
     expect(r).toMatchObject({ ok: true });
     expect(writes.map((w) => w.path)).toEqual([ACTIVE]);
+  });
+});
+
+describe("isSessionCashierLinked", () => {
+  it("true when the activeSessions doc was linked by a cashier", async () => {
+    await linkCardToSession(fakeDb(), args);
+    expect(await isSessionCashierLinked(fakeDb(), STORE, SID)).toBe(true);
+  });
+  it("false for a customer-linked or unlinked session", async () => {
+    expect(await isSessionCashierLinked(fakeDb(), STORE, SID)).toBe(false);
+    docs[ACTIVE].linkedCustomerPhone = PHONE;
+    docs[ACTIVE].linkedBy = "participant";
+    expect(await isSessionCashierLinked(fakeDb(), STORE, SID)).toBe(false);
+  });
+  it("false when the session doc is gone", async () => {
+    delete docs[ACTIVE];
+    expect(await isSessionCashierLinked(fakeDb(), STORE, SID)).toBe(false);
   });
 });

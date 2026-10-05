@@ -71,6 +71,16 @@ function seedActiveSession(storeId: string, sessionId: string, phone: string | n
   };
 }
 
+function seedCashierLinkedSession(storeId: string, sessionId: string, phone: string) {
+  harness.cols[`stores/${storeId}/activeSessions`] ??= {};
+  harness.cols[`stores/${storeId}/activeSessions`][sessionId] = {
+    tableId: "t1",
+    linkedCustomerPhone: phone,
+    linkedBy: "cashier",
+    linkedByUid: "staff1",
+  };
+}
+
 function seedProjection(dayId: string, entries: any[], part = 0) {
   harness.docs[`loyaltyLogsDaily/${dayId}_meta`] = { dayId, activePart: part };
   harness.docs[`loyaltyLogsDaily/${dayId}_${part}`] = {
@@ -128,6 +138,27 @@ describe("resolveStorePresence", () => {
       reason: "in_session",
       sessionId: "s1",
     });
+  });
+
+  it("does not grant presence for a cashier-linked session", async () => {
+    // A staff member typing any phone into the link dialog must not be able to
+    // unlock lookup / reset-password / the customer list for that number.
+    seedCashierLinkedSession(STORE, "s1", PHONE);
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.has(PHONE)).toBe(false);
+  });
+
+  it("still grants presence for a customer-linked session next to a cashier-linked one", async () => {
+    seedCashierLinkedSession(STORE, "s1", "09990000000");
+    seedActiveSession(STORE, "s2", PHONE);
+    harness.cols[`stores/${STORE}/activeSessions`]["s2"].linkedBy = "participant";
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.has("09990000000")).toBe(false);
+    expect(presence.get(PHONE)).toMatchObject({ presence: "active", sessionId: "s2" });
   });
 
   it("ignores open sessions with no linked customer", async () => {
@@ -292,6 +323,11 @@ describe("resolvePhonePresence", () => {
     await expect(resolvePhonePresence(STORE, PHONE, now)).resolves.toMatchObject({
       presence: "active",
     });
+  });
+
+  it("returns null for a cashier-linked session", async () => {
+    seedCashierLinkedSession(STORE, "s1", PHONE);
+    await expect(resolvePhonePresence(STORE, PHONE, now)).resolves.toBeNull();
   });
 
   it("returns null for a customer who is only active at another store", async () => {

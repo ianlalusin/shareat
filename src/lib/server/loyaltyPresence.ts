@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
+import { isCashierLinked } from "@/lib/loyalty/session-link";
 
 /**
  * Store scoping for Sharelebrator customer records.
@@ -158,7 +159,11 @@ export async function resolveStorePresence(
   //    field entirely, which is most of them.
   const activeSnap = await db.collection(`stores/${storeId}/activeSessions`).get();
   for (const docSnap of activeSnap.docs) {
-    const phone = String((docSnap.data() as any)?.linkedCustomerPhone ?? "").trim();
+    const data = docSnap.data() as any;
+    // A cashier link is staff-typed, not customer-proven — it earns points but
+    // must not unlock lookup / reset-password / the customer list.
+    if (isCashierLinked(data)) continue;
+    const phone = String(data?.linkedCustomerPhone ?? "").trim();
     if (!phone) continue;
     byPhone.set(phone, {
       phone,

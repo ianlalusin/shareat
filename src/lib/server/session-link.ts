@@ -1,6 +1,23 @@
 import "server-only";
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
+import { isCashierLinked } from "@/lib/loyalty/session-link";
+
+export const CASHIER_LINK_NO_REDEEM_ERROR =
+  "Redemption isn't available when the card was linked by a cashier. The customer must link on their own phone.";
+
+/**
+ * Whether the open session's activeSessions doc was linked by a cashier. Spend
+ * routes (redeem, redeem-voucher) refuse these: a cashier link is earn-only.
+ */
+export async function isSessionCashierLinked(
+  db: Firestore,
+  storeId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+  return snap.exists && isCashierLinked(snap.data() as any);
+}
 
 export type LinkResult =
   | { ok: true; phone: string; name: string; pointsBalance: number; alreadyLinked: boolean }

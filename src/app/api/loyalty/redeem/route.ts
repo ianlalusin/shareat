@@ -3,6 +3,7 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyRedeem, reverseLoyaltyRedeem } from "@/lib/server/loyalty";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
+import { CASHIER_LINK_NO_REDEEM_ERROR, isSessionCashierLinked } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -47,7 +48,11 @@ export async function POST(req: Request) {
 
   try {
     const decoded = await verifyToken(req);
-    const { uid } = await requireStaffStoreAccess(getAdminDb(), decoded, storeId, ["admin", "manager", "cashier"]);
+    const db = getAdminDb();
+    const { uid } = await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "cashier"]);
+
+    // A cashier-linked card earns points only; spending needs the customer's own link.
+    if (await isSessionCashierLinked(db, storeId, sessionId)) return bad(CASHIER_LINK_NO_REDEEM_ERROR, 403);
 
     const result = await writeLoyaltyRedeem({ storeId, sessionId, phone, rewardId, staffUid: uid });
     if (!result.ok) return bad(result.error || "Failed to redeem.", result.error === "Insufficient points" ? 400 : 500);

@@ -3,6 +3,7 @@ import {
   cardPillModel,
   classifyCustomerQuery,
   estimateEarnPoints,
+  isCashierLinked,
   maskPhone,
   nameMatches,
   parseCardQrPayload,
@@ -86,5 +87,19 @@ describe("cardPillModel", () => {
   it("linked without name falls back to masked phone; cashier flag", () => {
     expect(cardPillModel({ linkedCustomerPhone: "+639171234567", linkedBy: "cashier" }))
       .toEqual({ linked: true, label: "+63 9•• ••• 4567", viaCashier: true });
+  });
+});
+
+describe("isCashierLinked", () => {
+  it("is true only for linkedBy === 'cashier'", () => {
+    expect(isCashierLinked({ linkedBy: "cashier" })).toBe(true);
+    expect(isCashierLinked({ linkedBy: "participant" })).toBe(false);
+    expect(isCashierLinked({ linkedBy: "Cashier" })).toBe(false);
+    expect(isCashierLinked({})).toBe(false);
+    expect(isCashierLinked({ linkedBy: null })).toBe(false);
+  });
+  it("is false for a missing session doc", () => {
+    expect(isCashierLinked(null)).toBe(false);
+    expect(isCashierLinked(undefined)).toBe(false);
   });
 });
