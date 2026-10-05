@@ -159,6 +159,8 @@ export function formatPinText(opts: {
   storeName?: string;
   width: 58 | 80;
   qrPosition?: "top" | "middle" | "bottom";
+  /** Table the slip belongs to ("Table 3"); printed as its own bold line under the greeting. */
+  tableLabel?: string | null;
 }): PinTextParts {
   const qrPos = opts.qrPosition ?? 'middle';
 
@@ -168,8 +170,18 @@ export function formatPinText(opts: {
   // Line markup read by the native plugin (writePinSlipLines): a "**" prefix prints
   // the line bold, and a line of exactly 6 uppercase letters/digits is the PIN
   // (bold, double size). Every line here is ≤32 chars, so none wraps on 58mm.
+  let tableLine: string | null = null;
+  const rawTable = (opts.tableLabel ?? '').trim().slice(0, 32).trim();
+  if (rawTable) {
+    // A label that is exactly 6 uppercase letters/digits would be printed by the plugin
+    // as the PIN (double size), so give it a prefix that can never match.
+    const safe = /^[A-Z0-9]{6}$/.test(rawTable) ? ('Table ' + rawTable).slice(0, 32) : rawTable;
+    tableLine = '**' + center(safe);
+  }
+
   const headerLines: string[] = [
     ...(opts.customerName ? [center('Welcome ' + opts.customerName + ',')] : [center('Welcome,')]),
+    ...(tableLine ? [tableLine] : []),
     '',
     center('Scan the QR code or go to'),
     '**' + center('CUSTOMER.SHAREAT.NET'),

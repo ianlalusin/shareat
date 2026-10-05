@@ -139,6 +139,8 @@ export function usePrint({
 export interface UsePinPrintOptions {
   pin: string | null;
   customerName?: string | null;
+  /** Table label ("Table 3") printed on its own line under the greeting; omit for Ala Carte. */
+  tableLabel?: string | null;
   storeName?: string;
   storeId?: string | null;
   joinUrl?: string | null;
@@ -159,6 +161,7 @@ export interface UsePinPrintReturn {
 export function usePinPrint({
   pin,
   customerName,
+  tableLabel,
   storeName,
   storeId,
   joinUrl,
@@ -191,7 +194,7 @@ export function usePinPrint({
         // sees). No settings/Firestore read here — that keeps the slip layout in lockstep
         // with the selector AND removes the network round-trip that made native printing lag.
         const paperWidth: 58 | 80 = paperSize === '58mm' ? 58 : 80;
-        const { top, bottom } = formatPinText({ pin, customerName, storeName, width: paperWidth, qrPosition: 'middle' });
+        const { top, bottom } = formatPinText({ pin, customerName, tableLabel, storeName, width: paperWidth, qrPosition: 'middle' });
 
         // The QR is rendered client-side as a PNG; the plugin then sends it in the
         // mode chosen under Settings → PIN slip QR (see pinQr.ts). Image size is set
@@ -228,7 +231,7 @@ export function usePinPrint({
       isPrintingPinRef.current = false;
       setIsPrintingPin(false);
     }
-  }, [pin, storeId, customerName, storeName, toast, joinUrl, paperSize]);
+  }, [pin, storeId, customerName, tableLabel, storeName, toast, joinUrl, paperSize]);
 
   return { printPin, isPrintingPin };
 }

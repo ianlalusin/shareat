@@ -34,3 +34,48 @@ describe('formatPinText', () => {
     }
   });
 });
+
+describe('formatPinText with a table label', () => {
+  const build = (tableLabel?: string | null) =>
+    formatPinText({ pin: 'K7Q2ZX', customerName: 'Ana', storeName: 'SharEat Lipa', width: 58, tableLabel });
+  const topLines = (tableLabel?: string | null) => build(tableLabel).top.split('\n');
+  const allLines = (tableLabel?: string | null) => {
+    const s = build(tableLabel);
+    return [...s.top.split('\n'), ...s.bottom.split('\n')];
+  };
+
+  it('puts the table on its own bold line right after the welcome', () => {
+    expect(topLines('Table 1').filter(Boolean)).toEqual([
+      'Welcome Ana,',
+      '**Table 1',
+      'Scan the QR code or go to',
+      '**CUSTOMER.SHAREAT.NET',
+      'and enter this PIN to access',
+      'our smart refilling system.',
+    ]);
+  });
+
+  it('prefixes a 6-char uppercase label so it is never PIN-styled', () => {
+    const all = allLines('VIP001');
+    expect(all).toContain('**Table VIP001');
+    expect(all.filter(isPinLine)).toEqual(['K7Q2ZX']);
+  });
+
+  it('truncates a long label to 32 chars', () => {
+    expect(topLines('x'.repeat(50))[1]).toBe('**' + 'x'.repeat(32));
+  });
+
+  it('keeps the prefixed label within 32 chars', () => {
+    const line = topLines('A'.repeat(6) + 'b'.repeat(40))[1];
+    expect(line.startsWith('**')).toBe(true);
+    expect(line.length).toBeLessThanOrEqual(34);
+    expect(allLines('ABC123').filter(isPinLine)).toEqual(['K7Q2ZX']);
+  });
+
+  it('adds no line when the label is empty or missing', () => {
+    const base = build().top;
+    expect(build(null).top).toBe(base);
+    expect(build('   ').top).toBe(base);
+    expect(base.split('\n').filter(Boolean)[1]).toBe('Scan the QR code or go to');
+  });
+});

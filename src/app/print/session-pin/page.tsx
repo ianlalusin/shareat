@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { usePinPrint } from '@/hooks/use-print';
 import { getReceiptSettingsCacheFirst } from '@/lib/receipts/receipt-settings';
 import { QRCodeSVG } from 'qrcode.react';
+import { sessionTableLabel } from '@/lib/sessionLabel';
 
 export default function PrintPinPage() {
   // Query-param route (static-export / APK friendly): /print/session-pin?sessionId=<id>.
@@ -19,6 +20,7 @@ export default function PrintPinPage() {
 
   const [pin, setPin] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
+  const [tableLabel, setTableLabel] = useState<string | null>(null);
   const [joinUrl, setJoinUrl] = useState<string | null>(null);
   const [joinUrlStatus, setJoinUrlStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   // Paper width for the slip — the single source of truth the print follows. Defaults to
@@ -33,7 +35,7 @@ export default function PrintPinPage() {
   });
   const paperSeededRef = useRef(false);
 
-  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, storeName: activeStore?.name, storeId: activeStore?.id, joinUrl, paperSize });
+  const { printPin, isPrintingPin } = usePinPrint({ pin, customerName, tableLabel, storeName: activeStore?.name, storeId: activeStore?.id, joinUrl, paperSize });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,11 +55,19 @@ export default function PrintPinPage() {
           const data = docSnap.data() as any;
           setPin(data.customerPin || null);
           setCustomerName(data.customerName || data.customer?.name || null);
+          setTableLabel(
+            sessionTableLabel({
+              sessionMode: data.sessionMode,
+              tableDisplayName: data.tableDisplayName,
+              tableNumber: data.tableNumber,
+            }),
+          );
           setError(null);
         } else {
           setError("Active session not found. It may have been closed.");
           setPin(null);
           setCustomerName(null);
+          setTableLabel(null);
         }
         setIsLoading(false);
       },
@@ -182,6 +192,8 @@ export default function PrintPinPage() {
         <p className="text-xs leading-snug">
           Welcome {customerName || 'Valued Customer'},
         </p>
+
+        {tableLabel && <p className="text-xs leading-snug font-bold">{tableLabel}</p>}
 
         <p className="text-xs leading-snug mt-2">
           Scan the QR code or go to
