@@ -2,6 +2,7 @@ import "server-only";
 
 import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { isCashierLinked } from "@/lib/loyalty/session-link";
+import { normalizePhone } from "@/lib/phone";
 
 export const CASHIER_LINK_NO_REDEEM_ERROR =
   "Redemption isn't available when the card was linked by a cashier. The customer must link on their own phone.";
@@ -17,6 +18,42 @@ export async function isSessionCashierLinked(
 ): Promise<boolean> {
   const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
   return snap.exists && isCashierLinked(snap.data() as any);
+}
+
+export type SessionLinkInfo = { exists: boolean; linkedCustomerPhone?: string | null; linkedBy?: unknown };
+
+/** One read of the open session's activeSessions doc, for spend-route gating. */
+export async function readSessionLink(
+  db: Firestore,
+  storeId: string,
+  sessionId: string,
+): Promise<SessionLinkInfo> {
+  const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+  if (!snap.exists) return { exists: false };
+  const data = (snap.data() ?? {}) as any;
+  return { exists: true, linkedCustomerPhone: data.linkedCustomerPhone ?? null, linkedBy: data.linkedBy };
+}
+
+export const REDEEM_PHONE_MISMATCH_ERROR = "That card isn't linked to this session.";
+
+/**
+ * Gate for POST /api/loyalty/redeem: points may only be spent from the card
+ * the customer linked to THIS session. The body's phone is untrusted, so it
+ * must equal the session's linked phone (compared normalized; a null
+ * normalization on either side is a mismatch, never a match).
+ */
+export function redeemGate(
+  link: SessionLinkInfo,
+  phone: string,
+): { ok: true } | { ok: false; status: 403 | 404; error: string } {
+  if (!link.exists) return { ok: false, status: 404, error: "Session not found or already closed." };
+  if (isCashierLinked(link as any)) return { ok: false, status: 403, error: CASHIER_LINK_NO_REDEEM_ERROR };
+  const linked = link.linkedCustomerPhone ? normalizePhone(String(link.linkedCustomerPhone)) : null;
+  const given = phone ? normalizePhone(String(phone)) : null;
+  if (!linked || !given || linked !== given) {
+    return { ok: false, status: 403, error: REDEEM_PHONE_MISMATCH_ERROR };
+  }
+  return { ok: true };
 }
 
 export type LinkResult =

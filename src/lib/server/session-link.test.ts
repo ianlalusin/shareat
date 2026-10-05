@@ -4,7 +4,14 @@ vi.mock("firebase-admin/firestore", () => ({
   FieldValue: { serverTimestamp: () => ({ __sentinel: "serverTimestamp" }) },
 }));
 
-import { isSessionCashierLinked, linkCardToSession } from "./session-link";
+import {
+  isSessionCashierLinked,
+  linkCardToSession,
+  readSessionLink,
+  redeemGate,
+  CASHIER_LINK_NO_REDEEM_ERROR,
+  REDEEM_PHONE_MISMATCH_ERROR,
+} from "./session-link";
 
 const STORE = "storeA";
 const SID = "sess1";
@@ -122,5 +129,60 @@ describe("isSessionCashierLinked", () => {
   it("false when the session doc is gone", async () => {
     delete docs[ACTIVE];
     expect(await isSessionCashierLinked(fakeDb(), STORE, SID)).toBe(false);
+  });
+});
+
+describe("readSessionLink", () => {
+  it("reports a missing session as not existing", async () => {
+    delete docs[ACTIVE];
+    expect((await readSessionLink(fakeDb(), STORE, SID)).exists).toBe(false);
+  });
+  it("returns the linked phone and linkedBy from the activeSessions doc", async () => {
+    docs[ACTIVE].linkedCustomerPhone = PHONE;
+    docs[ACTIVE].linkedBy = "participant";
+    expect(await readSessionLink(fakeDb(), STORE, SID)).toMatchObject({
+      exists: true,
+      linkedCustomerPhone: PHONE,
+      linkedBy: "participant",
+    });
+  });
+});
+
+describe("redeemGate", () => {
+  const diner = { exists: true, linkedCustomerPhone: PHONE, linkedBy: "participant" };
+
+  it("404 when the session is missing or closed", () => {
+    expect(redeemGate({ exists: false }, PHONE)).toEqual({
+      ok: false, status: 404, error: "Session not found or already closed.",
+    });
+  });
+  it("403 no-redeem when cashier-linked, even if the phone matches", () => {
+    expect(redeemGate({ ...diner, linkedBy: "cashier" }, PHONE)).toEqual({
+      ok: false, status: 403, error: CASHIER_LINK_NO_REDEEM_ERROR,
+    });
+  });
+  it("ok when diner-linked and the phone is the same", () => {
+    expect(redeemGate(diner, PHONE)).toEqual({ ok: true });
+  });
+  it("ok when the same phone arrives in a different format", () => {
+    expect(redeemGate(diner, "09171234567")).toEqual({ ok: true });
+    expect(redeemGate({ ...diner, linkedCustomerPhone: "09171234567" }, PHONE)).toEqual({ ok: true });
+  });
+  it("403 mismatch for a different customer's phone", () => {
+    expect(redeemGate(diner, "+639998887777")).toEqual({
+      ok: false, status: 403, error: REDEEM_PHONE_MISMATCH_ERROR,
+    });
+  });
+  it("403 mismatch when the session has no linked phone", () => {
+    expect(redeemGate({ exists: true }, PHONE)).toMatchObject({ ok: false, status: 403, error: REDEEM_PHONE_MISMATCH_ERROR });
+    expect(redeemGate({ exists: true, linkedCustomerPhone: null }, PHONE)).toMatchObject({ ok: false, status: 403 });
+    expect(redeemGate({ exists: true, linkedCustomerPhone: "" }, "")).toMatchObject({ ok: false, status: 403 });
+  });
+  it("403 mismatch for a garbage phone (null normalization never matches)", () => {
+    expect(redeemGate(diner, "not-a-phone")).toMatchObject({ ok: false, status: 403, error: REDEEM_PHONE_MISMATCH_ERROR });
+    // garbage on both sides must not "match" as null === null
+    expect(redeemGate({ ...diner, linkedCustomerPhone: "garbage" }, "also-garbage")).toMatchObject({
+      ok: false, status: 403, error: REDEEM_PHONE_MISMATCH_ERROR,
+    });
   });
 });
