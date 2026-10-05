@@ -2,7 +2,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import { Sparkles } from "lucide-react";
+import { CardPill } from "./CardPill";
 
 interface SessionHeaderProps {
   session: {
@@ -14,10 +14,13 @@ interface SessionHeaderProps {
     customerName?: string | null;
     sessionLabel?: string;
     linkedCustomerName?: string | null;
+    linkedCustomerPhone?: string | null;
+    linkedBy?: string | null;
   };
+  onLinkCard?: () => void;
 }
 
-export function SessionHeader({ session }: SessionHeaderProps) {
+export function SessionHeader({ session, onLinkCard }: SessionHeaderProps) {
 
   const isAlaCarte = session.sessionMode === 'alacarte';
   const title = session.sessionLabel
@@ -32,11 +35,10 @@ export function SessionHeader({ session }: SessionHeaderProps) {
         <div className="flex items-center gap-2 flex-wrap">
             {!isAlaCarte && <Badge variant="outline">{session.guestCount} Guests</Badge>}
             <Badge variant="secondary">ID: {session.id.substring(0, 6)}</Badge>
-            {session.linkedCustomerName && (
-              <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary gap-1">
-                <Sparkles className="h-3 w-3" /> Sharelebrator: {session.linkedCustomerName}
-              </Badge>
-            )}
+            <CardPill
+              session={session}
+              onLinkClick={onLinkCard ? (e) => { e.stopPropagation(); onLinkCard(); } : undefined}
+            />
         </div>
       </div>
     </div>

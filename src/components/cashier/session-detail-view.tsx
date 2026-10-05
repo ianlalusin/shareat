@@ -21,6 +21,7 @@ import { BillableItems } from "@/components/cashier/billable-items";
 import { BillTotals } from "@/components/cashier/bill-totals";
 import { BillAdjustments, BillAppliedAdjustments } from "@/components/cashier/bill-adjustments";
 import { PaymentModal } from "@/components/cashier/payment-modal";
+import { LinkCardDialog } from "@/components/cashier/LinkCardDialog";
 import { CustomerInfoForm } from "@/components/cashier/customer-info-form";
 import { SessionTimelineDrawer } from "@/components/session/session-timeline-drawer";
 import { useConfirmDialog } from "../global/confirm-dialog";
@@ -74,6 +75,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
 
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [isLinkCardOpen, setIsLinkCardOpen] = useState(false);
+  const canLinkCard = appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier";
   
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
 
@@ -719,11 +722,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         <Button variant="outline" size="icon" onClick={() => router.push('/cashier')} className="h-9 w-9">
             <ArrowLeft className="h-5 w-5" />
         </Button>
-        <SessionHeader session={{
+        <SessionHeader
+          session={{
             id: session.id, tableNumber: session.tableNumber, guestCount: session.guestCountFinal || 0,
             packageName: session.packageSnapshot?.name ?? "N/A", sessionMode: session.sessionMode, customerName: session.customer?.name ?? session.customerName,
             linkedCustomerName: (session as any).linkedCustomerName ?? null,
-        }} />
+            linkedCustomerPhone: (session as any).linkedCustomerPhone ?? null,
+            linkedBy: (session as any).linkedBy ?? null,
+          }}
+          onLinkCard={canLinkCard && !session.isPaid && !(session as any).linkedCustomerLockedAt ? () => setIsLinkCardOpen(true) : undefined}
+        />
         <div className="ml-auto flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setIsTimelineOpen(true)}>
                 <History className="mr-2 h-4 w-4" /> View Timeline
@@ -847,6 +855,16 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           firebaseUser={user ?? null}
           paymentMethods={paymentMethods}
           reservationId={session.reservationId ?? null}
+        />
+      )}
+
+      {storeId && (
+        <LinkCardDialog
+          open={isLinkCardOpen}
+          onOpenChange={setIsLinkCardOpen}
+          storeId={storeId}
+          sessionId={sessionId}
+          sessionLabel={session.tableDisplayName || (session.tableNumber ? `Table ${session.tableNumber}` : undefined)}
         />
       )}
     </div>

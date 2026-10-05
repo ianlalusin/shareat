@@ -22,6 +22,7 @@ import { reservationEvent, appendReservationEvent } from "@/lib/reservations/his
 import { isPaymongoQrMethod, shouldOfferPaymongoQr } from "@/lib/payments/paymongo/gateway";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { PaymongoQrView } from "@/components/cashier/paymongo-qr-view";
+import { SessionCardBanner } from "@/components/cashier/SessionCardBanner";
 
 // --- Validation ---
 function validatePayments(payments: Payment[], grandTotalCents: number, paymentMethods: ModeOfPayment[]): string | null {
@@ -518,6 +519,14 @@ export function PaymentModal({
           Total due: <span className="font-semibold text-foreground text-base">₱{fmt(grandTotal)}</span>
         </DialogDescription>
       </DialogHeader>
+
+      <SessionCardBanner
+        storeId={storeId}
+        sessionId={sessionId}
+        grandTotal={grandTotal}
+        loyaltyConfig={activeStore.loyaltyConfig}
+        canLink={appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier"}
+      />
 
       {/* Scrollable payment rows */}
       <div className="flex-1 overflow-y-auto space-y-2 py-2 min-h-0">
