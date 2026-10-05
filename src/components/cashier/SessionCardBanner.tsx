@@ -49,13 +49,16 @@ export function SessionCardBanner({
   const points = estimateEarnPoints(grandTotal, loyaltyConfig);
   const lockedOut = !!link?.linkedCustomerLockedAt;
 
+  // Loyalty off for this store: linking only produces a "Loyalty earn failed" toast at billout.
+  if (loyaltyConfig?.isEnabled === false) return null;
+
   if (m.linked) {
     return (
       <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm">
         <div className="flex items-center gap-2 min-w-0">
           <CardPill session={link!} />
           <span className="text-muted-foreground truncate">
-            {loyaltyConfig?.isEnabled === false ? "Loyalty off for this store" : "Earning points"}
+            Earning points
           </span>
         </div>
         {points > 0 && <span className="shrink-0 font-medium">≈ {points} pts</span>}

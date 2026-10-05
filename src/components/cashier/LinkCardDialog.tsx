@@ -1,7 +1,7 @@
 // src/components/cashier/LinkCardDialog.tsx
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, ScanLine, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,6 +43,8 @@ export function LinkCardDialog({
   const [results, setResults] = useState<Hit[]>([]);
   const [candidate, setCandidate] = useState<Hit | null>(null);
   const [linking, setLinking] = useState(false);
+  // Bumped on close / reset / tab change; a scan lookup that resolves after a bump is stale and dropped.
+  const scanReqRef = useRef(0);
 
   const api = useCallback(
     async (url: string, init?: RequestInit) => {
@@ -68,9 +70,13 @@ export function LinkCardDialog({
 
   // Debounced typeahead for the Search tab.
   useEffect(() => {
-    if (!open || tab !== "search" || !isOnline) return;
+    if (!open || tab !== "search" || !isOnline) {
+      setSearching(false);
+      return;
+    }
     if (classifyCustomerQuery(debounced).kind === "incomplete") {
       setResults([]);
+      setSearching(false);
       return;
     }
     let cancelled = false;
@@ -90,8 +96,10 @@ export function LinkCardDialog({
         setScannerKey((k) => k + 1); // remount scanner to resume scanning
         return;
       }
+      const req = scanReqRef.current;
       try {
         const hits = await find(phone);
+        if (req !== scanReqRef.current) return; // dialog closed/reset/tab changed while looking up
         if (hits.length === 0) {
           toast({ variant: "destructive", title: "No account found", description: "No Sharelebrator account for that number." });
           setScannerKey((k) => k + 1);
@@ -99,6 +107,7 @@ export function LinkCardDialog({
         }
         setCandidate(hits[0]);
       } catch (e: any) {
+        if (req !== scanReqRef.current) return;
         toast({ variant: "destructive", title: "Lookup failed", description: e?.message });
         setScannerKey((k) => k + 1);
       }
@@ -133,6 +142,8 @@ export function LinkCardDialog({
   // Reset when closed so a reopened dialog never shows a stale candidate.
   useEffect(() => {
     if (!open) {
+      scanReqRef.current += 1;
+      setSearching(false);
       setCandidate(null);
       setQuery("");
       setResults([]);
@@ -161,7 +172,7 @@ export function LinkCardDialog({
               <p className="text-sm">{candidate.pointsBalance.toLocaleString("en-US")} points</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => { setCandidate(null); setScannerKey((k) => k + 1); }} disabled={linking}>
+              <Button variant="outline" className="flex-1" onClick={() => { scanReqRef.current += 1; setCandidate(null); setScannerKey((k) => k + 1); }} disabled={linking}>
                 Back
               </Button>
               <Button className="flex-1" onClick={confirmLink} disabled={linking}>
@@ -171,14 +182,14 @@ export function LinkCardDialog({
             </div>
           </div>
         ) : (
-          <Tabs value={tab} onValueChange={(v) => setTab(v as "scan" | "search")}>
+          <Tabs value={tab} onValueChange={(v) => { scanReqRef.current += 1; setTab(v as "scan" | "search"); }}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="scan"><ScanLine className="mr-2 h-4 w-4" /> Scan QR</TabsTrigger>
               <TabsTrigger value="search"><Search className="mr-2 h-4 w-4" /> Search</TabsTrigger>
             </TabsList>
             <TabsContent value="scan" className="pt-3">
               {open && tab === "scan" && (
-                <QrScanner key={scannerKey} onResult={handleScan} onCancel={() => setTab("search")} />
+                <QrScanner key={scannerKey} onResult={handleScan} onCancel={() => { scanReqRef.current += 1; setTab("search"); }} />
               )}
             </TabsContent>
             <TabsContent value="search" className="pt-3 space-y-3">
