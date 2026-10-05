@@ -5,13 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useRouter } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import { useState, useEffect } from "react";
-import { Clock, Ban, Scissors, Gift, Tag, Users, Package } from "lucide-react";
+import { Clock, Ban, Scissors, Gift, Tag, Users, Package, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "../ui/badge";
 import { toJsDate } from "@/lib/utils/date";
 import { useAuthContext } from "@/context/auth-context";
 import { VoidSessionDialog } from "./void-session-dialog";
 import { Button } from "../ui/button";
+import { CardPill } from "./CardPill";
+import { LinkCardDialog } from "./LinkCardDialog";
 
 export type ActiveSession = {
     id: string;
@@ -38,6 +40,9 @@ export type ActiveSession = {
     hasVoids?: boolean;
     hasFree?: boolean;
     hasDiscounts?: boolean;
+    linkedCustomerPhone?: string | null;
+    linkedCustomerName?: string | null;
+    linkedBy?: string | null;
 };
 
 const TimeElapsed = ({ startTime, startTimeMs }: { startTime: any, startTimeMs: number | null }) => {
@@ -87,6 +92,8 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
     const router = useRouter();
     const { appUser } = useAuthContext();
     const [voidingSession, setVoidingSession] = useState<ActiveSession | null>(null);
+    const [linkingSession, setLinkingSession] = useState<ActiveSession | null>(null);
+    const canLink = appUser?.role === 'admin' || appUser?.role === 'manager' || appUser?.role === 'cashier';
 
     const canVoid = appUser?.role === 'admin' || appUser?.role === 'manager';
 
@@ -129,6 +136,7 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                         const guests = final > 0 ? final : Math.max(cashier, server);
 
                         const isPending = session.status === 'pending_verification';
+                        const guestName = !isAlaCarte ? (session.customer?.name || session.customerName || '').trim() : '';
                         
                         return (
                         <div key={session.id} className="relative group">
@@ -151,6 +159,18 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                                     </div>
                                     <CardDescription className="truncate">{subtitle}</CardDescription>
                                 </CardHeader>
+                                <div className="px-6 pb-2 flex flex-wrap items-center gap-1.5">
+                                    {guestName && (
+                                        <Badge variant="outline" className="gap-1 text-[11px] px-2 py-0 font-medium max-w-full">
+                                            <UserRound className="h-3 w-3 shrink-0" />
+                                            <span className="truncate">{guestName}</span>
+                                        </Badge>
+                                    )}
+                                    <CardPill
+                                        session={session}
+                                        onLinkClick={canLink && !isPending ? (e) => { e.stopPropagation(); setLinkingSession(session); } : undefined}
+                                    />
+                                </div>
                                 <CardContent className="flex justify-between items-center">
                                     {!isAlaCarte ? (
                                         <p className="text-sm font-medium">{guests} Guests</p>
@@ -207,6 +227,15 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                     session={voidingSession}
                     user={appUser}
                     storeId={storeId}
+                />
+            )}
+            {linkingSession && (
+                <LinkCardDialog
+                    open={!!linkingSession}
+                    onOpenChange={(v) => { if (!v) setLinkingSession(null); }}
+                    storeId={storeId}
+                    sessionId={linkingSession.id}
+                    sessionLabel={linkingSession.tableDisplayName || `Table ${linkingSession.tableNumber}`}
                 />
             )}
         </>

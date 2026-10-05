@@ -1104,6 +1104,10 @@ export type SharelebratorLink = {
   linkedCustomerPhone?: string | null;
   linkedCustomerName?: string | null;
   linkedCustomerLockedAt?: any; // Timestamp when session closed
+  /** Set when a cashier (not the diner) attached the card. Absent for diner-linked sessions. */
+  linkedBy?: "cashier" | null;
+  linkedByUid?: string | null;
+  linkedAt?: any;
 };
 
 export type Store = {
