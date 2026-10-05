@@ -37,6 +37,7 @@ import { useDataAnalysis } from "@/hooks/use-data-analysis";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { commitLocalFirst } from "@/lib/offline/commit";
 import { formatDurationVerbose } from "@/lib/utils/date";
+import { sessionDialogLabel } from "@/lib/sessionLabel";
 import {
   Accordion,
   AccordionContent,
@@ -871,7 +872,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           onOpenChange={setIsLinkCardOpen}
           storeId={storeId}
           sessionId={sessionId}
-          sessionLabel={session.tableDisplayName || (session.tableNumber ? `Table ${session.tableNumber}` : undefined)}
+          sessionLabel={sessionDialogLabel(session)}
         />
       )}
     </div>

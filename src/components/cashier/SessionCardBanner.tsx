@@ -29,20 +29,30 @@ export function SessionCardBanner({
   grandTotal,
   loyaltyConfig,
   canLink,
+  sessionLabel,
 }: {
   storeId: string;
   sessionId: string;
   grandTotal: number;
   loyaltyConfig?: { isEnabled?: boolean; pointsPerPeso?: number } | null;
   canLink: boolean;
+  /** Optional subtitle for the link dialog (e.g. "Table 3"). */
+  sessionLabel?: string;
 }) {
   const isOnline = useOnlineStatus();
   const [link, setLink] = useState<LinkDoc | null>(null);
+  // False until the first snapshot (or error) arrives, so the amber "No card" state never flashes.
+  const [loaded, setLoaded] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
+    setLoaded(false);
     const ref = doc(db, "stores", storeId, "activeSessions", sessionId);
-    return onSnapshot(ref, (snap) => setLink(snap.exists() ? (snap.data() as LinkDoc) : null), () => setLink(null));
+    return onSnapshot(
+      ref,
+      (snap) => { setLink(snap.exists() ? (snap.data() as LinkDoc) : null); setLoaded(true); },
+      () => { setLink(null); setLoaded(true); },
+    );
   }, [storeId, sessionId]);
 
   const m = cardPillModel(link ?? {});
@@ -51,6 +61,7 @@ export function SessionCardBanner({
 
   // Loyalty off for this store: linking only produces a "Loyalty earn failed" toast at billout.
   if (loyaltyConfig?.isEnabled === false) return null;
+  if (!loaded) return null;
 
   if (m.linked) {
     return (
@@ -80,7 +91,7 @@ export function SessionCardBanner({
           )
         )}
       </div>
-      <LinkCardDialog open={dialogOpen} onOpenChange={setDialogOpen} storeId={storeId} sessionId={sessionId} />
+      <LinkCardDialog open={dialogOpen} onOpenChange={setDialogOpen} storeId={storeId} sessionId={sessionId} sessionLabel={sessionLabel} />
     </>
   );
 }

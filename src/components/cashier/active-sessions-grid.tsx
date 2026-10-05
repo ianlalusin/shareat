@@ -14,6 +14,7 @@ import { VoidSessionDialog } from "./void-session-dialog";
 import { Button } from "../ui/button";
 import { CardPill } from "./CardPill";
 import { LinkCardDialog } from "./LinkCardDialog";
+import { sessionDialogLabel } from "@/lib/sessionLabel";
 
 export type ActiveSession = {
     id: string;
@@ -235,7 +236,7 @@ export function ActiveSessionsGrid({ sessions, storeId }: { sessions: ActiveSess
                     onOpenChange={(v) => { if (!v) setLinkingSession(null); }}
                     storeId={storeId}
                     sessionId={linkingSession.id}
-                    sessionLabel={linkingSession.tableDisplayName || `Table ${linkingSession.tableNumber}`}
+                    sessionLabel={sessionDialogLabel(linkingSession)}
                 />
             )}
         </>
