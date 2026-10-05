@@ -189,6 +189,41 @@ describe("resolveStorePresence", () => {
     expect(presence.get(PHONE)?.presence).toBe("recent");
   });
 
+  it("does not grant presence on a points_earned from a cashier-linked session", async () => {
+    // Billout deletes the activeSessions projection, so the earn event is the
+    // only trace left; it must not re-open lookup/reset for a typed-in phone.
+    seedProjection(today, [
+      entry({ type: "points_earned", viaCashierLink: true, createdAtMs: now - 10 * 60 * 1000 }),
+    ]);
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.has(PHONE)).toBe(false);
+  });
+
+  it("still grants presence on a normal points_earned (no viaCashierLink)", async () => {
+    seedProjection(today, [
+      entry({ type: "points_earned", createdAtMs: now - 10 * 60 * 1000 }),
+      entry({ logId: "l2", type: "points_earned", viaCashierLink: false, phone: "09990000000", createdAtMs: now - 5 * 60 * 1000 }),
+    ]);
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.get(PHONE)).toMatchObject({ presence: "recent", reason: "points_earned" });
+    expect(presence.has("09990000000")).toBe(true);
+  });
+
+  it("a cashier-linked earn does not mask a genuine earlier login for the same phone", async () => {
+    seedProjection(today, [
+      entry({ logId: "a", type: "login", createdAtMs: now - 60 * 60 * 1000 }),
+      entry({ logId: "b", type: "points_earned", viaCashierLink: true, createdAtMs: now - 5 * 60 * 1000 }),
+    ]);
+
+    const presence = await resolveStorePresence(STORE, now);
+
+    expect(presence.get(PHONE)).toMatchObject({ reason: "login", lastActiveAtMs: now - 60 * 60 * 1000 });
+  });
+
   it("excludes an event older than the window", async () => {
     seedProjection(today, [
       entry({ createdAtMs: now - PRESENCE_WINDOW_MS - 60 * 1000 }),

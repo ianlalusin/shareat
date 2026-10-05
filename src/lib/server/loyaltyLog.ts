@@ -28,6 +28,8 @@ export type LoyaltyLogInput = {
   sessionId?: string;
   points?: number;
   amount?: number;
+  /** points_earned from a session whose card a cashier linked: earns, but never grants presence. */
+  viaCashierLink?: boolean;
 };
 
 function getManilaDayId(): string {
@@ -53,6 +55,7 @@ function buildProjectionEntry(entry: LoyaltyLogInput, logId: string) {
     points: entry.points ?? null,
     amount: entry.amount ?? null,
     createdAtMs: Date.now(),
+    ...(entry.viaCashierLink ? { viaCashierLink: true } : {}),
   };
 }
 

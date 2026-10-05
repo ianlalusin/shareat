@@ -47,10 +47,16 @@ export const PRESENCE_WINDOW_MS = 2 * 60 * 60 * 1000;
  * A standalone (non-session) failed login still grants nothing, and carries no
  * storeId to match on in any case.
  *
+ * Any entry stamped `viaCashierLink` (an earn from a session a cashier linked
+ * by phone) never counts either.
+ *
  * `password_reset` never counts: it carries no storeId, and granting presence
  * off a staff action would make the guard self-satisfying.
  */
 function grantsPresence(entry: DailyEntry): boolean {
+  // An earn from a cashier-linked session proves only that staff typed a phone
+  // number, so it must not open lookup/reset-password for that number.
+  if (entry?.viaCashierLink === true) return false;
   switch (String(entry?.type ?? "")) {
     case "login":
     case "account_created":
@@ -81,6 +87,7 @@ type DailyEntry = {
   source?: string | null;
   storeId?: string | null;
   sessionId?: string | null;
+  viaCashierLink?: boolean;
   createdAtMs?: number;
 };
 

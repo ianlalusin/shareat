@@ -4,6 +4,7 @@ import { getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { appendLogToProjection } from "@/lib/server/loyaltyLog";
 import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
+import { isCashierLinked } from "@/lib/loyalty/session-link";
 
 const DEFAULT_POINTS_PER_PESO = 0.01; // 1 point per ₱100
 
@@ -49,6 +50,18 @@ export async function writeLoyaltyEarn({
 
     const customerName = (customerSnap.data() as any)?.name || "";
 
+    // Was the card linked by a cashier? Billout has usually deleted the
+    // activeSessions projection by now, so the sessions doc is the one that
+    // survives; check both. Cashier-linked earns are stamped so the presence
+    // resolver can ignore them (see loyaltyPresence.grantsPresence).
+    const [linkActiveSnap, linkSessionSnap] = await Promise.all([
+      db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get(),
+      db.doc(`stores/${storeId}/sessions/${sessionId}`).get(),
+    ]);
+    const viaCashierLink =
+      (linkSessionSnap.exists && isCashierLinked(linkSessionSnap.data() as any)) ||
+      (linkActiveSnap.exists && isCashierLinked(linkActiveSnap.data() as any));
+
     // Idempotency: when receiptId is provided, use it as the deterministic
     // ledger doc ID so a retry of the same earn is a no-op.
     const ledgerRef = receiptId
@@ -93,6 +106,7 @@ export async function writeLoyaltyEarn({
         sessionId,
         points,
         amount,
+        ...(viaCashierLink ? { viaCashierLink: true } : {}),
         createdAt: FieldValue.serverTimestamp(),
       });
       // Global aggregate projection — replaces a 500-doc client-side scan
@@ -119,6 +133,7 @@ export async function writeLoyaltyEarn({
           sessionId,
           points,
           amount,
+          viaCashierLink,
         },
         logRef.id
       );
