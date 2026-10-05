@@ -47,11 +47,15 @@ export function SessionCardBanner({
 
   useEffect(() => {
     setLoaded(false);
+    setLink(null); // never carry a previous session's link over to a new one
     const ref = doc(db, "stores", storeId, "activeSessions", sessionId);
     return onSnapshot(
       ref,
-      (snap) => { setLink(snap.exists() ? (snap.data() as LinkDoc) : null); setLoaded(true); },
-      () => { setLink(null); setLoaded(true); },
+      // Billout deletes the activeSessions doc mid-payment. Keep the last known link
+      // when the doc disappears so the banner doesn't flash "No loyalty card linked"
+      // while the payment is still processing (points are earned from the pre-delete read).
+      (snap) => { if (snap.exists()) setLink(snap.data() as LinkDoc); setLoaded(true); },
+      () => { setLoaded(true); },
     );
   }, [storeId, sessionId]);
 
