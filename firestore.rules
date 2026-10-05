@@ -129,6 +129,38 @@ service cloud.firestore {
         );
     }
 
+    // Sharelebrator cashier-link fields. They are written ONLY by trusted
+    // Admin-SDK routes (/api/loyalty/link-session, the CUSTOMER app), which
+    // bypass rules, and no client code writes them. Without this guard any
+    // store-scoped staffer could attach an arbitrary customer's phone to a
+    // session from devtools, skipping the role check and add-only rule those
+    // routes enforce. Same shape as pinFieldsUnchanged(): .get(field, null) so it
+    // is safe on docs without the fields (subcollection docs under the wildcard
+    // blocks). Update (resource != null): every field must be unchanged. Create
+    // (resource == null): none may be present, so a client cannot create a
+    // session doc pre-linked. Never call this on delete (request.resource is null).
+    function linkFieldsUnchanged() {
+      return resource == null
+        ? (
+          request.resource.data.get('linkedCustomerPhone', null) == null
+          && request.resource.data.get('linkedCustomerName', null) == null
+          && request.resource.data.get('linkedByParticipantId', null) == null
+          && request.resource.data.get('linkedBy', null) == null
+          && request.resource.data.get('linkedByUid', null) == null
+          && request.resource.data.get('linkedAt', null) == null
+          && request.resource.data.get('linkedCustomerLockedAt', null) == null
+        )
+        : (
+          request.resource.data.get('linkedCustomerPhone', null) == resource.data.get('linkedCustomerPhone', null)
+          && request.resource.data.get('linkedCustomerName', null) == resource.data.get('linkedCustomerName', null)
+          && request.resource.data.get('linkedByParticipantId', null) == resource.data.get('linkedByParticipantId', null)
+          && request.resource.data.get('linkedBy', null) == resource.data.get('linkedBy', null)
+          && request.resource.data.get('linkedByUid', null) == resource.data.get('linkedByUid', null)
+          && request.resource.data.get('linkedAt', null) == resource.data.get('linkedAt', null)
+          && request.resource.data.get('linkedCustomerLockedAt', null) == resource.data.get('linkedCustomerLockedAt', null)
+        );
+    }
+
     // -----------------------------
     // Collection Group Rules
     // -----------------------------
@@ -189,7 +221,7 @@ service cloud.firestore {
     // Staff access (existing) + Customer read access to ONLY their session doc
     match /stores/{storeId}/activeSessions/{sessionId} {
       allow read: if hasStoreAccess(storeId);
-      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged();
+      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged() && linkFieldsUnchanged();
       allow delete: if hasStoreAccess(storeId);
 
       // CUSTOMER: read only if access enabled + not expired
@@ -220,9 +252,27 @@ service cloud.firestore {
     // all three, but on a delete `request.resource` is null, so evaluating
     // pinFieldsUnchanged() would error to deny and break every payment and void
     // (both delete the activeSessions doc).
+    //
+    // linkFieldsUnchanged() is repeated here for the same reason as the PIN guard:
+    // this block matches the session doc itself, so omitting it would OR past the
+    // link-field lock on the block above.
     match /stores/{storeId}/activeSessions/{docPath=**} {
       allow read: if hasStoreAccess(storeId);
-      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged();
+      allow create, update: if hasStoreAccess(storeId) && pinFieldsUnchanged() && linkFieldsUnchanged();
+      allow delete: if hasStoreAccess(storeId);
+    }
+
+    // sessions carries the same Sharelebrator link fields as activeSessions, so it
+    // gets the same lock. It is excluded from the generic store catch-all (write
+    // clause) — rules OR across blocks, so leaving it there would hand back the
+    // very write this block denies. Reads are still granted by that catch-all.
+    // {docPath=**} also covers subcollection docs (sessions/{id}/billLines/...),
+    // which have no link fields and pass the guard. create/update and delete are
+    // separate for the same reason as above (request.resource is null on delete).
+    // closedSessions is deliberately NOT guarded: the cashier client copies
+    // projections there at billout.
+    match /stores/{storeId}/sessions/{docPath=**} {
+      allow create, update: if hasStoreAccess(storeId) && linkFieldsUnchanged();
       allow delete: if hasStoreAccess(storeId);
     }
 
@@ -350,6 +400,8 @@ service cloud.firestore {
         && coll != 'serverProfileSecrets';
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
+        // sessions has a dedicated block above (link-field guard); see its comment.
+        && coll != 'sessions'
         && coll != 'serverProfileSecrets'
         // chatPresenceLog has its own block above making it append-only
         // (create yes, update/delete never). Because rules OR, leaving it in

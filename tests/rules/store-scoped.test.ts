@@ -449,6 +449,172 @@ describe("§3 PIN fields on activeSessions cannot be forged", () => {
   });
 });
 
+/**
+ * Sharelebrator link fields are written ONLY by trusted Admin-SDK routes
+ * (/api/loyalty/link-session and the CUSTOMER app). A store-scoped client must
+ * not be able to write them on either session doc (activeSessions, sessions).
+ */
+describe("§5 Sharelebrator link fields cannot be written by clients", () => {
+  const LINKED = {
+    linkedCustomerPhone: "+639171234567",
+    linkedCustomerName: "Juan",
+    linkedByParticipantId: "p1",
+    linkedBy: "customer",
+    linkedByUid: "uid1",
+    linkedAt: 1_700_000_000_000,
+    linkedCustomerLockedAt: 1_700_000_000_001,
+  };
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const raw = ctx.firestore() as any;
+      // Unlinked session doc + an already-linked one, on both collections.
+      await setDoc(doc(raw, "stores", STORE_A, "sessions", "s2"), { tableId: "t1" });
+      await setDoc(doc(raw, "stores", STORE_A, "sessions", "linked1"), { tableId: "t2", ...LINKED });
+      await setDoc(doc(raw, "stores", STORE_A, "activeSessions", "linked1"), {
+        tableId: "t2",
+        ...LINKED,
+      });
+    });
+  });
+
+  for (const coll of ["activeSessions", "sessions"] as const) {
+    const existing = coll === "activeSessions" ? "s1" : "s2";
+
+    for (const field of Object.keys(LINKED)) {
+      it(`denies a cashier merging ${field} into ${coll}/${existing}`, async () => {
+        await assertFails(
+          setDoc(
+            doc(db("cashier"), "stores", STORE_A, coll, existing),
+            { [field]: "x" },
+            { merge: true }
+          )
+        );
+      });
+    }
+
+    it(`denies a manager merging linkedCustomerPhone into ${coll}/${existing}`, async () => {
+      await assertFails(
+        setDoc(
+          doc(db("manager"), "stores", STORE_A, coll, existing),
+          { linkedCustomerPhone: "+639170000000" },
+          { merge: true }
+        )
+      );
+    });
+
+    it(`denies a manager changing an existing link on ${coll}/linked1`, async () => {
+      await assertFails(
+        setDoc(
+          doc(db("manager"), "stores", STORE_A, coll, "linked1"),
+          { linkedCustomerPhone: "+639170000000" },
+          { merge: true }
+        )
+      );
+    });
+
+    it(`denies a cashier clearing an existing link on ${coll}/linked1 (full overwrite)`, async () => {
+      await assertFails(
+        setDoc(doc(db("cashier"), "stores", STORE_A, coll, "linked1"), { tableId: "t2" })
+      );
+    });
+
+    it(`allows a cashier to update an unrelated field on ${coll}/${existing}`, async () => {
+      await assertSucceeds(
+        setDoc(
+          doc(db("cashier"), "stores", STORE_A, coll, existing),
+          { tableId: "t9" },
+          { merge: true }
+        )
+      );
+    });
+
+    it(`allows an update that leaves existing link fields untouched on ${coll}/linked1`, async () => {
+      await assertSucceeds(
+        setDoc(
+          doc(db("cashier"), "stores", STORE_A, coll, "linked1"),
+          { tableId: "t3" },
+          { merge: true }
+        )
+      );
+    });
+
+    it(`allows a cashier to delete a linked ${coll} doc (payment / void path)`, async () => {
+      await assertSucceeds(deleteDoc(doc(db("cashier"), "stores", STORE_A, coll, "linked1")));
+    });
+  }
+
+  it("denies a cashier creating a new sessions doc pre-linked", async () => {
+    await assertFails(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "sessions", "new1"), {
+        tableId: "t5",
+        linkedCustomerPhone: "+639171234567",
+      })
+    );
+  });
+
+  it("denies a cashier creating a new activeSessions doc pre-linked", async () => {
+    await assertFails(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "activeSessions", "new1"), {
+        tableId: "t5",
+        linkedBy: "cashier",
+      })
+    );
+  });
+
+  it("allows a cashier creating a new sessions doc without link fields", async () => {
+    await assertSucceeds(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "sessions", "new2"), { tableId: "t5" })
+    );
+  });
+
+  it("allows a cashier creating a sessions doc with explicit null link fields", async () => {
+    await assertSucceeds(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "sessions", "new3"), {
+        tableId: "t5",
+        linkedCustomerPhone: null,
+      })
+    );
+  });
+
+  it("allows a cashier writing a sessions subcollection doc (billLines)", async () => {
+    await assertSucceeds(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "sessions", "s1", "billLines", "b1"), {
+        qty: 1,
+      })
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db("cashier"), "stores", STORE_A, "sessions", "s1", "billLines", "b1"),
+        { qty: 2 },
+        { merge: true }
+      )
+    );
+  });
+
+  it("allows a cashier deleting a sessions subcollection doc", async () => {
+    await assertSucceeds(
+      deleteDoc(doc(db("cashier"), "stores", STORE_A, "sessions", "s1", "kitchentickets", "k1"))
+    );
+  });
+
+  it("still lets staff read sessions docs", async () => {
+    await assertSucceeds(getDoc(doc(db("cashier"), "stores", STORE_A, "sessions", "linked1")));
+  });
+
+  it("still allows closedSessions to carry link fields (billout projection copy)", async () => {
+    await assertSucceeds(
+      setDoc(doc(db("cashier"), "stores", STORE_A, "closedSessions", "c1"), { ...LINKED })
+    );
+  });
+
+  it("still denies cross-store writes to sessions", async () => {
+    await assertFails(
+      setDoc(doc(db("managerB"), "stores", STORE_A, "sessions", "s2"), { tableId: "t9" }, { merge: true })
+    );
+  });
+});
+
 describe("deletes on operational collections stay open", () => {
   for (const coll of ["sessions", "waitlist", "reservations", "rtKdsTickets", "closedSessions"] as const) {
     it(`allows a cashier to delete from ${coll}`, async () => {
