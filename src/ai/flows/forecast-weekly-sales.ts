@@ -9,6 +9,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import {forecastWithClaude, isClaudeConfigured} from '@/ai/claude';
 
 const DailySaleSchema = z.object({
   date: z.string().describe("The date of the sales data in YYYY-MM-DD format."),
@@ -141,6 +142,19 @@ const forecastWeeklySalesFlow = ai.defineFlow(
     outputSchema: ForecastOutputSchema,
   },
   async input => {
+    // Claude first; any failure (no key, API error, refusal, bad JSON) falls through to Gemini.
+    if (isClaudeConfigured()) {
+      try {
+        const rendered = await prompt.render(input);
+        const promptText = (rendered.messages ?? [])
+          .flatMap(m => m.content.map(p => p.text ?? ''))
+          .join('\n')
+          .trim();
+        if (promptText) return await forecastWithClaude(promptText);
+      } catch (e) {
+        console.warn("[forecastWeeklySalesFlow] Claude failed, falling back to Gemini:", e);
+      }
+    }
     try {
       const { output } = await prompt(input);
       if (!output) throw new Error("Forecast prompt returned no output");

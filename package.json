@@ -27,6 +27,7 @@
     "node": ">=20 <21"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.0",
     "@capacitor/android": "^6.0.0",
     "@capacitor/app": "^6.0.3",
     "@capacitor/cli": "^6.0.0",
