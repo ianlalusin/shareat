@@ -10,6 +10,7 @@ import { manilaDayAnchor, anchorYmd, anchorDayId, anchorDayOfWeek, anchorYear } 
 import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from "@/lib/utils/forecast-helpers";
 import { buildUpcomingHolidays, type HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
 import { enrichUpcomingHolidays } from "@/lib/holidays/holiday-effects";
+import { learnForecastModel } from "@/lib/server/forecast-model";
 import type { DailyContext, ForecastConfig, WeatherRecord } from "@/lib/types";
 
 type StoreData = {
@@ -59,55 +60,6 @@ function monthsBetween(start: Date, end: Date): string[] {
   return out;
 }
 
-/**
- * Idempotently fills `accuracy` and `actualSales` for any forecast doc within
- * the last `days` days that is missing them. Self-healing: if a previous cron
- * run skipped, errored, or fired before yesterday's analytics doc was complete,
- * the next run picks it up automatically — no permanent gaps.
- *
- * Days are evaluated in reverse chronological order (most recent first) but
- * each is independent, so partial failures still make progress.
- */
-async function backfillRecentAccuracy(storeId: string, today: Date, days = 7): Promise<void> {
-  const db = getAdminDb();
-
-  for (let i = 1; i <= days; i++) {
-    const day = subDays(today, i);
-    const dateStr = anchorYmd(day);
-    const dayId = anchorDayId(day);
-
-    try {
-      const forecastRef = db.doc(`stores/${storeId}/salesForecasts/${dateStr}`);
-      const forecastSnap = await forecastRef.get();
-      if (!forecastSnap.exists) continue;
-
-      const forecastData = forecastSnap.data();
-      if (!forecastData || forecastData.accuracy != null) continue;
-
-      const analyticsRef = db.doc(`stores/${storeId}/analytics/${dayId}`);
-      const analyticsSnap = await analyticsRef.get();
-      if (!analyticsSnap.exists) continue;
-
-      const actualSales = analyticsSnap.data()?.payments?.totalGross ?? 0;
-      if (actualSales <= 0) continue;
-
-      const projected = forecastData.projectedSales ?? 0;
-      // Symmetric accuracy: |error| / max(actual, projected)
-      // Gives identical scores for mirrored under/over-forecasts and is bounded [0,1].
-      const denom = Math.max(actualSales, projected);
-      const accuracy = denom > 0 ? 1 - Math.abs(actualSales - projected) / denom : 0;
-
-      await forecastRef.update({
-        actualSales,
-        accuracy: Math.max(0, Math.min(1, accuracy)),
-      });
-    } catch (err) {
-      console.error(`[backfillRecentAccuracy] store=${storeId} date=${dateStr} failed:`, err);
-      // continue on next day — never let one bad day block the rest
-    }
-  }
-}
-
 export async function generateForecastForStore(store: StoreData): Promise<{ storeId: string; ok: boolean; error?: string; skipped?: string; forecastsWritten?: number }> {
   const db = getAdminDb();
   // Every date below is a Manila calendar day, matching how analytics docs are
@@ -122,9 +74,6 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
   }
 
   try {
-    // 1. Backfill accuracy for the last 7 days (idempotent, self-healing).
-    await backfillRecentAccuracy(store.id, today, 7);
-
     // 2. Fetch 28 days of data
     const historyEndDate = subDays(today, 1);
     const historyStartDate = subDays(historyEndDate, 27);
@@ -368,17 +317,18 @@ export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?:
 
 export async function updateAccuracyForAllActiveStores(): Promise<{
   totalStores: number;
-  results: { storeId: string; ok: boolean; error?: string }[];
+  results: { storeId: string; ok: boolean; error?: string; learnedDays?: number; bootstrapped?: boolean; reasoned?: boolean }[];
 }> {
   const db = getAdminDb();
   const activeStores = await getActiveStores(db);
-  const today = manilaDayAnchor();
 
   const results = await Promise.all(
     activeStores.map(async (s) => {
       try {
-        await backfillRecentAccuracy(s.id, today, 7);
-        return { storeId: s.id, ok: true };
+        const r = await learnForecastModel(s.id, (s.forecastConfig ?? undefined) as ForecastConfig | undefined, {
+          aiEnabled: s.aiEnabled === true,
+        });
+        return { storeId: s.id, ok: true, ...r };
       } catch (err: any) {
         console.error(`[updateAccuracy] store=${s.id} failed:`, err);
         return { storeId: s.id, ok: false, error: err.message || String(err) };
