@@ -75,12 +75,28 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
 
   try {
     const todayYmd = anchorYmd(today);
-    const model = await loadForecastModel(store.id);
-    const modelDays = model ? await forecastNext7(store.id, store.forecastConfig, todayYmd, model) : [];
+    // Shadow mode (llm): the model part is best-effort so a model read failure
+    // can never block the LLM forecast. Model mode lets errors propagate.
+    let modelDays: Awaited<ReturnType<typeof forecastNext7>> = [];
+    if (engine === "model") {
+      const model = await loadForecastModel(store.id);
+      modelDays = model ? await forecastNext7(store.id, store.forecastConfig, todayYmd, model) : [];
+    } else {
+      try {
+        const model = await loadForecastModel(store.id);
+        modelDays = model ? await forecastNext7(store.id, store.forecastConfig, todayYmd, model) : [];
+      } catch (err) {
+        console.warn(`[generateForecastForStore] store=${store.id} model shadow skipped:`, err);
+        modelDays = [];
+      }
+    }
 
     if (engine === "model") {
       if (modelDays.length === 0) {
         return { storeId: store.id, ok: true, skipped: "Forecast model not built yet", forecastsWritten: 0 };
+      }
+      if (modelDays.length < 7) {
+        console.info(`[generateForecastForStore] store=${store.id} model wrote partial week: ${modelDays.length}/7 days`);
       }
       const modelBatch = db.batch();
       for (const d of modelDays) {
