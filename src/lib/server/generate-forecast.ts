@@ -10,7 +10,7 @@ import { manilaDayAnchor, anchorYmd, anchorDayId, anchorDayOfWeek, anchorYear } 
 import { getUpcomingPayrollDates, getUpcomingHolidays, computeDayOfWeekAverages, computeTrendDirection } from "@/lib/utils/forecast-helpers";
 import { buildUpcomingHolidays, type HolidayCalendarEntry } from "@/lib/holidays/holiday-calendar";
 import { enrichUpcomingHolidays } from "@/lib/holidays/holiday-effects";
-import { learnForecastModel } from "@/lib/server/forecast-model";
+import { forecastNext7, loadForecastModel, learnForecastModel } from "@/lib/server/forecast-model";
 import type { DailyContext, ForecastConfig, WeatherRecord } from "@/lib/types";
 
 type StoreData = {
@@ -67,13 +67,40 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
   // window back a day — see manila-day.ts.
   const today = manilaDayAnchor();
 
-  // Master AI switch: skip Gemini entirely for stores with AI off (gates the
-  // manual refresh route too; cron already filters disabled stores out).
-  if (!(await isStoreAiEnabled(db, store.id))) {
+  const engine = store.forecastConfig?.engine ?? "llm";
+  // The AI switch only gates the LLM engine; the learned model needs no AI.
+  if (engine === "llm" && !(await isStoreAiEnabled(db, store.id))) {
     return { storeId: store.id, ok: true, forecastsWritten: 0 };
   }
 
   try {
+    const todayYmd = anchorYmd(today);
+    const model = await loadForecastModel(store.id);
+    const modelDays = model ? await forecastNext7(store.id, store.forecastConfig, todayYmd, model) : [];
+
+    if (engine === "model") {
+      if (modelDays.length === 0) {
+        return { storeId: store.id, ok: true, skipped: "Forecast model not built yet", forecastsWritten: 0 };
+      }
+      const modelBatch = db.batch();
+      for (const d of modelDays) {
+        modelBatch.set(db.doc(`stores/${store.id}/salesForecasts/${d.date}`), {
+          date: d.date,
+          projectedSales: d.sales,
+          confidence: d.confidence,
+          modelSales: d.sales,
+          modelConfidence: d.confidence,
+          drivers: d.drivers,
+          llmSales: FieldValue.delete(),
+          engine: "model",
+          provider: "model",
+          createdAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+      await modelBatch.commit();
+      return { storeId: store.id, ok: true, forecastsWritten: modelDays.length };
+    }
+
     // 2. Fetch 28 days of data
     const historyEndDate = subDays(today, 1);
     const historyStartDate = subDays(historyEndDate, 27);
@@ -238,34 +265,36 @@ export async function generateForecastForStore(store: StoreData): Promise<{ stor
       ].filter(Boolean).join(" ") || undefined,
     };
 
-    // 3. Call Gemini
+    // 3. Call the LLM (Claude first, Gemini fallback)
     const result = await forecastWeeklySales(forecastInput);
 
-    // 4. Write forecasts for next 7 days
+    // 4. Write: model shadow fields for every day the model can project, then
+    //    the LLM's number as projectedSales. Two merges to one doc in a batch is fine.
     const batch = db.batch();
+    for (const d of modelDays) {
+      batch.set(db.doc(`stores/${store.id}/salesForecasts/${d.date}`), {
+        date: d.date, modelSales: d.sales, modelConfidence: d.confidence, drivers: d.drivers,
+      }, { merge: true });
+    }
     const todayDayIndex = anchorDayOfWeek(today);
     let writtenCount = 0;
-
     for (const daily of result.forecast) {
       const forecastDayIndex = DAY_NAMES.indexOf(daily.day);
       if (forecastDayIndex === -1) continue;
-
       let dayDiff = forecastDayIndex - todayDayIndex;
       if (dayDiff < 0) dayDiff += 7;
-
-      const forecastDate = addDays(today, dayDiff);
-      const forecastDateStr = anchorYmd(forecastDate);
-
-      const docRef = db.doc(`stores/${store.id}/salesForecasts/${forecastDateStr}`);
-      batch.set(docRef, {
+      const forecastDateStr = anchorYmd(addDays(today, dayDiff));
+      batch.set(db.doc(`stores/${store.id}/salesForecasts/${forecastDateStr}`), {
         date: forecastDateStr,
         projectedSales: daily.forecastedSales,
+        llmSales: daily.forecastedSales,
         confidence: daily.confidence ?? null,
+        engine: "llm",
+        provider: result.provider,
         createdAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       writtenCount++;
     }
-
     await batch.commit();
     return { storeId: store.id, ok: true, forecastsWritten: writtenCount };
   } catch (err: any) {
@@ -291,8 +320,8 @@ export async function generateForecastsForAllActiveStores(opts: { doneStoreIds?:
     isActive: s.isActive ?? undefined,
     aiEnabled: s.aiEnabled ?? undefined,
     forecastConfig: (s.forecastConfig ?? undefined) as ForecastConfig | undefined,
-  // Only AI-enabled stores are forecast (no Gemini for disabled stores).
-  })).filter((s) => s.aiEnabled === true);
+  // AI-enabled stores (LLM engine) plus any store already switched to the learned model.
+  })).filter((s) => s.aiEnabled === true || s.forecastConfig?.engine === "model");
 
   // Skip stores already forecast today (tracked in the cron log), then cap the
   // batch so each fire stays a small burst.
