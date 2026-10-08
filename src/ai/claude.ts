@@ -51,3 +51,23 @@ export async function forecastWithClaude(promptText: string): Promise<ClaudeFore
   if (!response.parsed_output) throw new Error("Claude returned no parseable forecast");
   return response.parsed_output;
 }
+
+const ExplanationSchema = z.object({
+  summary: z.string(),
+  flags: z.array(z.string()).max(5),
+});
+export type ClaudeExplanation = z.infer<typeof ExplanationSchema>;
+
+/** Weekly plain-language review of a learned forecast model. Throws on any failure so the caller can fall back. */
+export async function explainWithClaude(promptText: string): Promise<ClaudeExplanation> {
+  const response = await getClient().messages.parse({
+    model: CLAUDE_FORECAST_MODEL,
+    max_tokens: 16000,
+    output_config: { effort: "medium", format: zodOutputFormat(ExplanationSchema) },
+    messages: [{ role: "user", content: promptText }],
+  });
+  if (response.stop_reason === "refusal") throw new Error(`Claude refused: ${response.stop_details?.category ?? "unknown"}`);
+  if (response.stop_reason === "max_tokens") throw new Error("Claude hit max_tokens");
+  if (!response.parsed_output) throw new Error("Claude returned no parseable explanation");
+  return response.parsed_output;
+}

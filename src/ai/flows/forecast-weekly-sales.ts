@@ -58,8 +58,21 @@ const ForecastOutputSchema = z.object({
 });
 export type ForecastOutput = z.infer<typeof ForecastOutputSchema>;
 
-export async function forecastWeeklySales(input: ForecastInput): Promise<ForecastOutput> {
-  return forecastWeeklySalesFlow(input);
+export async function forecastWeeklySales(input: ForecastInput): Promise<ForecastOutput & { provider: "claude" | "gemini" }> {
+  // Claude first; any failure (no key, API error, refusal, bad JSON) falls through to Gemini.
+  if (isClaudeConfigured()) {
+    try {
+      const rendered = await prompt.render(input);
+      const promptText = (rendered.messages ?? [])
+        .flatMap(m => m.content.map(p => p.text ?? ''))
+        .join('\n')
+        .trim();
+      if (promptText) return { ...(await forecastWithClaude(promptText)), provider: "claude" };
+    } catch (e) {
+      console.warn("[forecastWeeklySales] Claude failed, falling back to Gemini:", e);
+    }
+  }
+  return { ...(await forecastWeeklySalesFlow(input)), provider: "gemini" };
 }
 
 const prompt = ai.definePrompt({
@@ -142,19 +155,6 @@ const forecastWeeklySalesFlow = ai.defineFlow(
     outputSchema: ForecastOutputSchema,
   },
   async input => {
-    // Claude first; any failure (no key, API error, refusal, bad JSON) falls through to Gemini.
-    if (isClaudeConfigured()) {
-      try {
-        const rendered = await prompt.render(input);
-        const promptText = (rendered.messages ?? [])
-          .flatMap(m => m.content.map(p => p.text ?? ''))
-          .join('\n')
-          .trim();
-        if (promptText) return await forecastWithClaude(promptText);
-      } catch (e) {
-        console.warn("[forecastWeeklySalesFlow] Claude failed, falling back to Gemini:", e);
-      }
-    }
     try {
       const { output } = await prompt(input);
       if (!output) throw new Error("Forecast prompt returned no output");
