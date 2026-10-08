@@ -423,9 +423,10 @@ service cloud.firestore {
         // validation rebuildCustomerCatalog/rebuildStorefrontCatalog apply.
         // catalogCache was a pre-existing gap here (missing since it was
         // introduced) — found while adding inventoryCache to this same list.
+        // forecastModel: server-learned forecast factors — Admin SDK only.
         && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets', 'dailySessions',
                       'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents',
-                      'catalogCache', 'inventoryCache'])
+                      'catalogCache', 'inventoryCache', 'forecastModel'])
         && (!isConfigCollection(coll) || isManagerOrAdmin());
     }
 

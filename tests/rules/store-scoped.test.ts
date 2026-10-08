@@ -102,6 +102,9 @@ const SERVER_ONLY_COLLECTIONS = [
   // inventoryCache: shared inventory-scan cache both rebuildCustomerCatalog
   // and rebuildStorefrontCatalog read from (store-inventory-cache.ts).
   "inventoryCache",
+  // forecastModel: learned forecast factors + AI reasoning (src/lib/server/forecast-model.ts);
+  // a client write would let any shift role rewrite a branch's forecast.
+  "forecastModel",
 ] as const;
 
 const STAFF = {
