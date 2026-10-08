@@ -21,6 +21,8 @@ interface ForecastAccuracyTrendCardProps {
   actualSalesToday?: number | null;
   confidence?: string | null;
   drivers?: string[] | null;
+  modelSales?: number | null;
+  engine?: "llm" | "model" | null;
   isForecastLoading?: boolean;
   isAdmin?: boolean;
   onRefresh?: () => Promise<void>;
@@ -119,6 +121,8 @@ export function ForecastAccuracyTrendCard({
   actualSalesToday,
   confidence,
   drivers,
+  modelSales,
+  engine,
   isForecastLoading,
   isAdmin,
   onRefresh,
@@ -252,7 +256,7 @@ export function ForecastAccuracyTrendCard({
           actualSalesToday={actualSalesToday}
           isForecastLoading={isForecastLoading}
         />
-        <ForecastModelPanel storeId={storeId} drivers={drivers} />
+        <ForecastModelPanel storeId={storeId} drivers={drivers} modelSales={modelSales} engine={engine} />
       </CardContent>
     </Card>
   );
