@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, RefreshCw, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ForecastModelPanel } from "@/components/dashboard/ForecastModelPanel";
 
 interface ForecastAccuracyTrendCardProps {
   storeId?: string;
@@ -19,6 +20,7 @@ interface ForecastAccuracyTrendCardProps {
   projectedSales?: number | null;
   actualSalesToday?: number | null;
   confidence?: string | null;
+  drivers?: string[] | null;
   isForecastLoading?: boolean;
   isAdmin?: boolean;
   onRefresh?: () => Promise<void>;
@@ -116,6 +118,7 @@ export function ForecastAccuracyTrendCard({
   projectedSales,
   actualSalesToday,
   confidence,
+  drivers,
   isForecastLoading,
   isAdmin,
   onRefresh,
@@ -249,6 +252,7 @@ export function ForecastAccuracyTrendCard({
           actualSalesToday={actualSalesToday}
           isForecastLoading={isForecastLoading}
         />
+        <ForecastModelPanel storeId={storeId} drivers={drivers} />
       </CardContent>
     </Card>
   );

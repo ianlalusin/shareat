@@ -13,6 +13,7 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
   const [todaysProjectedSales, setTodaysProjectedSales] = useState<number | null>(null);
   const [todaysConfidence, setTodaysConfidence] = useState<string | null>(null);
   const [actualSalesToday, setActualSalesToday] = useState<number | null>(null);
+  const [todaysDrivers, setTodaysDrivers] = useState<string[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
       setAccuracy(null);
       setTodaysProjectedSales(null);
       setTodaysConfidence(null);
+      setTodaysDrivers(null);
       setActualSalesToday(null);
       setIsLoading(false);
       return;
@@ -34,9 +36,11 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
       if (snap.exists()) {
         setTodaysProjectedSales(snap.data().projectedSales ?? null);
         setTodaysConfidence(snap.data().confidence ?? null);
+        setTodaysDrivers(Array.isArray(snap.data().drivers) ? snap.data().drivers : null);
       } else {
         setTodaysProjectedSales(null);
         setTodaysConfidence(null);
+        setTodaysDrivers(null);
       }
     });
 
@@ -89,5 +93,5 @@ export function useForecastAnalytics(storeId?: string, _store?: Store) {
     };
   }, [storeId]);
 
-  return { accuracy, todaysProjectedSales, todaysConfidence, actualSalesToday, isLoading };
+  return { accuracy, todaysProjectedSales, todaysConfidence, todaysDrivers, actualSalesToday, isLoading };
 }

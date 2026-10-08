@@ -12,6 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useForecastModel } from "@/hooks/useForecastModel";
+import { wape } from "@/lib/forecast/model";
+import { buildForecastConfig } from "@/lib/utils/forecast-helpers";
 import { Loader, PlusCircle, Save, Target, Trash2 } from "lucide-react";
 
 import type { Store, ForecastConfig } from "@/lib/types";
@@ -107,6 +111,8 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
 
   const [storeContext, setStoreContext] = useState(config.storeContext ?? "");
   const [isSaving, setIsSaving] = useState(false);
+  const [engine, setEngine] = useState<"llm" | "model">(config.engine ?? "llm");
+  const { model } = useForecastModel(store.id);
 
   function addHoliday() {
     if (!newHolidayName.trim() || !newHolidayDate) return;
@@ -126,17 +132,12 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
   async function handleSave() {
     setIsSaving(true);
     try {
-      const parsedCustomDates = customPayrollDates
-        .split(",")
-        .map((s) => parseInt(s.trim(), 10))
-        .filter((n) => !isNaN(n) && n >= 1 && n <= 31);
-
-      const forecastConfig: ForecastConfig = {
-        customHolidays: holidays,
-        payrollScheduleType: "custom",
-        customPayrollDates: parsedCustomDates,
-        storeContext: storeContext.trim().slice(0, 500),
-      };
+      const forecastConfig: ForecastConfig = buildForecastConfig({
+        holidays,
+        payrollDatesText: customPayrollDates,
+        storeContext,
+        engine,
+      });
 
       const storeRef = doc(db, "stores", store.id);
       await updateDoc(storeRef, { forecastConfig, updatedAt: serverTimestamp() });
@@ -229,9 +230,34 @@ export function ForecastSettings({ store }: ForecastSettingsProps) {
               onChange={(e) => setCustomPayrollDates(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Comma-separated day numbers (1–31). For example, <code>15, 30</code> means the 15th and 30th of every month.
+              Comma-separated day numbers (1–31). <code>10, 31</code> means the 10th and end of month — 31 always means the last day of the month. Paydays on a weekend count as the Friday before.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Forecast engine */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Forecast engine</CardTitle>
+          <CardDescription>
+            Which number becomes the daily forecast. The learned model runs alongside the AI forecast either way, so you can compare before switching.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Select value={engine} onValueChange={(v) => setEngine(v as "llm" | "model")}>
+            <SelectTrigger className="w-[260px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="llm">AI forecast (current)</SelectItem>
+              <SelectItem value="model">Learned model (no AI call)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {model && model.accuracy.model.n > 0
+              ? `Recent error — learned model ${((wape(model.accuracy.model) ?? 0) * 100).toFixed(1)}%, AI ${((wape(model.accuracy.llm) ?? 0) * 100).toFixed(1)}% over ${model.accuracy.model.n} days (lower is better).`
+              : "No side-by-side comparison yet — it fills in from the day after the model's first nightly run."}
+            {model && model.accuracy.model.n > 0 && model.accuracy.model.n < 14 && " Fewer than 14 days compared — consider waiting."}
+          </p>
         </CardContent>
       </Card>
 

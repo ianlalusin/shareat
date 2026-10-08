@@ -123,6 +123,7 @@ export default function DashboardPageClient() {
         accuracy,
         todaysProjectedSales,
         todaysConfidence,
+        todaysDrivers,
         actualSalesToday,
         isLoading: isForecastLoading
     } = useForecastAnalytics(activeStore?.id, activeStore ?? undefined);
@@ -264,6 +265,7 @@ export default function DashboardPageClient() {
                         projectedSales={todaysProjectedSales}
                         actualSalesToday={actualSalesToday}
                         confidence={todaysConfidence}
+                        drivers={todaysDrivers}
                         isForecastLoading={isForecastLoading}
                         isAdmin={isAdmin}
                         onRefresh={handleRefreshForecast}
