@@ -1011,9 +1011,11 @@ export type QrWalletEvent = {
 export type ForecastConfig = {
   customHolidays?: { name: string; date: string }[]; // date in YYYY-MM-DD
   payrollScheduleType?: 'semi_monthly_15_eom' | 'weekly' | 'bi_weekly' | 'custom';
-  customPayrollDates?: number[]; // day-of-month numbers (1–31), e.g. [5, 20]
+  customPayrollDates?: number[]; // day-of-month numbers (1–31); 31 = end of month
   payrollWeekday?: number; // 0=Sun..6=Sat for weekly/bi-weekly
   storeContext?: string; // free-text AI context, e.g. "near a university"
+  /** Which number becomes projectedSales. "llm" (default) keeps the learned model in shadow. */
+  engine?: 'llm' | 'model';
 };
 
 export type LoyaltyConfig = {
@@ -1804,6 +1806,16 @@ export type SalesForecast = {
   actualSales?: number;
   accuracy?: number;
   confidence?: 'high' | 'medium' | 'low';
+  /** Learned-model projection (always written when the model exists). */
+  modelSales?: number;
+  modelConfidence?: 'high' | 'medium' | 'low';
+  /** Why the model projected this number, e.g. "Sat baseline ₱48,200". */
+  drivers?: string[];
+  /** LLM projection, written only when the LLM ran (engine "llm"). */
+  llmSales?: number;
+  modelAccuracy?: number;
+  engine?: 'llm' | 'model';
+  provider?: 'claude' | 'gemini' | 'model';
   createdAt: Timestamp;
 };
 

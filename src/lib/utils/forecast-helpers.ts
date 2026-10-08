@@ -1,17 +1,12 @@
 import { format, addDays } from "date-fns";
 import type { ForecastConfig } from "@/lib/types";
+import { addDaysYmd, effectivePaydays, paydayDaysOfMonth } from "@/lib/forecast/payday";
+import { anchorYmd, manilaDayAnchor } from "@/lib/analytics/manila-day";
 
 function atStartOfDay(d: Date) {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
-}
-
-function adjustWeekend(d: Date): Date {
-  const day = d.getDay();
-  if (day === 6) d.setDate(d.getDate() - 1); // Sat → Fri
-  else if (day === 0) d.setDate(d.getDate() - 2); // Sun → Fri
-  return d;
 }
 
 // Helper to find e.g., the 2nd Sunday of a month
@@ -38,50 +33,28 @@ const DEFAULT_HOLIDAYS = (year: number): { name: string; date: Date }[] => [
   { name: "New Year's Eve", date: new Date(year, 11, 31) },
 ];
 
-export function getUpcomingPayrollDates(config?: ForecastConfig): string[] {
-  const today = atStartOfDay(new Date());
-  const dates: Date[] = [];
+export function getUpcomingPayrollDates(config?: ForecastConfig, nowMs: number = Date.now()): string[] {
   const type = config?.payrollScheduleType ?? "semi_monthly_15_eom";
-
   if (type === "weekly" || type === "bi_weekly") {
+    const today = atStartOfDay(new Date(nowMs));
+    const dates: Date[] = [];
     const weekday = config?.payrollWeekday ?? 5; // default Friday
     const stepDays = type === "bi_weekly" ? 14 : 7;
-    // Find next occurrence of the weekday
-    let d = new Date(today);
+    const d = new Date(today);
     while (d.getDay() !== weekday) d.setDate(d.getDate() + 1);
     for (let i = 0; i < 8; i++) {
       dates.push(new Date(d));
       d.setDate(d.getDate() + stepDays);
     }
-  } else if (type === "custom" && config?.customPayrollDates?.length) {
-    for (let i = 0; i < 3; i++) {
-      const month = today.getMonth() + i;
-      const year = today.getFullYear() + Math.floor(month / 12);
-      const m = month % 12;
-      for (const dayOfMonth of config.customPayrollDates) {
-        const d = adjustWeekend(new Date(year, m, dayOfMonth));
-        if (d >= today) dates.push(d);
-      }
-    }
-  } else {
-    // semi_monthly_15_eom (default)
-    for (let i = 0; i < 3; i++) {
-      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-      const year = d.getFullYear();
-      const month = d.getMonth();
-
-      const mid = adjustWeekend(new Date(year, month, 15));
-      const eom = adjustWeekend(new Date(year, month + 1, 0));
-
-      if (mid >= today) dates.push(mid);
-      if (eom >= today) dates.push(eom);
-    }
+    return dates.map((date) => format(date, "yyyy-MM-dd"));
   }
-
-  return [...new Set(dates.map((d) => d.getTime()))]
-    .map((time) => new Date(time))
-    .sort((a, b) => a.getTime() - b.getTime())
-    .map((date) => format(date, "yyyy-MM-dd"));
+  // Day-of-month schedules: Manila calendar maths on strings (no server-local
+  // Date getters), 31 clamps to month end, Sat/Sun pay moves to Friday.
+  const dom = paydayDaysOfMonth(config) ?? [15, 31];
+  const today = anchorYmd(manilaDayAnchor(nowMs));
+  return effectivePaydays(dom, today, addDaysYmd(today, 75))
+    .map((p) => p.date)
+    .filter((d) => d >= today);
 }
 
 export function getUpcomingHolidays(config?: ForecastConfig): { name: string; date: string }[] {
@@ -144,4 +117,23 @@ export function computeTrendDirection(
   const direction = ratio > 1.05 ? "up" : ratio < 0.95 ? "down" : "flat";
 
   return { direction, ratio };
+}
+
+export function buildForecastConfig(input: {
+  holidays: { name: string; date: string }[];
+  payrollDatesText: string;
+  storeContext: string;
+  engine: "llm" | "model";
+}): ForecastConfig {
+  const customPayrollDates = input.payrollDatesText
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !isNaN(n) && n >= 1 && n <= 31);
+  return {
+    customHolidays: input.holidays,
+    payrollScheduleType: "custom",
+    customPayrollDates,
+    storeContext: input.storeContext.trim().slice(0, 500),
+    engine: input.engine,
+  };
 }
