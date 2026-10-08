@@ -28,7 +28,8 @@ export function paydayDaysOfMonth(config?: ForecastConfig): number[] | null {
   // Weekly/bi-weekly: every (other) Friday is payday — indistinguishable from
   // the Friday weekday baseline, so the factor is off.
   if (type === "weekly" || type === "bi_weekly") return null;
-  if (type === "custom") return config?.customPayrollDates?.length ? [...config.customPayrollDates] : null;
+  // Blank custom dates → same [15, 31] default the LLM path uses (forecast-helpers).
+  if (type === "custom") return config?.customPayrollDates?.length ? [...config.customPayrollDates] : [15, 31];
   return [15, 31];
 }
 

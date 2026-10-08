@@ -7,15 +7,14 @@ import { anchorYmd, manilaDayAnchor } from "@/lib/analytics/manila-day";
 import { dayIdToDate } from "@/lib/holidays/holiday-calendar";
 import { explainForecastModel } from "@/ai/flows/explain-forecast-model";
 import {
-  emptyModel, foldAccuracy, forecastDay, learnDay, symmetricAccuracy, MODEL_VERSION,
+  emptyModel, foldAccuracy, forecastDay, learnDay, shouldRefreshReasoning, symmetricAccuracy, MODEL_VERSION,
   type ForecastModel, type ModelDayForecast,
 } from "@/lib/forecast/model";
 import { buildDayContext, daysToLearn, toDayId, type ContextSources } from "@/lib/forecast/context";
-import { addDaysYmd, dowOf, effectivePaydays, paydayDaysOfMonth } from "@/lib/forecast/payday";
+import { addDaysYmd, effectivePaydays, paydayDaysOfMonth } from "@/lib/forecast/payday";
 import type { ForecastConfig, SalesForecast } from "@/lib/types";
 
 const BOOTSTRAP_DAYS = 90;
-const REASONING_MAX_AGE_MS = 6 * 86_400_000;
 
 const modelDoc = (storeId: string) => getAdminDb().doc(`stores/${storeId}/forecastModel/current`);
 
@@ -127,21 +126,22 @@ export async function learnForecastModel(
     }
   }
 
+  // Persist the learned model first: the AI call below is slow and the cron has
+  // a hard time limit, so a reasoning timeout must never lose the night's learning.
+  if (learnedDays > 0 || !existing) {
+    await modelDoc(storeId).set({ ...model, updatedAtMs: nowMs });
+  }
+
   let reasoned = false;
-  const stale = !model.reasoning || nowMs - model.reasoning.generatedAt > REASONING_MAX_AGE_MS;
-  const hasData = Object.values(model.weekday).some((w) => w.samples > 0);
-  if (opts.aiEnabled && dowOf(today) === 0 && stale && hasData) {
+  if (shouldRefreshReasoning(model, today, nowMs, opts.aiEnabled)) {
     try {
       const r = await explainForecastModel(model);
-      model = { ...model, reasoning: { summary: r.summary, flags: r.flags, provider: r.provider, generatedAt: nowMs } };
+      const reasoning = { summary: r.summary, flags: r.flags, provider: r.provider, generatedAt: nowMs };
+      await modelDoc(storeId).set({ reasoning, updatedAtMs: nowMs }, { merge: true });
       reasoned = true;
     } catch (e) {
       console.warn(`[learnForecastModel] store=${storeId} reasoning failed:`, e);
     }
-  }
-
-  if (learnedDays > 0 || reasoned || !existing) {
-    await modelDoc(storeId).set({ ...model, updatedAtMs: nowMs });
   }
   return { learnedDays, bootstrapped: !existing, reasoned };
 }

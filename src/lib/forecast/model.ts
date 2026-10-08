@@ -135,9 +135,26 @@ const pct = (p: number) => {
   // Clean up floating point noise before rounding away from zero
   const cleaned = Math.round(p * 1e10) / 1e10;
   const rounded = cleaned >= 0 ? Math.floor(cleaned + 0.5) : Math.ceil(cleaned - 0.5);
-  return `${p >= 0 ? "+" : "−"}${Math.abs(rounded)}%`;
+  return `${rounded >= 0 ? "+" : "−"}${Math.abs(rounded)}%`;
 };
 const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Whether tonight's run should refresh the AI reasoning: Sunday once it is more
+ * than 6 days old, or any night once it is more than 7 days old (so one failed
+ * Sunday does not wait a week). Needs AI enabled and at least one learned weekday.
+ */
+export function shouldRefreshReasoning(
+  model: Pick<ForecastModel, "weekday" | "reasoning">, todayYmd: string, nowMs: number, aiEnabled: boolean,
+): boolean {
+  if (!aiEnabled) return false;
+  if (!Object.values(model.weekday).some((w) => w.samples > 0)) return false;
+  if (!model.reasoning) return true; // never reasoned: stale for any night
+  const age = nowMs - model.reasoning.generatedAt;
+  return age > 7 * DAY_MS || (dowOf(todayYmd) === 0 && age > 6 * DAY_MS);
+}
 
 export function forecastDay(m: ForecastModel, ctx: DayContext): ModelDayForecast | null {
   const w = m.weekday[String(ctx.dow)];

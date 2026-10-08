@@ -19,8 +19,8 @@ describe("paydayDaysOfMonth", () => {
     expect(paydayDaysOfMonth({ payrollScheduleType: "weekly" })).toBeNull();
     expect(paydayDaysOfMonth({ payrollScheduleType: "bi_weekly" })).toBeNull();
   });
-  it("returns null for custom with no dates", () => {
-    expect(paydayDaysOfMonth({ payrollScheduleType: "custom", customPayrollDates: [] })).toBeNull();
+  it("defaults custom with no dates to [15, 31]", () => {
+    expect(paydayDaysOfMonth({ payrollScheduleType: "custom", customPayrollDates: [] })).toEqual([15, 31]);
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   emptyModel, learnDay, forecastDay, paydayLiftPct, rainLiftPct,
-  foldAccuracy, wape, bias, symmetricAccuracy, type DayContext, type ForecastModel,
+  shouldRefreshReasoning, foldAccuracy, wape, bias, symmetricAccuracy, type DayContext, type ForecastModel,
 } from "@/lib/forecast/model";
 
 const ctx = (date: string, dow: number, over: Partial<DayContext> = {}): DayContext =>
@@ -126,6 +126,13 @@ describe("forecastDay", () => {
     expect(f.drivers[1]).toBe("PM rain −3% (1 day)");
   });
 
+  it("renders a lift that rounds to zero as +0%, never −0%", () => {
+    const m = seeded();
+    m.rain = { liftPct: 0, rawLogLift: Math.log(0.997), samples: 100, evidence: [] };
+    const f = forecastDay(m, ctx("2026-10-09", 5, { rain: true }))!;
+    expect(f.drivers[1]).toBe("PM rain +0% (100 days)");
+  });
+
   it("applies a measured holiday lift; an unmeasured holiday lowers confidence", () => {
     const m = seeded();
     expect(forecastDay(m, ctx("2026-10-09", 5, { holiday: { name: "Fiesta", liftPct: 50 } }))!.sales).toBe(45000);
@@ -149,5 +156,36 @@ describe("accuracy helpers", () => {
   it("symmetricAccuracy matches the existing formula", () => {
     expect(symmetricAccuracy(100, 80)).toBeCloseTo(0.8, 9);
     expect(symmetricAccuracy(80, 100)).toBeCloseTo(0.8, 9);
+  });
+});
+
+describe("shouldRefreshReasoning", () => {
+  const SUN = "2026-10-11"; // Sunday
+  const WED = "2026-10-14"; // Wednesday
+  const now = Date.parse("2026-10-11T00:00:00Z");
+  const D = 86_400_000;
+  const withReasoning = (ageDays: number): ForecastModel => ({
+    ...seeded(), reasoning: { summary: "s", flags: [], provider: "claude", generatedAt: now - ageDays * D },
+  });
+  it("Sunday and more than 6 days stale refreshes", () => {
+    expect(shouldRefreshReasoning(withReasoning(6.5), SUN, now, true)).toBe(true);
+  });
+  it("Sunday and fresh does not", () => {
+    expect(shouldRefreshReasoning(withReasoning(2), SUN, now, true)).toBe(false);
+  });
+  it("weekday at 6.5 days does not refresh", () => {
+    expect(shouldRefreshReasoning(withReasoning(6.5), WED, now, true)).toBe(false);
+  });
+  it("weekday past 7 days refreshes (failed Sunday retry)", () => {
+    expect(shouldRefreshReasoning(withReasoning(7.5), WED, now, true)).toBe(true);
+  });
+  it("no reasoning yet with data refreshes on Sunday", () => {
+    expect(shouldRefreshReasoning(seeded(), SUN, now, true)).toBe(true);
+  });
+  it("AI disabled never refreshes", () => {
+    expect(shouldRefreshReasoning(seeded(), SUN, now, false)).toBe(false);
+  });
+  it("no weekday samples never refreshes", () => {
+    expect(shouldRefreshReasoning(emptyModel("s1"), SUN, now, true)).toBe(false);
   });
 });

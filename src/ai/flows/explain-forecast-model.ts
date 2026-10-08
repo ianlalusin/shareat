@@ -4,6 +4,7 @@ import { z } from "genkit";
 import { explainWithClaude, isClaudeConfigured } from "@/ai/claude";
 import type { ForecastModel } from "@/lib/forecast/model";
 
+const GEMINI_TIMEOUT_MS = 20_000;
 const ExplanationSchema = z.object({ summary: z.string(), flags: z.array(z.string()) });
 export type ModelExplanation = { summary: string; flags: string[]; provider: "claude" | "gemini" };
 
@@ -37,7 +38,16 @@ export async function explainForecastModel(model: ForecastModel): Promise<ModelE
       console.warn("[explainForecastModel] Claude failed, falling back to Gemini:", e);
     }
   }
-  const { output } = await ai.generate({ prompt: promptText, output: { schema: ExplanationSchema } });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Gemini explanation timed out")), GEMINI_TIMEOUT_MS);
+  });
+  let output;
+  try {
+    ({ output } = await Promise.race([ai.generate({ prompt: promptText, output: { schema: ExplanationSchema } }), timeout]));
+  } finally {
+    clearTimeout(timer);
+  }
   if (!output) throw new Error("Gemini returned no explanation");
   return { summary: output.summary.slice(0, 1200), flags: output.flags.slice(0, 5), provider: "gemini" };
 }

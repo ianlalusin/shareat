@@ -65,7 +65,7 @@ export async function explainWithClaude(promptText: string): Promise<ClaudeExpla
     max_tokens: 16000,
     output_config: { effort: "medium", format: zodOutputFormat(ExplanationSchema) },
     messages: [{ role: "user", content: promptText }],
-  });
+  }, { timeout: 25_000, maxRetries: 0 }); // runs inside a 60s cron; fail fast
   if (response.stop_reason === "refusal") throw new Error(`Claude refused: ${response.stop_details?.category ?? "unknown"}`);
   if (response.stop_reason === "max_tokens") throw new Error("Claude hit max_tokens");
   if (!response.parsed_output) throw new Error("Claude returned no parseable explanation");
