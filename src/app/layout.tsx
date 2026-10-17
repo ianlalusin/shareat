@@ -2,24 +2,32 @@ import type { Metadata, Viewport } from 'next';
 import { Suspense } from 'react';
 import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
-import { Baloo_2, Poppins } from 'next/font/google';
+import localFont from 'next/font/local';
 import { cn } from '@/lib/utils';
 import { FirstLoginGuard } from '@/components/auth/first-login-guard';
 import { Providers } from './providers';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
 import { PaymentQueueSyncProvider } from '@/components/shared/PaymentQueueSyncProvider';
 
-// Define fonts
-const fontSans = Poppins({
-  subsets: ["latin"],
+// Define fonts. Bundled locally (./fonts, OFL) so builds never fetch from Google Fonts.
+const fontSans = localFont({
   variable: "--font-sans",
-  weight: ['400', '500', '600', '700']
+  display: "swap",
+  src: [
+    { path: "./fonts/poppins-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/poppins-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/poppins-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/poppins-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
 })
 
-const fontSerif = Baloo_2({
-  subsets: ["latin"],
+const fontSerif = localFont({
   variable: "--font-serif",
-  weight: ['400', '700']
+  display: "swap",
+  src: [
+    { path: "./fonts/baloo-2-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/baloo-2-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
 })
 
 // PWA Metadata
