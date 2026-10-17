@@ -16,7 +16,7 @@ import { Loader2, Printer, Search, Settings, Download, Calendar as CalendarIcon,
 import { useToast } from "@/hooks/use-toast";
 import { useStoreContext } from "@/context/store-context";
 import { db } from "@/lib/firebase/client";
-import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc, increment, serverTimestamp, where, Timestamp, deleteDoc, writeBatch, runTransaction, limit, startAfter, getDocs, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import { format } from "date-fns";
 import { useDebounce } from "@/hooks/use-debounce";
 import { cn } from "@/lib/utils";
@@ -507,17 +507,33 @@ export default function ReceiptsPage() {
       try {
         const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
 
-        // 1. Commit the void (status + audit metadata) first. The analytics
-        //    reversal is applied separately, server-first, so the analytics
-        //    collections can be locked down to server writes only.
-        await updateDoc(receiptRef, {
-          status: "voided",
-          voidedAt: serverTimestamp(),
-          voidedByUid: appUser.uid,
-          voidedByEmail: appUser.email,
-          voidReason: reason,
-          analyticsReversed: false, // set true by the server/reconcile cron once reversed
+        // 1. Commit the void (status + audit metadata) first. Done in a
+        //    transaction that re-reads the LIVE doc and aborts if the receipt is
+        //    already voided. This is the idempotency gate: the in-memory
+        //    `receipt.status` check above can be stale (second tab, retry,
+        //    concurrent trigger), and unconditionally writing
+        //    `analyticsReversed:false` here would re-arm the server route's
+        //    guard and reverse the sale a SECOND time. Only the transaction that
+        //    actually flips final -> voided proceeds to reverse analytics / log.
+        const alreadyVoided = await runTransaction(db, async (tx) => {
+          const snap = await tx.get(receiptRef);
+          if (!snap.exists()) throw new Error("Receipt not found.");
+          if ((snap.data() as any)?.status === "voided") return true;
+          tx.update(receiptRef, {
+            status: "voided",
+            voidedAt: serverTimestamp(),
+            voidedByUid: appUser.uid,
+            voidedByEmail: appUser.email,
+            voidReason: reason,
+            analyticsReversed: false, // set true by the server/reconcile cron once reversed
+          });
+          return false;
         });
+
+        if (alreadyVoided) {
+          toast({ title: "Already voided", description: "This receipt was already voided." });
+          return;
+        }
 
         // 2. Reverse the receipt's analytics contribution server-first; fall back
         //    to the client delta on failure. `receipt` here is the in-memory,
