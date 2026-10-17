@@ -14,6 +14,10 @@ import { format } from "date-fns";
 import type { WeatherEntry, WeatherRecord } from "@/lib/types";
 import { Skeleton } from "../ui/skeleton";
 import { ScrollArea } from "../ui/scroll-area";
+import { apiWeatherFresh } from "@/hooks/useWeatherLogger";
+
+/** How often to re-check whether the weather API is still delivering. */
+const API_RECHECK_MS = 15 * 60 * 1000;
 
 const weatherConfig: Record<string, { icon: React.ElementType; label: string; gradient: string; iconColor: string; dot: string }> = {
     sunny: { icon: Sun, label: "Sunny", gradient: "from-amber-400 to-orange-500", iconColor: "text-amber-500", dot: "bg-amber-400" },
@@ -39,6 +43,18 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
     const router = useRouter();
     const [entries, setEntries] = useState<WeatherEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    // The badge is a fallback: hidden while the hourly weather API is delivering,
+    // shown when it has gone stale or failed, so staff can see and log weather.
+    const [apiWorking, setApiWorking] = useState(true);
+
+    useEffect(() => {
+        if (!storeId) return;
+        let cancelled = false;
+        const check = () => apiWeatherFresh(storeId).then((fresh) => { if (!cancelled) setApiWorking(fresh); });
+        void check();
+        const timer = setInterval(check, API_RECHECK_MS);
+        return () => { cancelled = true; clearInterval(timer); };
+    }, [storeId]);
 
     // One-time read (on mount + whenever the sheet opens) instead of a live
     // listener — the log doesn't need to be realtime, and the listener would
@@ -76,6 +92,8 @@ export function WeatherLogFloatingButton({ storeId }: { storeId: string }) {
     const latestDisplay = latestEntry ? getWeatherDisplay(latestEntry.condition, toJsDate(latestEntry.timestamp) ?? undefined) : null;
     const LatestIcon = latestDisplay?.icon || CloudSun;
     const btnGradient = latestDisplay?.gradient || "from-gray-400 to-gray-600";
+
+    if (apiWorking) return null;
 
     return (
         <Sheet onOpenChange={(o) => { if (o) loadEntries(); }}>

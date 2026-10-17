@@ -16,7 +16,7 @@ const API_FRESH_CACHE_MS = 45 * 60 * 1000; // once seen fresh, don't re-read for
  * for this store. When it has, the manual modal stays closed — manual logging is
  * only a fallback for when the API is unreachable.
  */
-async function apiWeatherFresh(storeId: string): Promise<boolean> {
+export async function apiWeatherFresh(storeId: string): Promise<boolean> {
   try {
     const manila = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
     const y = manila.getFullYear();

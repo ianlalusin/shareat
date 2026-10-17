@@ -31,6 +31,7 @@ import { useWeatherLogger } from "@/hooks/useWeatherLogger";
 import { WeatherLoggerModal } from "@/components/shared/WeatherLoggerModal";
 import { ForecastAccuracyTrendCard } from "@/components/dashboard/ForecastAccuracyTrendCard";
 import { WeatherLogFloatingButton } from "@/components/dashboard/WeatherLogFloatingButton";
+import { BirthdaySongButton } from "@/components/cashier/BirthdaySongButton";
 import { ChatInbox } from "@/components/cashier/ChatInbox";
 import { useForecastAnalytics } from "@/hooks/useForecastAnalytics";
 import { ItemAdjustmentsCard } from "@/components/dashboard/ItemAdjustmentsCard";
@@ -324,6 +325,9 @@ export default function DashboardPageClient() {
             {activeStore?.id && (
                 <WeatherLogFloatingButton storeId={activeStore.id} />
             )}
+
+            {/* Stacked above the weather button (bottom-6). */}
+            <BirthdaySongButton className="bottom-24 right-6" />
 
             <PrintSalesReportDialog open={reportDialogOpen} onOpenChange={setReportDialogOpen} />
 

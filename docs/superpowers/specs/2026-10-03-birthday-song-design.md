@@ -3,10 +3,12 @@
 Date: 2026-10-03, revised 2026-10-17 · Status: recorded songs, no name
 
 ## What
-A floating speaker badge on the cashier session list (`/cashier` with no `sessionId`).
-Tapping it opens a modal with Play. Play loops two bundled recordings back to back —
-the SharEat birthday song, then Happy Birthday — until the cashier presses Stop or
-closes the modal. Playing pauses other audio on the tablet (Spotify, YouTube, tabs).
+A floating on/off badge on the cashier session list (`/cashier` with no `sessionId`)
+and on the dashboard (stacked above the weather button). Tap it to loop two bundled
+recordings back to back — the SharEat birthday song, then Happy Birthday — and tap it
+again to stop (it turns red and pulses while playing). No modal (retired 2026-10-17).
+Playback lives in the player module, so it keeps going while the cashier moves between
+screens. Playing pauses other audio on the tablet (Spotify, YouTube, tabs).
 
 ## Songs
 - `public/sounds/birthday-shareat.mp3` — upbeat Taglish "Sharelebrate" song, made by
@@ -17,7 +19,7 @@ to the other one rather than going silent.
 
 ## Audio focus
 Native `requestAudioFocus(AUDIOFOCUS_GAIN, USAGE_MEDIA)` before playing; abandoned on
-Stop and on modal close. Apps that honour focus pause; we cannot force-stop apps that
+Stop. Apps that honour focus pause; we cannot force-stop apps that
 ignore it.
 
 ## History
@@ -29,5 +31,5 @@ with this recording as the offline fallback). Parked by Ian on 2026-10-17.
 ## Files
 - `android/.../BirthdaySongPlugin.java` (audio focus; registered in `MainActivity`)
 - `src/lib/birthday/player.ts` (playlist loop + focus; `player.test.ts`)
-- `src/components/cashier/BirthdaySongButton.tsx` (badge + modal)
-- `src/app/cashier/page.tsx` (mount on the list view only)
+- `src/components/cashier/BirthdaySongButton.tsx` (on/off badge)
+- `src/app/cashier/page.tsx` (list view) and `src/components/dashboard/DashboardPageClient.tsx`
