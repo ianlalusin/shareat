@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Cake, Square } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -19,16 +19,20 @@ export function BirthdaySongButton({ className = 'bottom-44 right-6' }: { classN
   useEffect(() => subscribe(setTrack), []);
 
   const playing = track !== null;
+  // Ignore taps while a start or stop is still in flight, so a quick double tap
+  // cannot interleave them.
+  const busy = useRef(false);
 
   const toggle = async () => {
-    if (playing) {
-      stopAll();
-      return;
-    }
+    if (busy.current) return;
+    busy.current = true;
     try {
-      await playBirthdayLoop();
+      if (getCurrentTrack() !== null) await stopAll();
+      else await playBirthdayLoop();
     } catch (e) {
       toast({ variant: 'destructive', title: 'Could not play', description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      busy.current = false;
     }
   };
 

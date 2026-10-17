@@ -1,11 +1,16 @@
 'use client';
 
-import { registerPlugin, Capacitor } from '@capacitor/core';
+import { registerPlugin, Capacitor, type PluginListenerHandle } from '@capacitor/core';
 
-/** Native side: android/.../BirthdaySongPlugin.java (audio focus only). */
+/**
+ * Native side: android/.../BirthdaySongPlugin.java. On the tablets the songs play
+ * through Android's MediaPlayer — the WebView's <audio> stopped responding after a
+ * stop (2026-10-17). A plain browser falls back to <audio>.
+ */
 interface BirthdaySongPlugin {
-  requestAudioFocus(): Promise<{ granted: boolean }>;
-  abandonAudioFocus(): Promise<void>;
+  play(options: { start: number }): Promise<void>;
+  stop(): Promise<{ track: number; fraction: number }>;
+  addListener(event: 'track', cb: (data: { index: number }) => void): Promise<PluginListenerHandle>;
 }
 
 const Native = registerPlugin<BirthdaySongPlugin>('BirthdaySong');
@@ -49,12 +54,12 @@ function readLastStop(): { track: number; fraction: number } | null {
 }
 
 function writeLastStop(track: number, fraction: number): void {
+  if (track < 0) return;
   try { localStorage.setItem(RESUME_KEY, JSON.stringify({ track, fraction })); } catch { /* storage unavailable */ }
 }
 
-// Playback lives at module level, not in a component, so the song keeps going when
-// the cashier moves between the cashier list and the dashboard.
-let current: { stop: () => void } | null = null;
+// Playback state lives at module level, not in a component, so the song keeps going
+// while the cashier moves between the cashier list and the dashboard.
 let currentTrack: number | null = null;
 const listeners = new Set<(track: number | null) => void>();
 
@@ -74,55 +79,79 @@ export function subscribe(listener: (track: number | null) => void): () => void 
   return () => { listeners.delete(listener); };
 }
 
-/** Stops the song and gives audio focus back. Safe to call when nothing is playing. */
-export function stopAll(): void {
-  current?.stop();
-  current = null;
-  setTrack(null);
+const isNative = () => Capacitor.isNativePlatform();
+
+// --- Android: MediaPlayer in the plugin --------------------------------------------
+
+let nativeListener: Promise<PluginListenerHandle> | null = null;
+function ensureNativeListener(): void {
+  if (nativeListener) return;
+  // The plugin reports every track change, including the loop advancing and -1 when
+  // playback ends on its own (e.g. a phone call takes the speaker).
+  nativeListener = Native.addListener('track', ({ index }) => setTrack(index >= 0 ? index : null));
 }
 
-/**
- * Plays the playlist on a loop until stopAll(), starting where pickStartTrack says.
- * Takes audio focus first so music apps on the tablet pause. Resolves once playback has
- * started; rejects if the first track cannot play.
- */
-export async function playBirthdayLoop(): Promise<void> {
-  stopAll();
-  if (Capacitor.isNativePlatform()) await Native.requestAudioFocus().catch(() => undefined);
+// --- Browser fallback: <audio> -----------------------------------------------------
 
+let webStop: (() => void) | null = null;
+
+async function playWeb(start: number): Promise<void> {
   const el = new Audio();
-  let index = 0;
+  let index = start;
   let stopped = false;
-
   const playAt = (i: number) => {
     index = i;
     el.src = PLAYLIST[i];
     setTrack(i);
     return el.play();
   };
-
   el.onended = () => { if (!stopped) void playAt(nextTrack(index)).catch(() => undefined); };
   // A broken file skips to the other song instead of going silent.
   el.onerror = () => { if (!stopped) void playAt(nextTrack(index)).catch(() => undefined); };
-
-  current = {
-    stop: () => {
-      stopped = true;
-      const fraction = el.duration > 0 ? el.currentTime / el.duration : 0;
-      writeLastStop(index, fraction);
-      el.onended = null;
-      el.onerror = null;
-      el.pause();
-      el.removeAttribute('src');
-      el.load();
-      if (Capacitor.isNativePlatform()) void Native.abandonAudioFocus().catch(() => undefined);
-    },
+  webStop = () => {
+    stopped = true;
+    writeLastStop(index, el.duration > 0 ? el.currentTime / el.duration : 0);
+    el.onended = null;
+    el.onerror = null;
+    el.pause();
+    el.removeAttribute('src');
+    el.load();
   };
+  await playAt(start);
+}
 
+// --- Public API ----------------------------------------------------------------------
+
+/** Stops the song. Safe to call when nothing is playing. */
+export async function stopAll(): Promise<void> {
+  if (isNative()) {
+    const res = await Native.stop().catch(() => null);
+    if (res) writeLastStop(res.track, res.fraction);
+  } else {
+    webStop?.();
+    webStop = null;
+  }
+  setTrack(null);
+}
+
+/**
+ * Plays the playlist on a loop until stopAll(), starting where pickStartTrack says.
+ * On Android the plugin takes audio focus so music apps on the tablet pause. Resolves
+ * once playback has started; rejects if the first track cannot play.
+ */
+export async function playBirthdayLoop(): Promise<void> {
+  await stopAll();
+  const start = pickStartTrack(readLastStop());
   try {
-    await playAt(pickStartTrack(readLastStop()));
+    if (isNative()) {
+      ensureNativeListener();
+      await Native.play({ start });
+      setTrack(start);
+    } else {
+      await playWeb(start);
+    }
   } catch (e) {
-    stopAll();
+    await stopAll();
     throw e;
   }
 }

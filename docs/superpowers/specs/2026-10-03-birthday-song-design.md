@@ -17,8 +17,10 @@ screens. Playing pauses other audio on the tablet (Spotify, YouTube, tabs).
 Both ship inside the APK, so playback works offline. A file that fails to play skips
 to the other one rather than going silent.
 
-## Audio focus
-Native `requestAudioFocus(AUDIOFOCUS_GAIN, USAGE_MEDIA)` before playing; abandoned on
+## Playback and audio focus
+On Android the plugin plays the MP3s with MediaPlayer (the WebView <audio> stopped
+responding after a stop, 2026-10-17); a plain browser uses <audio>. Native
+`requestAudioFocus(AUDIOFOCUS_GAIN, USAGE_MEDIA)` before playing; abandoned on
 Stop. Apps that honour focus pause; we cannot force-stop apps that
 ignore it.
 
