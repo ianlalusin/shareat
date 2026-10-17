@@ -45,7 +45,15 @@ export async function endAllParticipants(
       uids.add(claimedByUid);
     }
   }
-  batch.update(sessionRef, { customerParticipantActiveCount: 0 });
+  // Paying or voiding a bill deletes the activeSessions doc, and the PIN is
+  // finalized after that. Updating a missing doc fails the whole batch ("No
+  // document to update"), which left participants active and Auth users leaked,
+  // and made the offline replay queue retry forever. Only reset the counter
+  // when the session still exists.
+  const sessionSnap = await sessionRef.get();
+  if (sessionSnap.exists) {
+    batch.update(sessionRef, { customerParticipantActiveCount: 0 });
+  }
   await batch.commit();
 
   const authDeleted = await deleteAuthUsers(auth, Array.from(uids));

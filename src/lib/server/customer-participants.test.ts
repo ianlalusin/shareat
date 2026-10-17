@@ -11,7 +11,10 @@ import { endAllParticipants } from "./customer-participants";
  * db.collection(path).where("status","==","active").get(), db.doc(path),
  * db.batch().update()/.commit().
  */
-function makeFakeDb(activeDocs: Array<{ id: string; claimedByUid?: string | null }>) {
+function makeFakeDb(
+  activeDocs: Array<{ id: string; claimedByUid?: string | null }>,
+  { sessionExists = true }: { sessionExists?: boolean } = {},
+) {
   const batchUpdates: Array<{ refId: string; data: any }> = [];
   let committed = false;
 
@@ -42,7 +45,7 @@ function makeFakeDb(activeDocs: Array<{ id: string; claimedByUid?: string | null
         },
       };
     },
-    doc: (path: string) => ({ id: path }),
+    doc: (path: string) => ({ id: path, get: async () => ({ exists: sessionExists }) }),
     batch: () => batch,
   };
 
@@ -150,5 +153,26 @@ describe("endAllParticipants", () => {
     expect(result).toEqual({ revoked: 0, authDeleted: 0 });
     expect(deleteUser).not.toHaveBeenCalled();
     expect(isCommitted()).toBe(false);
+  });
+
+  it("still ends participants when the session doc is already gone (bill paid)", async () => {
+    const { db, batchUpdates, isCommitted } = makeFakeDb(
+      [{ id: "p1", claimedByUid: "cust_a" }],
+      { sessionExists: false },
+    );
+    const { auth } = makeFakeAuth();
+
+    const result = await endAllParticipants(db, auth, "store1", "session1", "ended", "staff1", "payment_closed");
+
+    expect(isCommitted()).toBe(true);
+    expect(batchUpdates.map((u) => u.refId)).toEqual(["p1"]);
+    expect(result).toEqual({ revoked: 1, authDeleted: 1 });
+  });
+
+  it("resets the session's active-participant count when the session still exists", async () => {
+    const { db, batchUpdates } = makeFakeDb([{ id: "p1", claimedByUid: "cust_a" }]);
+    await endAllParticipants(db, makeFakeAuth().auth, "store1", "session1", "ended", "staff1", "payment_closed");
+    expect(batchUpdates.find((u) => u.refId === "stores/store1/activeSessions/session1")?.data)
+      .toEqual({ customerParticipantActiveCount: 0 });
   });
 });
