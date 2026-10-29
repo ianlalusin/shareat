@@ -126,4 +126,18 @@ env:
   - variable: NOTIFY_SMS_STATUSES
     value: accepted,ready_for_pickup,out_for_delivery
     availability:
+      - RUNTIME  # Audit B05 (2026-10-29): customer password hashes live only in
+  # customers/{phone}/secrets/auth; the legacy profile field was removed by
+  # scripts/migrate-customer-secrets.ts --remove-legacy. "off" stops POS from
+  # writing it back on a manager password reset.
+  - variable: CUSTOMER_SECRETS_LEGACY_FIELD
+    value: "off"
+    availability:
+      - RUNTIME
+  # Audit B20 (2026-10-29): every server profile's passcode was moved into
+  # serverProfileSecrets (59/59). A profile without a secret doc now fails
+  # closed instead of falling back to a client-readable hash.
+  - variable: SERVER_PROFILE_REQUIRE_SECRET_DOC
+    value: "true"
+    availability:
       - RUNTIME
