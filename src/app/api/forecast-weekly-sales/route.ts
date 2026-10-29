@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "storeId is required." }, { status: 400 });
     }
 
-    const decoded = await getAdminAuth().verifyIdToken(match[1]);
+    const decoded = await getAdminAuth().verifyIdToken(match[1], true);
     await requireStaffStoreAccess(getAdminDb(), decoded, storeId, ["admin", "manager"]);
 
     const result = await forecastWeeklySales(input);

@@ -64,6 +64,10 @@ function writePopularityDelta(
   );
 }
 
+function isVoided(r: any): boolean {
+  return r?.status === "voided" || r?.isVoided === true;
+}
+
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
@@ -73,7 +77,7 @@ async function verifyToken(req: Request): Promise<DecodedIdToken> {
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) throw new Error("Missing bearer token.");
   try {
-    return await getAdminAuth().verifyIdToken(match[1]);
+    return await getAdminAuth().verifyIdToken(match[1], true);
   } catch {
     throw new Error("Invalid token.");
   }
@@ -84,6 +88,7 @@ function mapError(e: any) {
   const status =
     /Missing bearer token|Invalid token/i.test(message) ? 401 :
     /not allowed|No access|Not a staff member|Staff not active/i.test(message) ? 403 :
+    /not voided|nothing to re-ring|re-ring|reRingReceiptId/i.test(message) ? 409 :
     500;
   return NextResponse.json({ ok: false, error: message }, { status });
 }
@@ -132,6 +137,11 @@ export async function POST(req: Request) {
       if (op === "void") {
         // Already reversed → no-op (idempotent across server + client fallback).
         if ((receipt as any).analyticsReversed === true) return { skipped: true as const };
+        // Only a receipt that has actually been voided may be reversed. The
+        // void flow commits status:"voided" (in its own transaction) BEFORE
+        // calling this op, so a still-final receipt means a forged/out-of-order
+        // call — reversing it would delete a real sale from analytics.
+        if (!isVoided(receipt)) throw new Error("Receipt is not voided; refusing to reverse its analytics.");
         // Nothing was ever applied → nothing to reverse; mark so we stay consistent.
         if ((receipt as any).analyticsApplied !== true) {
           tx.update(receiptRef, {
@@ -172,8 +182,26 @@ export async function POST(req: Request) {
         // Reverse the earlier retained-cash accrual so expected cash isn't
         // double-counted (retained + the re-ring sale). Idempotent on
         // analytics-flag voidCashRetainedReversed.
-        const reRingReceiptId = body.reRingReceiptId ? String(body.reRingReceiptId) : null;
+        const reRingReceiptId = body.reRingReceiptId ? String(body.reRingReceiptId) : "";
         if ((receipt as any).voidCashRetainedReversed === true) return { skipped: true as const };
+        if (!isVoided(receipt)) throw new Error("Receipt is not voided; nothing to re-ring.");
+        // The re-ring must be a genuine replacement: an existing, final,
+        // non-refund receipt of THIS store (same collection path), other than
+        // the voided one, not already linked to a different voided receipt.
+        if (!reRingReceiptId || reRingReceiptId.includes("/") || reRingReceiptId === receiptId) {
+          throw new Error("Invalid reRingReceiptId.");
+        }
+        const reRingRef = db.doc(`stores/${storeId}/receipts/${reRingReceiptId}`);
+        const reRingSnap = await tx.get(reRingRef);
+        if (!reRingSnap.exists) throw new Error("Re-ring receipt not found.");
+        const reRing = reRingSnap.data() as any;
+        if (isVoided(reRing) || reRing?.status !== "final") throw new Error("Re-ring receipt is not a final receipt.");
+        if (reRing?.isRefund === true) throw new Error("Re-ring receipt cannot be a refund.");
+        if (reRing?.storeId && reRing.storeId !== storeId) throw new Error("Re-ring receipt belongs to another store.");
+        if (reRing?.reRingOfReceiptId && reRing.reRingOfReceiptId !== receiptId) {
+          throw new Error("Re-ring receipt is already linked to another voided receipt.");
+        }
+        tx.update(reRingRef, { reRingOfReceiptId: receiptId });
         const retained = Number((receipt as any).voidCashRetained || 0);
         if (!(retained > 0)) {
           tx.update(receiptRef, {

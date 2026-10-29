@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     const authz = req.headers.get("authorization") || "";
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
-    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    const decoded = await getAdminAuth().verifyIdToken(m[1], true);
 
     const db = getAdminDb();
     const staff = await requireActiveStaff(db, decoded, ["admin", "manager", "cashier", "kitchen"]);
@@ -377,6 +377,21 @@ export async function POST(req: Request) {
       let settingsRead: any = null;
       let counterRead: any = null;
       const completing = toStatus === "completed" && !order.receiptId;
+      // Payment mode decides what completion may say about money.
+      //  - Prepaid ("wallet" transfer, legacy "paymongo"): the money must already
+      //    be confirmed (webhook or confirm-payment). Handing over food is not
+      //    evidence of payment, so an unpaid prepaid order cannot complete.
+      //  - Anything else is pay-at-counter / cash-on-delivery: completing it IS
+      //    the cash collection, which is recorded explicitly below.
+      const payMethod = String(order?.payment?.method ?? "").trim().toLowerCase();
+      const prepaid = payMethod === "wallet" || payMethod === "paymongo";
+      const alreadyPaid = order?.payment?.paid === true;
+      if (completing && prepaid && !alreadyPaid) {
+        throw new OpError(
+          "This order was prepaid online but its payment is not confirmed. Confirm the payment before completing it.",
+          409
+        );
+      }
       if (completing) {
         const [sSnap, cSnap] = await Promise.all([tx.get(settingsRef), tx.get(counterRef)]);
         settingsRead = sSnap.exists ? sSnap.data() : null;
@@ -517,6 +532,17 @@ export async function POST(req: Request) {
           receiptId: orderId,
         } as Receipt;
         (receipt as any).source = "online";
+        // Settlement evidence travels with the receipt.
+        (receipt as any).settlement = {
+          method: payMethod || null,
+          via: alreadyPaid
+            ? String(order?.payment?.confirmedVia || (payMethod === "paymongo" ? "paymongo_webhook" : "pre_confirmed"))
+            : "cash_on_completion",
+          reference: order?.payment?.paymongoPaymentId ?? order?.payment?.reference ?? null,
+          amount: grandTotal,
+          settledAtMs: alreadyPaid ? Number(order?.payment?.settledAtMs ?? nowMs) : nowMs,
+          byUid: alreadyPaid ? (order?.payment?.confirmedByUid ?? null) : actorUid,
+        };
 
         tx.set(counterRef, { seq: nextSeq, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         tx.set(db.doc(`stores/${storeId}/receipts/${orderId}`), receipt);
@@ -527,9 +553,15 @@ export async function POST(req: Request) {
         // must mean "when the money arrived", not "when the food was handed
         // over" — an order confirmed paid by wallet transfer hours ago keeps
         // that earlier timestamp, and its methodLabel keeps its mop row.
-        if (order?.payment?.paid !== true) {
+        if (!alreadyPaid) {
+          // Only pay-at-counter / COD reaches here (unpaid prepaid threw above).
+          // Record WHO collected HOW MUCH, not just a bare paid flag.
           orderUpdate["payment.paid"] = true;
           orderUpdate["payment.settledAtMs"] = nowMs;
+          orderUpdate["payment.collectedVia"] = "cash_on_completion";
+          orderUpdate["payment.collectedAmount"] = grandTotal;
+          orderUpdate["payment.collectedByUid"] = actorUid;
+          orderUpdate["payment.collectedByName"] = actorName;
         }
         didComplete = true;
       }

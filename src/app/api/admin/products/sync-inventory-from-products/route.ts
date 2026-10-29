@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     const authz = req.headers.get("authorization") || "";
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
-    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    const decoded = await getAdminAuth().verifyIdToken(m[1], true);
 
     const db = getAdminDb();
     await requireActiveStaff(db, decoded, ["admin"]);

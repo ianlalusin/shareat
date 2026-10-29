@@ -190,7 +190,7 @@ export async function GET(req: Request) {
     });
     if (!parsed.success) return fail("storeId and name are required.");
 
-    const decoded = await getAdminAuth().verifyIdToken(match[1]);
+    const decoded = await getAdminAuth().verifyIdToken(match[1], true);
     await requireStaffStoreAccess(getAdminDb(), decoded, parsed.data.storeId, [
       "admin",
       "manager",

@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-pos \"vitest run --config vitest.rules.config.ts\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage --project demo-pos \"vitest run --config vitest.rules.config.ts\"",
     "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
     "build:storeConfig": "tsx scripts/build-store-config.ts",

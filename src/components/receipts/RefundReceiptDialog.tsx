@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
-import type { Receipt, SessionBillLine, Payment, ModeOfPayment } from "@/lib/types";
+import type { Receipt, SessionBillLine, ModeOfPayment } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import { createRefundReceipt } from "@/components/cashier/firestore";
+import { previewLineRefund, previewRefundTotal, remainingRefundableQty } from "@/lib/analytics/refund-quote";
+import { v4 as uuidv4 } from "uuid";
 
 interface RefundReceiptDialogProps {
   isOpen: boolean;
@@ -27,7 +29,6 @@ type RefundQty = Record<string, number>; // lineId -> qty to refund
 
 function RefundContent({
   receipt,
-  paymentMethods,
   actor,
   onClose,
   onSuccess,
@@ -36,18 +37,15 @@ function RefundContent({
   const [refundQtys, setRefundQtys] = useState<RefundQty>({});
   const [reason, setReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Idempotency key for this dialog: a retry/double-submit reuses it, so the
+  // save can never create a second refund for the same request.
+  const [requestId] = useState(() => uuidv4());
 
-  const refundedQtys: Record<string, number> = (receipt as any).refundedQtys ?? {};
-  const getMaxQty = (l: SessionBillLine) =>
-    Math.max(0, l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0) - (refundedQtys[l.id] || 0));
+  const getMaxQty = (l: SessionBillLine) => remainingRefundableQty(receipt as any, l);
 
   const billableLines = useMemo(() =>
-    (receipt.lines || []).filter(l => {
-      const refunded = refundedQtys[l.id] || 0;
-      const billable = l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0) - refunded;
-      return billable > 0;
-    }),
-    [receipt.lines, refundedQtys]
+    (receipt.lines || []).filter(l => remainingRefundableQty(receipt as any, l) > 0),
+    [receipt]
   );
 
   const getRefundQty = (id: string) => refundQtys[id] ?? 0;
@@ -57,12 +55,14 @@ function RefundContent({
     setRefundQtys(cur => ({ ...cur, [id]: clamped }));
   };
 
-  const refundTotal = useMemo(() =>
-    billableLines.reduce((sum, l) => sum + (getRefundQty(l.id) * l.unitPrice), 0),
-    [billableLines, refundQtys]
+  // Same valuation the save uses (quoteRefund): what was actually paid, with
+  // discounts/modifiers/charges shared out, capped at what is left to refund.
+  const refundTotal = useMemo(
+    () => previewRefundTotal(receipt as any, refundQtys),
+    [receipt, refundQtys]
   );
 
-  const hasAnyQty = refundTotal > 0;
+  const hasAnyQty = Object.values(refundQtys).some(q => q > 0) && refundTotal > 0;
 
   const handleSelectAll = () => {
     const all: RefundQty = {};
@@ -82,28 +82,20 @@ function RefundContent({
       return;
     }
 
-    // Build refund lines — clone original lines with overridden qtyOrdered
-    const refundLines: SessionBillLine[] = billableLines
-      .filter(l => getRefundQty(l.id) > 0)
-      .map(l => ({ ...l, qtyOrdered: getRefundQty(l.id), freeQty: 0, voidedQty: 0 }));
-
-    // Build refund payments proportionally
-    const ratio = refundTotal / (receipt.total || 1);
-    const refundPayments: Payment[] = Object.entries(receipt.analytics?.mop || {}).map(([key, value], i) => ({
-      id: `refund-payment-${i}`,
-      methodId: paymentMethods.find(pm => pm.name === key)?.id || key,
-      amount: Math.round((value as number) * ratio * 100) / 100,
-    }));
+    const qtys: Record<string, number> = {};
+    billableLines.forEach(l => { const q = getRefundQty(l.id); if (q > 0) qtys[l.id] = q; });
 
     setIsSubmitting(true);
     try {
+      // Lines, amount and tender split are recomputed inside the save's
+      // transaction from the live receipt (same quoteRefund math as above).
       const refundId = await createRefundReceipt(
         receipt.storeId,
         receipt,
-        refundLines,
-        refundPayments,
+        qtys,
         actor,
         reason,
+        requestId,
       );
       toast({ title: "Refund created", description: `Refund receipt RF-${receipt.receiptNumber} has been saved.` });
       onSuccess(refundId);
@@ -139,7 +131,7 @@ function RefundContent({
               <div key={line.id} className="flex items-center justify-between px-4 py-3 gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{line.itemName}</p>
-                  <p className="text-xs text-muted-foreground">₱{line.unitPrice.toFixed(2)} × {max} available</p>
+                  <p className="text-xs text-muted-foreground">₱{(line.unitPrice + Number((line as any).modifiersTotal || 0)).toFixed(2)} × {max} available</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setQty(line.id, qty - 1, max)} disabled={qty <= 0}>−</Button>
@@ -152,7 +144,7 @@ function RefundContent({
                     onChange={e => setQty(line.id, parseInt(e.target.value), max)}
                   />
                   <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setQty(line.id, qty + 1, max)} disabled={qty >= max}>+</Button>
-                  <span className="text-sm w-20 text-right">₱{(qty * line.unitPrice).toFixed(2)}</span>
+                  <span className="text-sm w-20 text-right">₱{previewLineRefund(receipt as any, line.id, qty).toFixed(2)}</span>
                 </div>
               </div>
             );

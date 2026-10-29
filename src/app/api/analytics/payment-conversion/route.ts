@@ -25,7 +25,7 @@ async function verifyToken(req: Request): Promise<DecodedIdToken> {
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) throw new Error("Missing bearer token.");
   try {
-    return await getAdminAuth().verifyIdToken(match[1]);
+    return await getAdminAuth().verifyIdToken(match[1], true);
   } catch {
     throw new Error("Invalid token.");
   }

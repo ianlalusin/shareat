@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
   let decoded: any;
   try {
-    decoded = await getAdminAuth().verifyIdToken(m[1]);
+    decoded = await getAdminAuth().verifyIdToken(m[1], true);
   } catch {
     return bad("Invalid token.", 401);
   }

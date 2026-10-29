@@ -442,6 +442,47 @@ describe("completion does not clobber an earlier payment", () => {
   });
 });
 
+// --- B25: completion never fabricates a prepaid settlement -------------------
+
+describe("B25: completion branches on payment mode", () => {
+  it.each(["wallet", "paymongo"])("409s completing an unpaid %s (prepaid) order and writes nothing", async (method) => {
+    seed(baseOrder({ status: "ready", payment: { method, paid: false } }));
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "completed" });
+    expect(res.status).toBe(409);
+    expect(harness.updates).toHaveLength(0);
+    expect(harness.sets.find((s) => s.path === RECEIPT_PATH)).toBeUndefined();
+  });
+
+  it("409s after unconfirm-payment cleared a prepaid order", async () => {
+    seed(baseOrder({ status: "ready", payment: { method: "wallet", paid: true, methodLabel: "GCash", confirmedVia: "manual_wallet" } }));
+    expect((await post({ op: "unconfirm-payment", storeId: STORE, orderId: ORDER, reason: "Not received." })).status).toBe(200);
+    harness.docs[ORDER_PATH] = { ...harness.docs[ORDER_PATH], payment: { method: "wallet", paid: false } };
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "completed" });
+    expect(res.status).toBe(409);
+  });
+
+  it("completes a confirmed prepaid order and records its settlement on the receipt", async () => {
+    seed(baseOrder({ status: "ready", payment: { method: "wallet", paid: true, methodLabel: "GCash", settledAtMs: 111, confirmedVia: "manual_wallet", confirmedByUid: "u9" } }));
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "completed" });
+    expect(res.status).toBe(200);
+    const receipt = harness.sets.find((s) => s.path === RECEIPT_PATH)!.data;
+    expect(receipt.settlement).toMatchObject({ method: "wallet", via: "manual_wallet", settledAtMs: 111, byUid: "u9", amount: 500 });
+  });
+
+  it("completing a COD order records the cash collection explicitly", async () => {
+    seed(baseOrder({ status: "ready", payment: { method: "cod", paid: false } }));
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "completed" });
+    expect(res.status).toBe(200);
+    const u = orderUpdate();
+    expect(u["payment.paid"]).toBe(true);
+    expect(u["payment.collectedVia"]).toBe("cash_on_completion");
+    expect(u["payment.collectedAmount"]).toBe(500);
+    expect(u["payment.collectedByUid"]).toBe(ACTOR_UID);
+    const receipt = harness.sets.find((s) => s.path === RECEIPT_PATH)!.data;
+    expect(receipt.settlement).toMatchObject({ method: "cod", via: "cash_on_completion", byUid: ACTOR_UID });
+  });
+});
+
 // --- paymentLabel, observed through the analytics mop key ------------------
 
 describe("paymentLabel drives the analyticsV2.mop key", () => {
@@ -470,7 +511,8 @@ describe("paymentLabel drives the analyticsV2.mop key", () => {
   // The three no-methodLabel branches must stay byte-identical to today's
   // output, or an existing revenue row silently splits in two.
   it("falls back to Online (PayMongo) for a paymongo order", async () => {
-    expect(await mopKeyAfterCompleting(baseOrder({ payment: { method: "paymongo" } }))).toEqual([
+    // Paid: an unpaid prepaid order can no longer complete (B25).
+    expect(await mopKeyAfterCompleting(baseOrder({ payment: { method: "paymongo", paid: true } }))).toEqual([
       "Online (PayMongo)",
     ]);
   });

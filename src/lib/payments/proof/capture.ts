@@ -138,8 +138,13 @@ export async function flushProofOutbox(): Promise<{ uploaded: number; failed: nu
     for (const entry of await listQueuedProofPhotos()) {
       try {
         const target = storageRef(storage, entry.storagePath);
-        await uploadBytes(target, entry.blob, { contentType: entry.contentType });
-        const imageUrl = await getDownloadURL(target);
+        // Proof objects are create-only in storage.rules, so a retry after an
+        // upload that landed (but whose URL fetch failed) must reuse the object.
+        let imageUrl = await getDownloadURL(target).catch(() => null);
+        if (!imageUrl) {
+          await uploadBytes(target, entry.blob, { contentType: entry.contentType });
+          imageUrl = await getDownloadURL(target);
+        }
 
         await updateDoc(doc(db, "stores", entry.storeId, "paymentProofs", entry.proofId), {
           imageUrl,

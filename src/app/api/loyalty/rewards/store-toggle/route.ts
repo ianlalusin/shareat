@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   if (!match) return bad("Missing bearer token.", 401);
 
   try {
-    const decoded = await getAdminAuth().verifyIdToken(match[1]);
+    const decoded = await getAdminAuth().verifyIdToken(match[1], true);
     const db = getAdminDb();
     const { uid } = await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager"]);
 

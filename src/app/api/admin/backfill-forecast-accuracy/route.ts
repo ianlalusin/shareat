@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
   let decoded: any;
   try {
-    decoded = await getAdminAuth().verifyIdToken(match[1]);
+    decoded = await getAdminAuth().verifyIdToken(match[1], true);
   } catch {
     return bad("Invalid token.", 401);
   }

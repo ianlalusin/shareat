@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    const decoded = await getAdminAuth().verifyIdToken(m[1], true);
     const db = getAdminDb();
     await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "cashier"]);
     const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();

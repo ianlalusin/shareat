@@ -104,10 +104,12 @@ export function mapIntentStatusToDocStatus(
 export async function getPaymentIntentViaApi(
   deps: { getJson: GetJson },
   intentId: string,
-): Promise<{ status: string; latestPaymentId: string | null }> {
+): Promise<{ status: string; latestPaymentId: string | null; metadata: Record<string, unknown> }> {
   const json = (await deps.getJson(`/v1/payment_intents/${intentId}`)) as any;
   const attrs = json?.data?.attributes ?? {};
   const payments = attrs?.payments ?? [];
   const latest = Array.isArray(payments) && payments.length ? payments[payments.length - 1] : null;
-  return { status: String(attrs?.status ?? ""), latestPaymentId: latest?.id ?? null };
+  const metadata =
+    attrs?.metadata && typeof attrs.metadata === "object" ? (attrs.metadata as Record<string, unknown>) : {};
+  return { status: String(attrs?.status ?? ""), latestPaymentId: latest?.id ?? null, metadata };
 }

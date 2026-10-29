@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { writeLoyaltyRedeem, reverseLoyaltyRedeem } from "@/lib/server/loyalty";
+import { writeLoyaltyRedeem, reverseLoyaltyRedeem, PAID_REVERSAL_REASONS } from "@/lib/server/loyalty";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import { readSessionLink, redeemGate } from "@/lib/server/session-link";
 
@@ -16,7 +16,7 @@ async function verifyToken(req: Request): Promise<DecodedIdToken> {
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) throw new Error("Missing bearer token.");
   try {
-    return await getAdminAuth().verifyIdToken(match[1]);
+    return await getAdminAuth().verifyIdToken(match[1], true);
   } catch {
     throw new Error("Invalid token.");
   }
@@ -78,11 +78,19 @@ export async function DELETE(req: Request) {
     const decoded = await verifyToken(req);
     const db = getAdminDb();
 
-    const result = await reverseLoyaltyRedeem(redemptionId, decoded.uid, String(body.reason || "removed"), {
+    const reason = String(body.reason || "removed");
+    // Reversing a PAID bill's reward (receipt void / refund) is a manager action;
+    // pre-payment removal and session void stay with the cashier roles.
+    const isPaidReversal = (PAID_REVERSAL_REASONS as readonly string[]).includes(reason);
+    const roles: Array<"admin" | "manager" | "cashier"> = isPaidReversal ? ["admin", "manager"] : ["admin", "manager", "cashier"];
+    const refundReceiptId = body.refundReceiptId ? String(body.refundReceiptId) : undefined;
+
+    const result = await reverseLoyaltyRedeem(redemptionId, decoded.uid, reason, {
+      refundReceiptId,
       // Authorize against the redemption's OWN store, not a caller-supplied id.
       authorize: async (appliedStoreId) => {
         if (appliedStoreId) {
-          await requireStaffStoreAccess(db, decoded, appliedStoreId, ["admin", "manager", "cashier"]);
+          await requireStaffStoreAccess(db, decoded, appliedStoreId, roles);
           return;
         }
         // Unapplied / null-store redemption (e.g. a pending Hub voucher): only a
@@ -93,7 +101,7 @@ export async function DELETE(req: Request) {
         if (role !== "admin") throw new Error("No access to this store.");
       },
     });
-    if (!result.ok) return bad(result.error || "Failed to reverse.", 500);
+    if (!result.ok) return bad(result.error || "Failed to reverse.", result.status ?? 500);
     return NextResponse.json({ ok: true, refunded: result.refunded });
   } catch (e) {
     return mapError(e);

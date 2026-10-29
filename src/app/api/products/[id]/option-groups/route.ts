@@ -25,7 +25,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const authz = req.headers.get("authorization") || "";
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
-    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    const decoded = await getAdminAuth().verifyIdToken(m[1], true);
 
     const db = getAdminDb();
     await requireActiveStaff(db, decoded, ["admin", "manager", "cashier", "kitchen", "server"]);

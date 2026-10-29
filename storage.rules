@@ -57,19 +57,30 @@ service firebase.storage {
         && request.resource.size < maxMb * 1024 * 1024;
     }
 
-    // By default, allow public reads for images, but deny all writes.
+    // Default: deny everything. This used to be `allow read` over the whole
+    // bucket, which made every object -- payment-proof screenshots included --
+    // publicly readable AND listable by anyone with the bucket name (audit B18,
+    // 2026-10-29). Storage rules OR across matching blocks, so no narrower
+    // proof rule could take that back; the grant itself had to go.
+    //
+    // Reads are now granted per prefix below, `get` only, never `list`.
+    // Public assets keep an anonymous `get` so nothing that fetches them by
+    // path breaks. Images shown in the apps use download-token URLs from
+    // getDownloadURL(), which bypass these rules entirely; the `get` grant is
+    // what the uploader's own getDownloadURL() call needs.
     match /{allPaths=**} {
-      allow read;
-      allow write: if false;
+      allow read, write: if false;
     }
 
     // Allow a user to write/update their own avatar.
     match /users/{userId}/avatar.jpg {
+      allow get;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
     // Allow only managers or admins to upload product images.
     match /Items/{productId} {
+      allow get;
       allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
     }
 
@@ -80,6 +91,7 @@ service firebase.storage {
     // though they can never attach one to a real reward via the UI — see
     // docs/superpowers/plans/2026-08-12-admin-manager-security-audit.md.
     match /loyaltyRewardImages/{rewardId}/{fileName} {
+      allow get;
       allow write: if request.auth != null && isAdmin(request.auth.uid);
     }
 
@@ -95,8 +107,15 @@ service firebase.storage {
     // exact object, so a manager replacing their local photo must land on a
     // NEW object — otherwise the replacement would silently overwrite (and
     // hijack) every store's global picture.
+    //
+    // The UUID is only a UI convention, so the rule enforces it: CREATE only
+    // (resource == null). Overwriting or deleting an existing object -- e.g. the
+    // one an admin already promoted to products/{id}.imageUrl -- is denied for
+    // every client (audit B19, 2026-10-29). Cleanup is Admin SDK only.
     match /productPhotos/{productId}/{storeId}/{fileName} {
-      allow write: if request.auth != null
+      allow get;
+      allow create: if request.auth != null
+        && resource == null
         && isStoreManagerOrAdmin(request.auth.uid, storeId)
         && isImageUnder(4);
     }
@@ -106,6 +125,7 @@ service firebase.storage {
     // client-generated requestId; the approve op copies the resulting download
     // URL onto products/{id}.imageUrl and the store's inventory record.
     match /productRequestImages/{requestId}/{fileName} {
+      allow get;
       allow write: if request.auth != null && isManagerOrAdmin(request.auth.uid);
     }
 
@@ -115,6 +135,7 @@ service firebase.storage {
     // to upload but the tile's logo. Adding a QR decides which account receives
     // money, so manager/admin only — matching savedQrCodes in firestore.rules.
     match /stores/{storeId}/qrWallet/{qrId}/{fileName} {
+      allow get;
       allow write: if request.auth != null
         && isStoreManagerOrAdmin(request.auth.uid, storeId)
         && isImageUnder(6);
@@ -128,6 +149,7 @@ service firebase.storage {
     // in the UI other than a failed save. Manager/admin + store membership,
     // matching who can actually reach those two pages.
     match /flashAdImages/{storeId}/{fileName} {
+      allow get;
       allow write: if request.auth != null
         && isStoreManagerOrAdmin(request.auth.uid, storeId)
         && isImageUnder(4);
@@ -135,9 +157,11 @@ service firebase.storage {
 
     // -- Payment proofs --
     // Photo of the customer's e-wallet confirmation screen, taken after they
-    // scan a saved QR. ANY active store staffer may write: this is the
-    // CASHIER's flow, and gating it to managers would break it on the critical
-    // path. No update/delete rule — a proof is immutable once written.
+    // scan a saved QR. ANY active store staffer may create one: this is
+    // the CASHIER's flow, and gating it to managers would break it on the
+    // critical path. CREATE only (resource == null): a proof is immutable once
+    // written, so a second upload to an existing key and any client delete are
+    // denied (audit B19, 2026-10-29). The 15-day lifecycle rule cleans up.
     //
     // TOP-LEVEL prefix ON PURPOSE, not stores/{storeId}/paymentProofs/. These
     // objects are deleted after 15 days by a Storage lifecycle rule, and
@@ -145,13 +169,17 @@ service firebase.storage {
     // of the path, no single prefix could target every store's proofs without
     // also matching that store's logo. See storage-lifecycle.json.
     //
-    // NOTE: these photos show a customer's payment confirmation, and the public
-    // root read below cannot be narrowed here (Storage rules OR across matching
-    // blocks, so a stricter `allow read` accomplishes nothing). The mitigation
-    // is the unguessable path: {proofId} is a crypto.randomUUID(), so 122 bits
-    // makes enumeration infeasible, and the object is gone in 15 days anyway.
+    // READ: these photos show a customer's payment confirmation, so there is
+    // no public read and no listing -- only an active staffer of THAT store may
+    // `get` one (the cashier's own getDownloadURL() right after upload needs
+    // this). Residual (audit B18): download-token URLs already saved on
+    // stores/{id}/paymentProofs docs bypass these rules until the object
+    // expires (15 days) or its token is revoked server-side.
     match /paymentProofs/{storeId}/{fileName} {
-      allow write: if request.auth != null
+      allow get: if request.auth != null
+        && hasStoreAccess(request.auth.uid, storeId);
+      allow create: if request.auth != null
+        && resource == null
         && hasStoreAccess(request.auth.uid, storeId)
         && isImageUnder(6);
     }
@@ -165,6 +193,7 @@ service firebase.storage {
     // Single-segment {fileName} on purpose, so this matches stores/{id}/logo.png
     // without shadowing the two deeper blocks above.
     match /stores/{storeId}/{fileName} {
+      allow get;
       allow write: if request.auth != null
         && isStoreManagerOrAdmin(request.auth.uid, storeId)
         && isImageUnder(4);

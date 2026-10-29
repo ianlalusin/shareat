@@ -6,6 +6,27 @@ import { getDisplayName, getEffectiveVariantLabel } from "@/lib/products/variant
 
 export const runtime = "nodejs";
 
+const INVENTORY_GETALL_CHUNK = 100;
+
+async function readInventoryByIds(
+  db: FirebaseFirestore.Firestore,
+  storeId: string,
+  ids: string[],
+): Promise<Map<string, any>> {
+  const out = new Map<string, any>();
+  // Firestore doc ids cannot contain "/"; skip anything that would not be a
+  // direct child of the inventory collection.
+  const unique = [...new Set(ids)].filter((id) => id && !id.includes("/"));
+  for (let i = 0; i < unique.length; i += INVENTORY_GETALL_CHUNK) {
+    const refs = unique
+      .slice(i, i + INVENTORY_GETALL_CHUNK)
+      .map((id) => db.doc(`stores/${storeId}/inventory/${id}`));
+    const snaps = await db.getAll(...refs);
+    for (const snap of snaps) if (snap.exists) out.set(snap.id, snap.data());
+  }
+  return out;
+}
+
 // External read: per-item sold quantities for ONE store + day, keyed by the
 // store's own inventory doc id. Consumed by the ERP's inventory-usage pull,
 // which maps posItemId → its own stock item and posts the consumption as a
@@ -40,13 +61,10 @@ export async function GET(request: Request) {
 
   try {
     const db = getAdminDb();
-    const [receiptsSnap, inventorySnap] = await Promise.all([
-      db.collection(`stores/${storeId}/receipts`)
-        .where("createdAtClientMs", ">=", startMs)
-        .where("createdAtClientMs", "<=", endMs)
-        .get(),
-      db.collection(`stores/${storeId}/inventory`).get(),
-    ]);
+    const receiptsSnap = await db.collection(`stores/${storeId}/receipts`)
+      .where("createdAtClientMs", ">=", startMs)
+      .where("createdAtClientMs", "<=", endMs)
+      .get();
 
     const agg = aggregateSoldItems(receiptsSnap.docs.map((d) => d.data() as ReceiptLite));
 
@@ -61,7 +79,10 @@ export async function GET(request: Request) {
     // indistinguishable rows in the ERP mapping UI and give its name matcher
     // nothing to work with. Reuses POS's own getDisplayName so the format stays
     // identical to what the cashier and the day doc show.
-    const inventoryById = new Map(inventorySnap.docs.map((d) => [d.id, d.data() as any]));
+    // Only the inventory docs for items that actually sold are read (chunked
+    // getAll), so an empty day costs zero inventory reads and a busy day costs
+    // one read per distinct item — not a full catalogue scan per request.
+    const inventoryById = await readInventoryByIds(db, storeId, agg.items.map((a) => a.posItemId));
 
     const items = agg.items.map((a) => {
       const inv = inventoryById.get(a.posItemId);

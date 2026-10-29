@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
   let decoded: any;
   try {
-    decoded = await getAdminAuth().verifyIdToken(match[1]);
+    decoded = await getAdminAuth().verifyIdToken(match[1], true);
   } catch {
     return bad("Invalid token.", 401);
   }
@@ -45,6 +45,6 @@ export async function POST(req: Request) {
   if (!isAdmin && !assigned.includes(storeId)) return bad("No access to this store.", 403);
 
   const result = await finalizeLoyaltyVouchers({ storeId, sessionId, receiptId });
-  if (!result.ok) return bad(result.error || "Failed to finalize vouchers.", 500);
+  if (!result.ok) return bad(result.error || "Failed to finalize vouchers.", result.status ?? 500);
   return NextResponse.json({ ok: true, finalized: result.finalized });
 }

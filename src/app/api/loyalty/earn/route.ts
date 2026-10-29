@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyEarn } from "@/lib/server/loyalty";
+import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
 
   let decoded;
   try {
-    decoded = await getAdminAuth().verifyIdToken(match[1]);
+    decoded = await getAdminAuth().verifyIdToken(match[1], true);
   } catch {
     return bad("Invalid token.", 401);
   }
@@ -31,36 +32,33 @@ export async function POST(req: Request) {
   }
 
   const storeId = String(body.storeId || "");
-  const sessionId = String(body.sessionId || "");
-  const phone = String(body.phone || "");
-  const amount = Number(body.amount || 0);
-  const receiptId = body.receiptId ? String(body.receiptId) : undefined;
+  const receiptId = String(body.receiptId || "");
+  // sessionId / phone are optional cross-checks; the receipt and its session
+  // decide the amount and the card. body.amount is ignored.
+  const sessionId = body.sessionId ? String(body.sessionId) : undefined;
+  const phone = body.phone ? String(body.phone) : undefined;
 
-  if (!storeId || !sessionId || !phone || amount <= 0) {
+  if (!storeId || !receiptId) {
     return bad("Missing required fields.");
   }
 
-  // Verify staff has access to this store
+  // Only roles that check out a bill may award points.
   const db = getAdminDb();
-  const staffSnap = await db.doc(`staff/${uid}`).get();
-  if (!staffSnap.exists) return bad("Not a staff member.", 403);
-  const staffData = staffSnap.data() as any;
-  if (staffData.status !== "active") return bad("Staff not active.", 403);
-  const assignedStoreIds: string[] = Array.isArray(staffData.assignedStoreIds) ? staffData.assignedStoreIds : [];
-  const isAdmin = staffData.role === "admin" || decoded.platformAdmin === true;
-  if (!isAdmin && !assignedStoreIds.includes(storeId)) {
-    return bad("No access to this store.", 403);
+  try {
+    await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "cashier"]);
+  } catch (e: any) {
+    const message = e?.message || "Forbidden.";
+    return bad(message, /Invalid token/i.test(message) ? 401 : 403);
   }
 
   const result = await writeLoyaltyEarn({
     storeId,
+    receiptId,
     sessionId,
     phone,
-    amount,
-    receiptId,
     staffUid: uid,
   });
 
-  if (!result.ok) return bad(result.error || "Failed to earn points.", 500);
-  return NextResponse.json({ ok: true, points: result.points });
+  if (!result.ok) return bad(result.error || "Failed to earn points.", result.status ?? 500);
+  return NextResponse.json({ ok: true, points: result.points, ...(result.duplicate ? { duplicate: true } : {}) });
 }

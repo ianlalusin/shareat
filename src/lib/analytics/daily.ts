@@ -6,6 +6,7 @@ import { doc, type Firestore } from "firebase/firestore";
 import type { Timestamp } from "firebase/firestore";
 import type { Receipt, ReceiptAnalyticsV2, KitchenTicket, Store, LineAdjustment } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
+import { lineItemAmounts, lineSalesAmount } from "@/lib/analytics/line-amounts";
 
 /**
  * Checks if a receipt object is null or represents a voided transaction.
@@ -258,48 +259,23 @@ export function getSalesContribution(receipt: Receipt | null, store?: Store | nu
     const addonSalesQtyByCategory: Record<string, number> = {};
     const addonSalesByItem: Record<string, { qty: number; amount: number; categoryName: string; }> = {};
 
-    const taxRate = (store?.taxRatePct || 0) / 100;
-    const isVatInclusive = store?.taxType === 'VAT_INCLUSIVE';
     const isDineIn = r.sessionMode === 'package_dinein';
     const mode: SessionModeKey = isDineIn ? "dineIn" : "walkIn";
+    // A refund receipt carries positive-qty clones of the refunded lines; its
+    // contribution must REDUCE item/category quantities and money.
+    const sign = r.isRefund === true ? -1 : 1;
     let dineInSalesGross = 0;
     let lineGrossSum = 0;
 
     (r.lines || []).forEach(line => {
-        const billableQty = (line.qtyOrdered || 0) - (line.voidedQty || 0) - (line.freeQty || 0);
-        if (billableQty <= 0) return;
-
-        const unitPrice = line.unitPrice || 0;
-        const lineGross = billableQty * unitPrice;
+        // Shared with external sold-items and refund valuation: unit price +
+        // modifiersTotal (counted once), minus line discounts.
+        const amounts = lineItemAmounts(line as any);
+        if (amounts.billableQty <= 0) return;
+        const billableQty = sign * amounts.billableQty;
+        const lineGross = sign * amounts.gross;
         lineGrossSum += lineGross;
-
-        let lineDiscount = 0;
-        const baseUnitPrice = (isVatInclusive && taxRate > 0) ? (unitPrice / (1 + taxRate)) : unitPrice;
-
-        const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
-        if (adjs.length > 0) {
-            let remainingQty = billableQty;
-            adjs.filter(a => a.kind === 'discount').forEach(adj => {
-                const qtyToApply = Math.min(adj.qty, remainingQty);
-                if (qtyToApply <= 0) return;
-
-                if (adj.type === 'percent') {
-                    lineDiscount += qtyToApply * baseUnitPrice * (adj.value / 100);
-                } else { // fixed
-                    lineDiscount += qtyToApply * Math.min(baseUnitPrice, adj.value);
-                }
-                remainingQty -= qtyToApply;
-            });
-        } else if (line.discountValue && line.discountQty > 0) { // Legacy discount fields
-            const discountedQty = Math.min(line.discountQty, billableQty);
-            if (line.discountType === 'percent') {
-                lineDiscount = discountedQty * baseUnitPrice * (line.discountValue / 100);
-            } else {
-                lineDiscount = discountedQty * Math.min(baseUnitPrice, line.discountValue);
-            }
-        }
-
-        const netAmount = lineGross - lineDiscount;
+        const netAmount = sign * lineSalesAmount(line as any);
 
         if (line.type === 'package') {
             packageSalesAmountByName[line.itemName] = (packageSalesAmountByName[line.itemName] || 0) + netAmount;

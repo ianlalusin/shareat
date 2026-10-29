@@ -71,7 +71,8 @@ const OPEN_COLLECTIONS = [
   "cashHandovers",
   "chatThreads",
   "customerRequests",
-  "serverProfiles",
+  // serverProfiles is no longer here: it is client-read-only since audit B20
+  // (2026-10-29) -- see tests/rules/audit-b06-b20.test.ts.
   "activityLogsByDay",
   "weatherRecords",
   "dailyContext",

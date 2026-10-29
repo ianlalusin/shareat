@@ -13,7 +13,7 @@ async function authStore(req: Request, storeId: string) {
   const authz = req.headers.get("authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   if (!m) throw new Error("Missing Authorization Bearer token.");
-  const decoded = await getAdminAuth().verifyIdToken(m[1]);
+  const decoded = await getAdminAuth().verifyIdToken(m[1], true);
   const db = getAdminDb();
   await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager"]);
   return db;

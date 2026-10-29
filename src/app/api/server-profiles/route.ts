@@ -6,8 +6,7 @@ import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import {
   hashPasscodeScrypt,
   isValidPasscode,
-  verifyPasscode,
-  type SecretRecord,
+  verifyProfilePasscodeAtomic,
 } from "@/lib/server/server-profile-secrets";
 
 /**
@@ -28,9 +27,7 @@ export const runtime = "nodejs";
 const ALL_ROLES = ["admin", "manager", "cashier", "kitchen", "server"] as const;
 const MANAGER_ROLES = ["admin", "manager"] as const;
 
-/** Throttle: brute-forcing 10^6 passcodes online should be hopeless. */
-const MAX_FAILED = 5;
-const LOCKOUT_MS = 5 * 60 * 1000;
+// Lockout limits live with the atomic verifier in server-profile-secrets.ts.
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
@@ -48,7 +45,7 @@ export async function POST(req: Request) {
     const authz = req.headers.get("authorization") || "";
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
-    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    const decoded = await getAdminAuth().verifyIdToken(m[1], true);
 
     const db = getAdminDb();
     const body = await req.json().catch(() => ({}));
@@ -65,76 +62,22 @@ export async function POST(req: Request) {
         const passcode = String(body?.passcode ?? "");
         if (!profileId) return bad("profileId is required.", 400);
 
-        const pSnap = await profileRef(db, storeId, profileId).get();
-        if (!pSnap.exists) return bad("That local user no longer exists.", 404);
-        const profile = pSnap.data() as any;
-
-        const sRef = secretRef(db, storeId, profileId);
-        const sSnap = await sRef.get();
-        const secret = sSnap.exists ? (sSnap.data() as any) : null;
-
-        const now = Date.now();
-        const lockedUntil = Number(secret?.lockedUntilMs ?? 0);
-        if (lockedUntil > now) {
-          const mins = Math.ceil((lockedUntil - now) / 60000);
-          return bad(`Too many wrong passcodes. Try again in ${mins} minute(s).`, 429);
+        // Lockout check, passcode check and attempt counting happen in one
+        // transaction so parallel guesses cannot share a stale failure count
+        // (audit B21).
+        const outcome = await verifyProfilePasscodeAtomic(db, storeId, profileId, passcode);
+        switch (outcome.kind) {
+          case "not-found":
+            return bad("That local user no longer exists.", 404);
+          case "locked":
+            return bad(`Too many wrong passcodes. Try again in ${outcome.minutes} minute(s).`, 429);
+          case "no-secret":
+            return bad("That local user has no passcode set. Ask a manager to reset it.", 409);
+          case "wrong":
+            return bad("Incorrect passcode.", 401);
+          case "ok":
+            return NextResponse.json({ ok: true, profile: { id: profileId, name: outcome.name } });
         }
-
-        // Backwards compatibility during migration: a profile whose hash has
-        // not been moved yet still carries the legacy field on its own doc.
-        const record: SecretRecord | null = secret
-          ? { algo: secret.algo, hash: secret.hash, salt: secret.salt }
-          : typeof profile?.passcodeHash === "string"
-            ? { algo: "sha256-legacy", hash: profile.passcodeHash }
-            : null;
-
-        if (!record) return bad("That local user has no passcode set. Ask a manager to reset it.", 409);
-
-        const { ok, needsUpgrade } = verifyPasscode(record, storeId, passcode);
-
-        if (!ok) {
-          const failed = Number(secret?.failedAttempts ?? 0) + 1;
-          await sRef.set(
-            {
-              profileId,
-              // Preserve whatever we verified against so a failure cannot wipe
-              // the secret for a not-yet-migrated profile.
-              ...(secret ? {} : { algo: record.algo, hash: record.hash, ...(record.salt ? { salt: record.salt } : {}) }),
-              failedAttempts: failed,
-              lockedUntilMs: failed >= MAX_FAILED ? now + LOCKOUT_MS : 0,
-              updatedAt: FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
-          return bad("Incorrect passcode.", 401);
-        }
-
-        // Correct passcode. Re-wrap a legacy hash with scrypt so the fleet
-        // upgrades itself as people sign in.
-        const upgrade = needsUpgrade ? hashPasscodeScrypt(passcode) : null;
-        await sRef.set(
-          {
-            profileId,
-            ...(upgrade ?? {}),
-            ...(secret || upgrade ? {} : { algo: record.algo, hash: record.hash }),
-            failedAttempts: 0,
-            lockedUntilMs: 0,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
-        );
-
-        const patch: Record<string, unknown> = { lastLoginAt: FieldValue.serverTimestamp() };
-        // Once the secret is safely stored elsewhere, drop the readable copy.
-        if (upgrade && typeof profile?.passcodeHash === "string") {
-          patch.passcodeHash = FieldValue.delete();
-        }
-        await profileRef(db, storeId, profileId).update(patch);
-
-        return NextResponse.json({
-          ok: true,
-          profile: { id: profileId, name: String(profile?.name ?? "") },
-        });
       }
 
       // ---------------------------------------------------------------------

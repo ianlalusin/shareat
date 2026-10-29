@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
     if (!match) return NextResponse.json({ error: "Missing bearer token." }, { status: 401 });
 
-    const decoded = await getAdminAuth().verifyIdToken(match[1]);
+    const decoded = await getAdminAuth().verifyIdToken(match[1], true);
     const body = await request.json();
     const storeId = String(body?.storeId || "");
     const sessionId = String(body?.sessionId || "");

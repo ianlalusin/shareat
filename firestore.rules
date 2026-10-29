@@ -403,6 +403,15 @@ service cloud.firestore {
         // sessions has a dedicated block above (link-field guard); see its comment.
         && coll != 'sessions'
         && coll != 'serverProfileSecrets'
+        // serverProfiles (local device profiles) is client-read-only. Every
+        // create/rename/reset/delete goes through /api/server-profiles (Admin
+        // SDK), which enforces manager-only delete/reset and name uniqueness.
+        // Left writable here, any shift role could delete or rename a
+        // colleague's profile, or plant a legacy `passcodeHash` the verifier
+        // still accepts for unmigrated profiles (audit B20, 2026-10-29). No
+        // client code writes this collection (ServerProfilesManagerCard and
+        // ServerProfileSwitcher only read it and call the API).
+        && coll != 'serverProfiles'
         // chatPresenceLog has its own block above making it append-only
         // (create yes, update/delete never). Because rules OR, leaving it in
         // here would hand back the very update/delete that block denies, and a
@@ -615,6 +624,19 @@ service cloud.firestore {
     // its own block above says `if false`, but rule evaluation is OR, so the
     // explicit deny does nothing unless this fallback also skips it. The rows
     // carry names, emails and visit history of pre-Hub customers.
+    //
+    // 'loyaltyRedemptions' and 'pinRegistry' are excluded for the same OR reason
+    // (audit B06, 2026-10-29). Without it the fallback handed every active
+    // staffer every voucher code + customer phone (loyaltyRedemptions' own
+    // block is `if false`) and every OTHER store's live table PINs (pinRegistry's
+    // own block scopes staff reads to hasStoreAccess(resource.data.storeId)).
+    // No client reads loyaltyRedemptions; pinRegistry staff/customer reads keep
+    // working through its dedicated block.
+    //
+    // Known residual: 'staff' is still readable by every active staffer through
+    // this fallback. ApprovalQueue.tsx and lib/session-timeline/actors.ts look
+    // up colleagues' staff docs by id from cashier screens, so closing it needs
+    // a server name-resolution endpoint first.
     match /{collection}/{docId} {
       allow read: if isActiveStaff()
         && collection != 'paymongoIntentIndex'
@@ -623,7 +645,9 @@ service cloud.firestore {
         && collection != 'customers'
         && collection != 'loyaltyLogs'
         && collection != 'loyaltyLogsDaily'
-        && collection != 'legacyLoyaltyCustomers';
+        && collection != 'legacyLoyaltyCustomers'
+        && collection != 'loyaltyRedemptions'
+        && collection != 'pinRegistry';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
@@ -641,7 +665,9 @@ service cloud.firestore {
         && collection != 'customers'
         && collection != 'loyaltyLogs'
         && collection != 'loyaltyLogsDaily'
-        && collection != 'legacyLoyaltyCustomers';
+        && collection != 'legacyLoyaltyCustomers'
+        && collection != 'loyaltyRedemptions'
+        && collection != 'pinRegistry';
       allow create, update, delete: if false;
     }
   }

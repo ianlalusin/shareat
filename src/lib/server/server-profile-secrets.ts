@@ -1,4 +1,5 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 
 /**
  * Passcode hashing for local (device) server profiles.
@@ -75,4 +76,117 @@ export function verifyPasscode(
 /** Passcodes are entered on a numeric keypad; keep the server in agreement. */
 export function isValidPasscode(passcode: unknown): passcode is string {
   return typeof passcode === "string" && /^\d{6}$/.test(passcode);
+}
+
+// ---------------------------------------------------------------------------
+// Atomic verify + lockout (audit B21, 2026-10-29)
+// ---------------------------------------------------------------------------
+
+/** Throttle: brute-forcing 10^6 passcodes online should be hopeless. */
+export const MAX_FAILED_ATTEMPTS = 5;
+export const LOCKOUT_MS = 5 * 60 * 1000;
+
+export type VerifyOutcome =
+  | { kind: "ok"; name: string }
+  | { kind: "wrong" }
+  | { kind: "locked"; minutes: number }
+  | { kind: "not-found" }
+  | { kind: "no-secret" };
+
+/**
+ * Checks a local profile's passcode and does the lockout bookkeeping in ONE
+ * Firestore transaction.
+ *
+ * It used to read failedAttempts outside any transaction and then write
+ * old+1, so N concurrent wrong guesses all saw the same count and recorded a
+ * single failure — the 5-try lockout could be bypassed by firing guesses in
+ * parallel. Inside a transaction the Admin SDK locks the secret doc, so
+ * concurrent attempts serialize: each sees the previous one's count, and the
+ * lockout check happens in the same step that records the attempt. The same
+ * transaction also means a successful verify cannot overwrite a manager's
+ * concurrent reset (the read secret changed → the transaction retries).
+ *
+ * A passcode that is not six digits can never be right, so it is rejected
+ * before any hashing and is not counted.
+ */
+export async function verifyProfilePasscodeAtomic(
+  db: Firestore,
+  storeId: string,
+  profileId: string,
+  passcode: string,
+  now: number = Date.now()
+): Promise<VerifyOutcome> {
+  if (!profileId || profileId.includes("/")) return { kind: "not-found" };
+  if (!isValidPasscode(passcode)) return { kind: "wrong" };
+
+  const pRef = db.doc(`stores/${storeId}/serverProfiles/${profileId}`);
+  const sRef = db.doc(`stores/${storeId}/serverProfileSecrets/${profileId}`);
+
+  return db.runTransaction(async (tx) => {
+    const pSnap = await tx.get(pRef);
+    const sSnap = await tx.get(sRef);
+    if (!pSnap.exists) return { kind: "not-found" } as const;
+    const profile = (pSnap.data() ?? {}) as Record<string, unknown>;
+    const secret = sSnap.exists ? ((sSnap.data() ?? {}) as Record<string, unknown>) : null;
+
+    const lockedUntil = Number(secret?.lockedUntilMs ?? 0);
+    if (lockedUntil > now) {
+      return { kind: "locked", minutes: Math.ceil((lockedUntil - now) / 60000) } as const;
+    }
+
+    // Backwards compatibility during migration: a profile whose hash has not
+    // been moved yet still carries the legacy field on its own doc. Clients can
+    // no longer write that field (firestore.rules, audit B20).
+    const record: SecretRecord | null = secret
+      ? { algo: secret.algo as SecretRecord["algo"], hash: secret.hash as string, salt: secret.salt as string | undefined }
+      : typeof profile.passcodeHash === "string"
+        ? { algo: "sha256-legacy", hash: profile.passcodeHash }
+        : null;
+    if (!record) return { kind: "no-secret" } as const;
+
+    const { ok, needsUpgrade } = verifyPasscode(record, storeId, passcode);
+
+    if (!ok) {
+      const failed = Number(secret?.failedAttempts ?? 0) + 1;
+      tx.set(
+        sRef,
+        {
+          profileId,
+          // Preserve whatever we verified against so a failure cannot wipe the
+          // secret for a not-yet-migrated profile.
+          ...(secret ? {} : { algo: record.algo, hash: record.hash, ...(record.salt ? { salt: record.salt } : {}) }),
+          failedAttempts: failed,
+          lockedUntilMs: failed >= MAX_FAILED_ATTEMPTS ? now + LOCKOUT_MS : 0,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      return { kind: "wrong" } as const;
+    }
+
+    // Correct passcode. Re-wrap a legacy hash with scrypt so the fleet
+    // upgrades itself as people sign in.
+    const upgrade = needsUpgrade ? hashPasscodeScrypt(passcode) : null;
+    tx.set(
+      sRef,
+      {
+        profileId,
+        ...(upgrade ?? {}),
+        ...(secret || upgrade ? {} : { algo: record.algo, hash: record.hash }),
+        failedAttempts: 0,
+        lockedUntilMs: 0,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const patch: Record<string, unknown> = { lastLoginAt: FieldValue.serverTimestamp() };
+    // Once the secret is safely stored elsewhere, drop the readable copy.
+    if (upgrade && typeof profile.passcodeHash === "string") {
+      patch.passcodeHash = FieldValue.delete();
+    }
+    tx.update(pRef, patch);
+
+    return { kind: "ok", name: String(profile.name ?? "") } as const;
+  });
 }

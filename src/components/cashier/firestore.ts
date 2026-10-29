@@ -63,6 +63,8 @@ import { bundleExtraPax } from '@/lib/billing/bundle';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 import { applyReceiptDeltaServerFirst } from '@/lib/analytics/applyReceiptDeltaServerFirst';
+import { quoteRefund } from '@/lib/analytics/refund-quote';
+import { lineItemAmounts } from '@/lib/analytics/line-amounts';
 import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
 import { applyKdsDeltaServerFirst } from '@/lib/analytics/applyKdsDeltaServerFirst';
 import { computeKdsTargets } from '@/lib/analytics/kdsTargets';
@@ -1445,68 +1447,132 @@ export async function createKitchenTickets(
 
 // ---------------------------------------------------------------------------
 // createRefundReceipt
-// Creates a refund receipt with a new UUID doc ID, referencing the original
-// via parentReceiptId. Safe to call multiple times on the same session.
+// Creates a refund receipt referencing the original via parentReceiptId.
+//
+// Runs in a transaction that re-reads the ORIGINAL receipt, so the refundable
+// quantities and amounts are checked against its live state (two terminals or
+// a double-click cannot refund the same unit twice). The money is valued by
+// quoteRefund from what was actually paid (discounts, modifiers, charges, tax
+// shared out in integer centavos) and split back to the original tenders; the
+// refund receipt carries a negative analytics.mop so drawer/method totals drop.
+//
+// `requestId` is the idempotency key: the dialog generates one per open, and a
+// retry with the same key returns the already-created refund untouched.
 // ---------------------------------------------------------------------------
 export async function createRefundReceipt(
   storeId: string,
   parentReceipt: Receipt,
-  refundLines: SessionBillLine[],
-  refundPayments: Payment[],
+  refundQtys: Record<string, number>,
   actor: AppUser,
-  reason: string
+  reason: string,
+  requestId: string = uuidv4(),
 ): Promise<string> {
-  const refundId = uuidv4();
+  const refundId = requestId;
   const refundRef = doc(db, `stores/${storeId}/receipts`, refundId);
+  const parentReceiptId = parentReceipt.receiptId ?? parentReceipt.id;
+  const parentRef = doc(db, `stores/${storeId}/receipts`, parentReceiptId);
   const serverTs = serverTimestamp();
   const now = Date.now();
 
-  const refundTotal = refundLines.reduce((sum, l) => {
-    const netQty = Math.max(0, l.qtyOrdered - (l.freeQty || 0) - (l.voidedQty || 0));
-    return sum + netQty * l.unitPrice;
-  }, 0);
+  let refundPayload: Omit<Receipt, 'createdAt'> | null = null;
 
-  const refundPayload: Omit<Receipt, 'createdAt'> = {
-    id: refundId,
-    receiptId: refundId,
-    parentReceiptId: parentReceipt.receiptId ?? parentReceipt.id,
-    isRefund: true,
-    storeId,
-    sessionId: parentReceipt.sessionId,
-    createdByUid: actor.uid,
-    createdByUsername: actor.username,
-    sessionMode: parentReceipt.sessionMode,
-    tableId: parentReceipt.tableId,
-    tableNumber: parentReceipt.tableNumber,
-    customerName: parentReceipt.customerName,
-    customerTin: parentReceipt.customerTin,
-    customerAddress: parentReceipt.customerAddress,
-    lines: refundLines,
-    total: -refundTotal,
-    totalPaid: -refundPayments.reduce((s, p) => s + p.amount, 0),
-    change: 0,
-    status: 'final',
-    receiptSeq: 0,
-    receiptNumber: `RF-${parentReceipt.receiptNumber}`,
-    receiptNoFormatUsed: parentReceipt.receiptNoFormatUsed,
-    createdAtClientMs: now,
-    editReason: reason,
-  };
+  const created = await runTransaction(db, async (tx) => {
+    const existing = await tx.get(refundRef);
+    if (existing.exists()) {
+      const ex = existing.data() as any;
+      if (ex?.isRefund === true && ex?.parentReceiptId === parentReceiptId) return false;
+      throw new Error("Refund request id collides with another receipt.");
+    }
+    const parentSnap = await tx.get(parentRef);
+    if (!parentSnap.exists()) throw new Error("Original receipt not found.");
+    const parent = { id: parentRef.id, ...(parentSnap.data() as any) } as Receipt & Record<string, any>;
 
-  // Build refundedQtys increment map for the parent receipt
-  const parentReceiptId = parentReceipt.receiptId ?? parentReceipt.id;
-  const parentRef = doc(db, `stores/${storeId}/receipts`, parentReceiptId);
-  const qtyIncrements: Record<string, any> = {};
-  refundLines.forEach(l => { qtyIncrements[`refundedQtys.${l.id}`] = increment(l.qtyOrdered); });
+    const quote = quoteRefund(parent, refundQtys);
+    const totalCents = quote.totalCents;
+    if (totalCents <= 0) throw new Error("Nothing left to refund on this receipt.");
 
-  const batch = writeBatch(db);
-  batch.set(refundRef, { ...refundPayload, createdAt: serverTs, analyticsApplied: false });
-  batch.update(parentRef, {
-    ...qtyIncrements,
-    totalRefunded: increment(refundTotal),
-    refundCount: increment(1),
+    const byId = new Map((parent.lines || []).map((l) => [l.id, l]));
+    const refundLines = quote.lines.map((q) => ({
+      ...(byId.get(q.lineId) as SessionBillLine),
+      qtyOrdered: q.qty,
+      freeQty: 0,
+      voidedQty: 0,
+      refundPaidAmount: q.paidCents / 100,
+      refundSalesAmount: q.salesCents / 100,
+    })) as SessionBillLine[];
+
+    const mop: Record<string, number> = {};
+    for (const [name, cents] of Object.entries(quote.mopCents)) mop[name] = -cents / 100;
+    const total = -totalCents / 100;
+    const refundGross = refundLines.reduce((s, l) => s + lineItemAmounts(l).gross, 0);
+
+    const parentAnalytics = (parent.analytics || {}) as ReceiptAnalyticsV2;
+    const analytics = {
+      v: 2,
+      sessionStartedAt: parentAnalytics.sessionStartedAt ?? null,
+      sessionStartedAtClientMs: parentAnalytics.sessionStartedAtClientMs ?? null,
+      subtotal: -roundMoney(refundGross),
+      discountsTotal: -quote.discountsCents / 100,
+      chargesTotal: -quote.chargesCents / 100,
+      taxAmount: -quote.taxCents / 100,
+      grandTotal: total,
+      totalPaid: total,
+      change: 0,
+      mop,
+    } as unknown as ReceiptAnalyticsV2;
+
+    refundPayload = stripUndefined({
+      id: refundId,
+      receiptId: refundId,
+      parentReceiptId,
+      isRefund: true,
+      storeId,
+      sessionId: parent.sessionId,
+      createdByUid: actor.uid,
+      createdByUsername: actor.username,
+      sessionMode: parent.sessionMode,
+      tableId: parent.tableId ?? null,
+      tableNumber: parent.tableNumber ?? null,
+      customerName: parent.customerName ?? null,
+      customerTin: parent.customerTin ?? null,
+      customerAddress: parent.customerAddress ?? null,
+      lines: refundLines,
+      total,
+      totalPaid: total,
+      change: 0,
+      status: 'final',
+      receiptSeq: 0,
+      receiptNumber: `RF-${parent.receiptNumber}`,
+      receiptNoFormatUsed: parent.receiptNoFormatUsed,
+      createdAtClientMs: now,
+      editReason: reason,
+      refundPayments: Object.entries(quote.mopCents).map(([name, cents]) => ({ methodName: name, amount: cents / 100 })),
+      analytics,
+    } as any) as Omit<Receipt, 'createdAt'>;
+
+    // Parent counters are rewritten whole (not dotted increments) from the
+    // values read in this transaction — line ids / tender names are arbitrary.
+    const refundedQtys: Record<string, number> = { ...(parent.refundedQtys || {}) };
+    for (const q of quote.lines) refundedQtys[q.lineId] = (Number(refundedQtys[q.lineId]) || 0) + q.qty;
+    const refundedMop: Record<string, number> = { ...(parent.refundedMop || {}) };
+    for (const [name, cents] of Object.entries(quote.mopCents)) {
+      refundedMop[name] = (Math.round((Number(refundedMop[name]) || 0) * 100) + cents) / 100;
+    }
+
+    tx.set(refundRef, { ...refundPayload, createdAt: serverTs, analyticsApplied: false });
+    tx.update(parentRef, {
+      refundedQtys,
+      refundedMop,
+      totalRefunded: (Math.round((Number(parent.totalRefunded) || 0) * 100) + totalCents) / 100,
+      refundCount: (Number(parent.refundCount) || 0) + 1,
+    });
+    return true;
   });
-  await batch.commit();
+
+  // Idempotent retry: refund already exists; analytics was (or will be, via the
+  // reconcile cron) applied for it on the first call.
+  if (!created || !refundPayload) return refundId;
+  const savedPayload: Omit<Receipt, 'createdAt'> = refundPayload;
 
   // Apply analytics for the refund receipt server-first (authoritative, server
   // clock, idempotent on analyticsApplied); fall back to the client delta on
@@ -1516,7 +1582,7 @@ export async function createRefundReceipt(
     const rSnap = await getDoc(rRef);
     if (rSnap.exists() && (rSnap.data() as any)?.analyticsApplied === true) return;
     const analyticsBatch = writeBatch(db);
-    const refundReceiptForAnalytics = { ...refundPayload, createdAt: new Date(), isRefund: true } as any;
+    const refundReceiptForAnalytics = { ...savedPayload, createdAt: new Date(), isRefund: true } as any;
     await applyAnalyticsDeltaV2(db, storeId, null, refundReceiptForAnalytics, { batch: analyticsBatch });
     await analyticsBatch.commit();
     await updateDoc(rRef, { analyticsApplied: true, analyticsAppliedAt: serverTimestamp() });

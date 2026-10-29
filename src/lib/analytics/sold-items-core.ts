@@ -6,9 +6,9 @@
 //   1. the day doc is keyed by display NAME (and safeKey-mangled: "."→"·",
 //      "/"→"∕"), so a rename silently breaks any downstream mapping — whereas
 //      `line.itemId` is the stable `stores/{storeId}/inventory/{id}` doc id;
-//   2. it OVER-COUNTS refunds — `getSalesContribution` (daily.ts:213) skips only
-//      `isVoidReceipt`, never `isRefund`, and a refund receipt carries
-//      positive-qty clones of the original lines (see createRefundReceipt);
+//   2. historical day docs written before refunds were signed in
+//      `getSalesContribution` over-count refunds (a refund receipt carries
+//      positive-qty clones of the original lines — see createRefundReceipt);
 //   3. it folds `freeQty` away irrecoverably, but a comped item still physically
 //      left stock, so the ERP needs that number separately.
 //
@@ -24,6 +24,7 @@ export interface ReceiptLineLite {
   category?: string | null;
   barcode?: string | null;
   unitPrice?: number | null;
+  modifiersTotal?: number | null;
   qtyOrdered?: number | null;
   freeQty?: number | null;
   voidedQty?: number | null;
@@ -51,7 +52,8 @@ export interface SoldItemAgg {
   freeQty: number;
   /** Line-voided units — never left stock. Refund-netted. */
   voidedQty: number;
-  /** billableQty × unitPrice, refund-netted. Display/sanity-check only. */
+  /** billableQty × (unitPrice + modifiersTotal), refund-netted, before
+   *  discounts. Display/sanity-check only. Same per-unit price as analytics. */
   grossAmount: number;
 }
 
@@ -62,6 +64,8 @@ export interface SoldItemsAggResult {
   voidedReceiptCount: number;
   skippedSyntheticLines: number;
 }
+
+import { lineUnitGross } from '@/lib/analytics/line-amounts';
 
 const num = (v: unknown): number => {
   const n = Number(v);
@@ -134,7 +138,7 @@ export function aggregateSoldItems(receipts: ReceiptLite[]): SoldItemsAggResult 
       agg.physicalQty += sign * physicalQty;
       agg.freeQty += sign * freeQty;
       agg.voidedQty += sign * voidedQty;
-      agg.grossAmount += sign * billableQty * num(line.unitPrice);
+      agg.grossAmount += sign * billableQty * lineUnitGross(line);
 
       // Keep the last non-empty descriptor seen — a later receipt reflects a
       // more recent rename than an earlier one.
