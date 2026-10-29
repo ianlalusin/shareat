@@ -72,7 +72,7 @@ export function ExpandedSessionPanel({
     const missing = collectActorUids(sources).filter((uid) => !localNames.has(uid));
     if (missing.length === 0) return;
     let cancelled = false;
-    resolveStaffNames(missing)
+    resolveStaffNames(storeId, missing)
       .then((resolved) => { if (!cancelled && resolved.size) setStaffNames((prev) => new Map([...prev, ...resolved])); })
       .catch(() => {/* a shortened uid is rendered instead */});
     return () => { cancelled = true; };

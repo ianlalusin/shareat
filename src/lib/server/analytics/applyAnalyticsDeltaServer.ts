@@ -61,6 +61,9 @@ export function applyAnalyticsDeltaServer(
   const oldContrib = getContributions(oldReceipt);
   const newContrib = getContributions(newReceipt);
   const dayIds = affectedDayIds(oldContrib, newContrib);
+  // Day extras belong to the PAYMENT day only. A session that crossed midnight
+  // also touches its arrival day (peak/dow), which must not get a second copy.
+  const extrasDayId = oldContrib.payment.dayId || newContrib.payment.dayId;
 
   for (const dayId of dayIds) {
     const dayOld = pickDayContribution(oldContrib, dayId);
@@ -79,8 +82,9 @@ export function applyAnalyticsDeltaServer(
     const increments = buildDeltaIncrements(dayOld, dayNew);
 
     // Day doc carries the daily-only extras (e.g. retained void cash) merged in.
-    const dayIncrements = dayExtraIncrements ? { ...increments } : increments;
-    if (dayExtraIncrements) {
+    const withExtras = !!dayExtraIncrements && dayId === extrasDayId;
+    const dayIncrements = withExtras ? { ...increments } : increments;
+    if (withExtras && dayExtraIncrements) {
       for (const [k, v] of Object.entries(dayExtraIncrements)) {
         dayIncrements[k] = (dayIncrements[k] ?? 0) + v;
       }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireActiveStaff } from "@/lib/server/active-staff-check";
-import { applyAnalyticsDeltaServer } from "@/lib/server/analytics/applyAnalyticsDeltaServer";
+import { applyReceiptEventInTx } from "@/lib/server/analytics/receiptEventApplier";
 import {
   isNotifiableStatus,
   notifyOrderStatusChange,
@@ -631,18 +631,9 @@ export async function POST(req: Request) {
     let analyticsApplied = false;
     if (didComplete) {
       try {
-        const receiptRef = db.doc(`stores/${storeId}/receipts/${orderId}`);
-        await db.runTransaction(async (tx) => {
-          const rSnap = await tx.get(receiptRef);
-          if (!rSnap.exists) return;
-          const receipt = { id: receiptRef.id, ...(rSnap.data() as any) } as Receipt;
-          if ((receipt as any).analyticsApplied === true) return;
-          applyAnalyticsDeltaServer(db, storeId, null, receipt, tx, new Date());
-          tx.update(receiptRef, {
-            analyticsApplied: true,
-            analyticsAppliedAt: FieldValue.serverTimestamp(),
-          });
-        });
+        // Same applier as apply-delta and the reconcile cron, so rollups,
+        // popularity and the daily session row land together.
+        await db.runTransaction((tx) => applyReceiptEventInTx(db, tx, storeId, orderId, "payment"));
         analyticsApplied = true;
       } catch (e) {
         console.error("[online-orders] analytics apply failed:", e);

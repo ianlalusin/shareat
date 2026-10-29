@@ -12,19 +12,100 @@ import {
   presetRanges,
 } from "@/lib/analytics/backfill-core";
 import { getActiveStores } from "@/lib/server/active-stores-cache";
+import { safeKey } from "@/lib/analytics/delta-core";
+import { asOriginalReceipt, isVoidedReceipt, retainedCashDay } from "./receiptEventApplier";
 
 // Admin-SDK backfill, the server home of the admin maintenance rebuilds. Reads
 // receipts/tickets/sessions, aggregates via the shared core, and overwrites the
 // analytics / analyticsMonths / analyticsYears / dashPresets docs server-side so
 // those collections can be locked to server writes only.
 
-/** Rebuild daily analytics docs for [startDate, endDate] from receipts/tickets/sessions. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Rescan attempts before a rebuild gives up on a store/day range that never goes quiet. */
+export const MAX_REBUILD_ATTEMPTS = 5;
+/** Day docs per commit transaction (each costs one read + one write). */
+const REBUILD_TX_CHUNK = 200;
+
+/** Every Manila day whose start falls in [startInclusiveMs, endExclusiveMs). */
+export function requestedDays(startInclusiveMs: number, endExclusiveMs: number): Array<{ dayId: string; dayStartMs: number }> {
+  const out: Array<{ dayId: string; dayStartMs: number }> = [];
+  let ms = getDayStartMs(startInclusiveMs);
+  if (ms < startInclusiveMs) ms += DAY_MS;
+  // Manila has no DST, so whole-day steps stay on day boundaries.
+  for (; ms < endExclusiveMs; ms += DAY_MS) out.push({ dayId: getDayIdFromTimestamp(ms), dayStartMs: ms });
+  return out;
+}
+
+/**
+ * Receipts as the LIVE projection currently counts them, so a rebuilt doc and
+ * the live appliers agree on who owns which receipt:
+ *  - pending apply (analyticsApplied:false, not voided) is left OUT — the
+ *    endpoint/reconcile cron will add it on top of the rebuilt doc later;
+ *  - voided with its reversal still pending (applied, analyticsReversed:false)
+ *    is counted as its ORIGINAL sale — the pending reversal will subtract it.
+ */
+function receiptsAsProjected(receipts: Receipt[]): Receipt[] {
+  const out: Receipt[] = [];
+  for (const r of receipts) {
+    const x = r as any;
+    const voided = isVoidedReceipt(x);
+    if (!voided && x.analyticsApplied === false) continue;
+    if (voided && x.analyticsApplied === true && x.analyticsReversed === false) {
+      out.push(asOriginalReceipt(r));
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+/** payments.voidCashRetainedTotal per day, as the live void/re-ring ops accrue it. */
+function retainedCashByDay(receipts: Receipt[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of receipts) {
+    const x = r as any;
+    if (!isVoidedReceipt(x)) continue;
+    const retained = Number(x.voidCashRetained || 0);
+    if (!(retained > 0)) continue;
+    const net = (x.analyticsReversed === true ? retained : 0) - (x.voidCashRetainedReversed === true ? retained : 0);
+    if (!net) continue;
+    const day = retainedCashDay(r);
+    if (day) out.set(day.dayId, (out.get(day.dayId) ?? 0) + net);
+  }
+  return out;
+}
+
+/**
+ * Rebuild daily analytics docs for [startDate, endDate] from receipts/tickets/
+ * sessions, without losing live deltas (B26).
+ *
+ * Concurrency design — optimistic, keyed on the day docs themselves:
+ *  Every live writer of a day doc (receipt applier, reconcile cron, KDS, chat,
+ *  payment conversions, online orders) writes that doc in its own transaction,
+ *  which bumps the doc's server updateTime. So:
+ *   1. Watermark: read every requested day doc and remember its updateTime.
+ *   2. Scan the source collections and aggregate in memory.
+ *   3. Commit in a transaction that re-reads the day docs and writes the
+ *      rebuilt docs ONLY if every updateTime still equals the watermark.
+ *  If any live write landed between 1 and 3, its event may be missing from (or
+ *  double-counted against) the scan, so that chunk is NOT written: the rebuild
+ *  rescans and tries again (bounded by MAX_REBUILD_ATTEMPTS). A live write
+ *  after step 3's read is serialized by Firestore behind the commit and
+ *  increments the rebuilt doc — and its receipt was excluded from the scan
+ *  because it was still pending (see receiptsAsProjected), so nothing is lost or
+ *  doubled. No lease doc and no change to any live writer is needed.
+ *
+ * Every requested day is written: a day with no source data is deleted, or
+ * reduced to the fields the rebuild does not derive (chat.*, staffNames).
+ * Active payment conversions and retained void cash are re-derived from their
+ * source docs; chat response stats are carried over from the existing doc.
+ */
 export async function rebuildDailyAnalyticsFromReceiptsServer(
   db: Firestore,
   storeId: string,
   startDate: Date,
   endDate: Date,
-): Promise<{ days: number; receipts: number; tickets: number }> {
+): Promise<{ days: number; receipts: number; tickets: number; deleted: number; attempts: number }> {
   const startInclusive = new Date(startDate);
   const endExclusive = new Date(endDate);
   endExclusive.setDate(endExclusive.getDate() + 1);
@@ -33,65 +114,153 @@ export async function rebuildDailyAnalyticsFromReceiptsServer(
   if (!storeSnap.exists) throw new Error("Store not found.");
   const store = storeSnap.data() as Store;
 
-  const ticketsStart = new Date(startInclusive.getTime() - 24 * 60 * 60 * 1000);
-  const ticketsEnd = new Date(endExclusive.getTime() + 24 * 60 * 60 * 1000);
+  const days = requestedDays(startInclusive.getTime(), endExclusive.getTime());
+  const dayStartById = new Map(days.map((d) => [d.dayId, d.dayStartMs]));
+  const remaining = new Set(days.map((d) => d.dayId));
+  const dayRef = (dayId: string) => db.doc(`stores/${storeId}/analytics/${dayId}`);
 
-  // Receipts are read a day wider than the rebuild window, like tickets: peak-hour and
-  // day-of-week bucket by ARRIVAL, so a party that arrived 11:30 PM on the last day in
-  // range pays after the window closes, and one that arrived before the window can pay
-  // inside it. aggregateDailyMetrics drops whatever falls outside the window.
-  const receiptsStart = new Date(startInclusive.getTime() - 24 * 60 * 60 * 1000);
-  const receiptsEnd = new Date(endExclusive.getTime() + 24 * 60 * 60 * 1000);
+  // Receipts and tickets are read a day wider than the window: peak-hour and
+  // day-of-week bucket by ARRIVAL, so a party can arrive on one side of the
+  // window edge and pay on the other. aggregateDailyMetrics drops what falls outside.
+  const wideStart = Timestamp.fromDate(new Date(startInclusive.getTime() - DAY_MS));
+  const wideEnd = Timestamp.fromDate(new Date(endExclusive.getTime() + DAY_MS));
+  const firstDayId = days[0]?.dayId ?? "";
+  const lastDayId = days[days.length - 1]?.dayId ?? "";
 
-  const [receiptsSnap, ticketsSnap, sessionsSnap] = await Promise.all([
-    db.collection(`stores/${storeId}/receipts`)
-      .where("createdAt", ">=", Timestamp.fromDate(receiptsStart))
-      .where("createdAt", "<", Timestamp.fromDate(receiptsEnd))
-      .orderBy("createdAt", "asc")
-      .get(),
-    db.collectionGroup("kitchentickets")
-      .where("storeId", "==", storeId)
-      .where("createdAt", ">=", Timestamp.fromDate(ticketsStart))
-      .where("createdAt", "<", Timestamp.fromDate(ticketsEnd))
-      .get(),
-    db.collection(`stores/${storeId}/sessions`)
-      .where("verifiedAt", ">=", Timestamp.fromDate(startInclusive))
-      .where("verifiedAt", "<", Timestamp.fromDate(endExclusive))
-      .get(),
-  ]);
+  let written = 0;
+  let deleted = 0;
+  let receiptCount = 0;
+  let ticketCount = 0;
 
-  const receipts = receiptsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Receipt));
-  const tickets = ticketsSnap.docs.map((d) => d.data() as KitchenTicket).filter((t) => !(t as any).onlineOrderId);
-  const verifiedSessions = sessionsSnap.docs.map((d) => d.data() as any);
+  for (let attempt = 1; attempt <= MAX_REBUILD_ATTEMPTS && remaining.size; attempt++) {
+    const ids = [...remaining];
 
-  const aggregates = aggregateDailyMetrics({
-    receipts,
-    tickets,
-    verifiedSessions,
-    store,
-    storeId,
-    startInclusiveMs: startInclusive.getTime(),
-    endExclusiveMs: endExclusive.getTime(),
-  });
+    // 1. Watermark.
+    const pre = await db.getAll(...ids.map(dayRef));
+    const watermark = new Map<string, Timestamp | null>();
+    for (const s of pre) watermark.set(s.id, s.exists ? (s.updateTime ?? null) : null);
 
-  let batch = db.batch();
-  let opCount = 0;
-  const commits: Promise<unknown>[] = [];
-  for (const [dayId, data] of aggregates.entries()) {
-    (data.meta as any).updatedAt = FieldValue.serverTimestamp();
-    (data.meta as any).backfilledAt = FieldValue.serverTimestamp();
-    (data.meta as any).source = "backfill_v5_server";
-    batch.set(db.doc(`stores/${storeId}/analytics/${dayId}`), data as any, { merge: false });
-    if (++opCount >= 450) {
-      commits.push(batch.commit());
-      batch = db.batch();
-      opCount = 0;
+    // 2. Scan + aggregate.
+    const [receiptsSnap, ticketsSnap, sessionsSnap, conversionsSnap] = await Promise.all([
+      db.collection(`stores/${storeId}/receipts`)
+        .where("createdAt", ">=", wideStart)
+        .where("createdAt", "<", wideEnd)
+        .orderBy("createdAt", "asc")
+        .get(),
+      db.collectionGroup("kitchentickets")
+        .where("storeId", "==", storeId)
+        .where("createdAt", ">=", wideStart)
+        .where("createdAt", "<", wideEnd)
+        .get(),
+      db.collection(`stores/${storeId}/sessions`)
+        .where("verifiedAt", ">=", Timestamp.fromDate(startInclusive))
+        .where("verifiedAt", "<", Timestamp.fromDate(endExclusive))
+        .get(),
+      db.collection(`stores/${storeId}/paymentConversions`)
+        .where("dayId", ">=", firstDayId)
+        .where("dayId", "<=", lastDayId)
+        .get(),
+    ]);
+
+    const receipts = receiptsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Receipt));
+    const tickets = ticketsSnap.docs.map((d) => d.data() as KitchenTicket).filter((t) => !(t as any).onlineOrderId);
+    const verifiedSessions = sessionsSnap.docs.map((d) => d.data() as any);
+    receiptCount = receipts.length;
+    ticketCount = tickets.length;
+
+    const aggregates = aggregateDailyMetrics({
+      receipts: receiptsAsProjected(receipts),
+      tickets,
+      verifiedSessions,
+      store,
+      storeId,
+      startInclusiveMs: startInclusive.getTime(),
+      endExclusiveMs: endExclusive.getTime(),
+    });
+    const retained = retainedCashByDay(receipts);
+    // Payment conversions (cash -> GCash etc.) shift byMethod on their day; the
+    // receipts alone don't know about them, so re-apply the active ones.
+    const conversions = new Map<string, Array<{ from: string; to: string; amount: number }>>();
+    for (const d of conversionsSnap.docs) {
+      const c = d.data() as any;
+      if (c?.status !== "active") continue;
+      const amount = Number(c.amount);
+      const from = safeKey(String(c.fromMethod || ""));
+      const to = safeKey(String(c.toMethod || ""));
+      if (!(amount > 0) || !from || !to || from === to) continue;
+      const list = conversions.get(String(c.dayId)) ?? [];
+      list.push({ from, to, amount });
+      conversions.set(String(c.dayId), list);
+    }
+
+    // 3. Commit chunk by chunk, each guarded by the watermark.
+    let dirty = false;
+    for (let i = 0; i < ids.length && !dirty; i += REBUILD_TX_CHUNK) {
+      const chunk = ids.slice(i, i + REBUILD_TX_CHUNK);
+      const res = await db.runTransaction(async (tx) => {
+        const snaps = await tx.getAll(...chunk.map(dayRef));
+        for (const s of snaps) {
+          const cur = s.exists ? (s.updateTime ?? null) : null;
+          const was = watermark.get(s.id) ?? null;
+          const same = cur === null || was === null ? cur === was : cur.isEqual(was);
+          if (!same) return null; // a live write landed after the watermark
+        }
+        let w = 0;
+        let del = 0;
+        for (const s of snaps) {
+          const dayId = s.id;
+          const existing = s.exists ? (s.data() as any) : null;
+          let data: any = aggregates.get(dayId) ?? null;
+          const ret = retained.get(dayId) ?? 0;
+          const conv = conversions.get(dayId) ?? [];
+          const chat = existing?.chat;
+          if (!data && !ret && !conv.length && chat === undefined) {
+            // No source data for this day: stale doc goes away entirely.
+            if (s.exists) {
+              tx.delete(s.ref);
+              del++;
+            }
+            continue;
+          }
+          data ??= { meta: { dayId, dayStartMs: dayStartById.get(dayId), storeId } };
+          if (ret || conv.length) {
+            data.payments ??= {};
+            data.payments.byMethod ??= {};
+            if (ret) data.payments.voidCashRetainedTotal = ret;
+            for (const c of conv) {
+              data.payments.byMethod[c.from] = (data.payments.byMethod[c.from] || 0) - c.amount;
+              data.payments.byMethod[c.to] = (data.payments.byMethod[c.to] || 0) + c.amount;
+            }
+          }
+          // Not derivable from source docs; keep what the live chat applier wrote.
+          if (chat !== undefined) data.chat = chat;
+          if (existing?.staffNames) data.staffNames = { ...existing.staffNames, ...(data.staffNames ?? {}) };
+          data.meta.updatedAt = FieldValue.serverTimestamp();
+          data.meta.backfilledAt = FieldValue.serverTimestamp();
+          data.meta.source = "backfill_v6_server";
+          tx.set(s.ref, data, { merge: false });
+          w++;
+        }
+        return { w, del };
+      });
+      if (!res) {
+        dirty = true;
+        break;
+      }
+      written += res.w;
+      deleted += res.del;
+      for (const id of chunk) remaining.delete(id);
+    }
+    if (!dirty) {
+      return { days: written, receipts: receiptCount, tickets: ticketCount, deleted, attempts: attempt };
     }
   }
-  if (opCount > 0) commits.push(batch.commit());
-  await Promise.all(commits);
-
-  return { days: aggregates.size, receipts: receipts.length, tickets: tickets.length };
+  if (!remaining.size) {
+    return { days: written, receipts: receiptCount, tickets: ticketCount, deleted, attempts: MAX_REBUILD_ATTEMPTS };
+  }
+  throw new Error(
+    `Analytics rebuild kept colliding with live writes for ${remaining.size} day(s); those days were not overwritten. Try again.`,
+  );
 }
 
 /**

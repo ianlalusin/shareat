@@ -31,10 +31,10 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
  * fail, the fallback is still open and the whole change is a no-op in
  * production regardless of what the dedicated match blocks say.
  *
- * Equally load-bearing in the OTHER direction: `customers/{phone}` `get`
- * (exact-phone lookup, not list) must stay open to active staff, because
- * OnlineOrdersClient.tsx looks up a customer by phone this way on every
- * online order. If that assertion fails, online order intake breaks.
+ * Since audit B05 (2026-10-29) staff cannot `get` customers/{phone} either:
+ * the doc held passwordHash. OnlineOrdersClient uses /api/loyalty/visit-count.
+ * The card holder keeps get on their own doc and ledger; the password hash
+ * moved to customers/{phone}/secrets/auth, which no client can touch.
  */
 
 const STAFF = {
@@ -91,11 +91,13 @@ beforeEach(async () => {
       name: "Pedro Reyes",
       points: 40,
     });
-    // pointsLedger subcollection stays deliberately open to staff — its own
-    // match block, not the catch-all, grants isActiveStaff() get/list.
+    // pointsLedger + secrets: card-holder (ledger) / Admin-SDK only (audit B05).
     await setDoc(doc(raw as any, "customers", "09171234567", "pointsLedger", "l1"), {
       delta: 10,
       reason: "purchase",
+    });
+    await setDoc(doc(raw as any, "customers", "09171234567", "secrets", "auth"), {
+      passwordHash: "$2a$10$fakehashfakehashfakehash",
     });
 
     // Sharelebrator audit log + daily projection (server-only writes; PII).
@@ -111,7 +113,7 @@ beforeEach(async () => {
   });
 });
 
-describe("customers: list is admin-only, get stays open to staff", () => {
+describe("customers: list and get are admin/card-holder only (B05)", () => {
   it("denies a manager listing customers", async () => {
     // If this ever passes, /api/loyalty/store-customers is no longer the only
     // way to see the cross-branch customer roster — a manager could enumerate
@@ -123,15 +125,14 @@ describe("customers: list is admin-only, get stays open to staff", () => {
     await assertFails(getDocs(collection(db("cashier"), "customers")));
   });
 
-  it("allows a manager to get a customer by exact phone (OnlineOrdersClient path)", async () => {
-    // This is the load-bearing assertion in the OTHER direction: if this
-    // starts failing, online order intake breaks for every store, because
-    // OnlineOrdersClient.tsx looks customers up by exact phone this way.
-    await assertSucceeds(getDoc(doc(db("manager"), "customers", "09171234567")));
+  it("denies a manager getting a customer by exact phone (audit B05)", async () => {
+    // OnlineOrdersClient now goes through /api/loyalty/visit-count. A direct
+    // get would hand over passwordHash + cross-branch PII by phone.
+    await assertFails(getDoc(doc(db("manager"), "customers", "09171234567")));
   });
 
-  it("allows a cashier to get a customer by exact phone (OnlineOrdersClient path)", async () => {
-    await assertSucceeds(getDoc(doc(db("cashier"), "customers", "09171234567")));
+  it("denies a cashier getting a customer by exact phone (audit B05)", async () => {
+    await assertFails(getDoc(doc(db("cashier"), "customers", "09171234567")));
   });
 
   it("allows an admin to list customers", async () => {
@@ -146,15 +147,32 @@ describe("customers: list is admin-only, get stays open to staff", () => {
     await assertFails(getDocs(collection(db("disabledAdmin"), "customers")));
   });
 
-  it("still allows a manager to list a customer's pointsLedger subcollection", async () => {
-    // Regression guard: the catch-all exclusion added for 'customers' must not
-    // have collaterally closed the pointsLedger subcollection, which has its
-    // own dedicated match block granting isActiveStaff() get/list and is
-    // deliberately still open — the cashier UI reads a customer's point
-    // history on this path.
-    await assertSucceeds(
+  it("denies staff reading a customer's pointsLedger (audit B05)", async () => {
+    await assertFails(
       getDocs(collection(db("manager"), "customers", "09171234567", "pointsLedger"))
     );
+    await assertFails(getDoc(doc(db("cashier"), "customers", "09171234567", "pointsLedger", "l1")));
+  });
+
+  it("still lets the card holder read their own doc and ledger, not someone else's", async () => {
+    const own = testEnv
+      .authenticatedContext("09171234567", { loyaltyCustomer: true, phone: "09171234567" })
+      .firestore() as unknown as Firestore;
+    await assertSucceeds(getDoc(doc(own, "customers", "09171234567")));
+    await assertSucceeds(getDocs(collection(own, "customers", "09171234567", "pointsLedger")));
+    await assertFails(getDoc(doc(own, "customers", "09179876543")));
+    await assertFails(getDocs(collection(own, "customers", "09179876543", "pointsLedger")));
+  });
+
+  it("nobody reads or writes customers/{phone}/secrets — not staff, admin, or the card holder", async () => {
+    const own = testEnv
+      .authenticatedContext("09171234567", { loyaltyCustomer: true, phone: "09171234567" })
+      .firestore() as unknown as Firestore;
+    for (const f of [db("cashier"), db("manager"), db("admin"), own]) {
+      await assertFails(getDoc(doc(f, "customers", "09171234567", "secrets", "auth")));
+      await assertFails(getDocs(collection(f, "customers", "09171234567", "secrets")));
+      await assertFails(setDoc(doc(f, "customers", "09171234567", "secrets", "auth"), { passwordHash: "x" }));
+    }
   });
 });
 
@@ -230,8 +248,8 @@ describe("catch-all fallback no longer leaks these collections to active staff",
   });
 
   it("denies a cashier reading a customers doc that has no dedicated get-by-phone match (regression guard)", async () => {
-    // customers/{phone} DOES have a dedicated get rule (isActiveStaff() passes
-    // here deliberately, see the suite above) — this checks the deep catch-all
+    // customers/{phone} has a dedicated get rule (card holder / admin, see
+    // the suite above) — this checks the deep catch-all
     // (`/{collection}/{docId}/{docPath=**}`) doesn't ALSO grant list-shaped
     // access through a nested read some other way. Listing the top-level
     // collection is the actual enumeration risk and is covered above; this

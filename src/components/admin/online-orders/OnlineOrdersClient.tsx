@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -297,15 +297,29 @@ export default function OnlineOrdersClient() {
   // count. The initial/loading state is undefined, never null, so a card
   // that hasn't finished reading never renders "not a known customer" as if
   // it were a confirmed fact.
+  //
+  // Read through /api/loyalty/visit-count (store-scoped, returns only the
+  // count), not a direct customers/{phone} getDoc: firestore.rules no longer
+  // lets staff read customer docs directly (audit B05, 2026-10-29). Keyed by
+  // order id because the server takes the phone from the order itself.
   const [visitCount, setVisitCount] = useState<number | null | undefined>(undefined);
+  const selectedOrderId = selected?.id ?? null;
   useEffect(() => {
-    if (!normalizedPhone) { setVisitCount(undefined); return; }
+    if (!normalizedPhone || !selectedOrderId || !storeId) { setVisitCount(undefined); return; }
     let cancelled = false;
     setVisitCount(undefined);
     (async () => {
       try {
-        const snap = await getDoc(doc(db, "customers", normalizedPhone));
-        const vc = snap.exists() ? Number((snap.data() as any)?.visitCount ?? 0) : null;
+        const u = user || getAuth().currentUser;
+        if (!u) throw new Error("Not signed in.");
+        const idToken = await u.getIdToken();
+        const qs = new URLSearchParams({ storeId, orderId: selectedOrderId });
+        const res = await fetch(`/api/loyalty/visit-count?${qs.toString()}`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+        const vc = json.visitCount === null ? null : Number(json.visitCount);
         if (!cancelled) setVisitCount(vc);
       } catch (e) {
         console.error("[OnlineOrdersClient] customer lookup failed:", e);
@@ -316,7 +330,8 @@ export default function OnlineOrdersClient() {
       }
     })();
     return () => { cancelled = true; };
-  }, [normalizedPhone]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `user` identity churn must not refetch
+  }, [normalizedPhone, selectedOrderId, storeId]);
 
   const trustSignal = selected ? buildTrustSignal({ normalizedPhone, priorOrders, visitCount }) : null;
 

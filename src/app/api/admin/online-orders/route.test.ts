@@ -28,6 +28,7 @@ vi.mock("firebase-admin/firestore", () => ({
     arrayUnion: (...values: any[]) => ({ __sentinel: "arrayUnion", values }),
     arrayRemove: (...values: any[]) => ({ __sentinel: "arrayRemove", values }),
     delete: () => ({ __sentinel: "delete" }),
+    increment: (n: number) => ({ __sentinel: "increment", n }),
   },
   Timestamp: {
     now: () => ({ __sentinel: "timestamp" }),

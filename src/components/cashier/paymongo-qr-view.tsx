@@ -17,7 +17,7 @@ interface PaymongoQrViewProps {
   amount: number; // pesos — the QR portion of the bill
   localUserId: string | null;
   /** Fired exactly once, only after the bridge doc confirms `status === "paid"`. */
-  onPaid: (info: { amount: number; reference: string }) => void;
+  onPaid: (info: { amount: number; reference: string; intentDocId: string }) => void;
   /** Fired on cancel, expiry, or a create/poll error. Caller must add NOTHING to the tender set. */
   onCancel: () => void;
 }
@@ -115,7 +115,8 @@ export function PaymongoQrView({
         // Hold on the "Payment received" state briefly so the cashier sees the
         // confirmation, THEN hand the tender back (onPaid unmounts this overlay).
         // handleQrPaid is guarded on qrTender, so a late fire is safe.
-        const info = { amount, reference: d.paymongoPaymentId ?? d.paymongoIntentId };
+        // intentDocId lets checkout re-read this bridge doc in its transaction (audit B03).
+        const info = { amount, reference: d.paymongoPaymentId ?? d.paymongoIntentId, intentDocId: snap.id };
         paidTimerRef.current = setTimeout(() => onPaidRef.current(info), 1800);
       } else if (d.status === "failed" || d.status === "canceled") {
         setPhase("failed");

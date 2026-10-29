@@ -109,12 +109,27 @@ export type VerifyOutcome =
  * A passcode that is not six digits can never be right, so it is rejected
  * before any hashing and is not counted.
  */
+/**
+ * Fail-closed switch for the legacy fallback (audit B20, 2026-10-29).
+ *
+ * While OFF (the default), a profile with no serverProfileSecrets doc may still
+ * sign in with the legacy `passcodeHash` on its own (client-readable) profile
+ * doc. Turn it ON — SERVER_PROFILE_REQUIRE_SECRET_DOC=true — only AFTER
+ * scripts/migrate-server-profile-secrets.ts --commit has moved every legacy
+ * hash; from then on a profile without a secret doc can never authenticate,
+ * whatever its profile doc says.
+ */
+export function secretDocRequired(env: Record<string, string | undefined> = process.env): boolean {
+  return String(env.SERVER_PROFILE_REQUIRE_SECRET_DOC ?? "").trim().toLowerCase() === "true";
+}
+
 export async function verifyProfilePasscodeAtomic(
   db: Firestore,
   storeId: string,
   profileId: string,
   passcode: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  requireSecretDoc: boolean = secretDocRequired()
 ): Promise<VerifyOutcome> {
   if (!profileId || profileId.includes("/")) return { kind: "not-found" };
   if (!isValidPasscode(passcode)) return { kind: "wrong" };
@@ -136,10 +151,11 @@ export async function verifyProfilePasscodeAtomic(
 
     // Backwards compatibility during migration: a profile whose hash has not
     // been moved yet still carries the legacy field on its own doc. Clients can
-    // no longer write that field (firestore.rules, audit B20).
+    // no longer write that field (firestore.rules, audit B20). Once the
+    // migration has run, requireSecretDoc disables this path entirely.
     const record: SecretRecord | null = secret
       ? { algo: secret.algo as SecretRecord["algo"], hash: secret.hash as string, salt: secret.salt as string | undefined }
-      : typeof profile.passcodeHash === "string"
+      : !requireSecretDoc && typeof profile.passcodeHash === "string"
         ? { algo: "sha256-legacy", hash: profile.passcodeHash }
         : null;
     if (!record) return { kind: "no-secret" } as const;

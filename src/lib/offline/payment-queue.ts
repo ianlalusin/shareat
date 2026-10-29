@@ -10,6 +10,8 @@ export interface QueuedReceiptContext {
   phone?: string | null;
   amount: number;
   redemptionIds?: string[];
+  /** Tenders as taken offline — kept so a rejected sale can be reconciled by hand. */
+  tenders?: { methodId: string; amount: number; reference?: string | null }[];
 }
 
 export interface QueuedPayment {
@@ -20,6 +22,10 @@ export interface QueuedPayment {
   queuedAtMs: number;
   status: "pending" | "syncing" | "failed";
   kind?: "payment" | "void";
+  /** The OL receipt number this device minted; the sync gate compares it to the server receipt. */
+  receiptNumber?: string;
+  /** Matches the session's offlineWriteId stamped by the offline batch (audit B16). */
+  offlineWriteId?: string;
   ctx: QueuedReceiptContext;
   effects: Record<DeferredEffect, EffectState>;
   errorMessage?: string;

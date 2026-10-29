@@ -112,6 +112,53 @@ service cloud.firestore {
     function customerParticipantId() { return request.auth.token.participantId; }
 
     function msNow() { return request.time.toMillis(); }
+
+    // -----------------------------
+    // OFFLINE SALE / VOID COMPARE-AND-SWAP (audit B16, 2026-10-29)
+    // -----------------------------
+    // completePaymentOffline / voidSessionOffline build their batch from the
+    // device's (possibly stale) cache and stamp a fresh `offlineWriteId` plus
+    // `revision = cached + 1` on the session, `releasedByWriteId` +
+    // `closedSessionId` on the table docs, and `offlineOrigin` on the receipt.
+    // The batch is atomic, so if the session check below fails on reconnect the
+    // receipt and table writes are rejected with it. Online paths never write
+    // these fields, so they are unaffected. This is a stale-cache guard, not a
+    // defence against a hostile client (that needs the server-checkout
+    // migration in B01/B16).
+    function setsNewValue(field) {
+      return (field in request.resource.data)
+        && request.resource.data[field] != resource.data.get(field, null);
+    }
+    // Session doc update: a write that bumps `revision` or carries a new
+    // offlineWriteId must start from a still-open session and be exactly one
+    // revision ahead of the server copy.
+    function offlineSessionWriteOk() {
+      return !(setsNewValue('offlineWriteId') || setsNewValue('revision'))
+        || (
+          !(resource.data.get('status', '') in ['closed', 'voided'])
+          && resource.data.get('isPaid', false) != true
+          && request.resource.data.get('revision', 0) == resource.data.get('revision', 1) + 1
+        );
+    }
+    // Table doc / live-table projection: an offline release may only clear the
+    // table if it still points at the session being closed (another device may
+    // have re-seated it during the outage). Never call on delete.
+    function tableReleaseOk() {
+      return resource == null
+        || !setsNewValue('releasedByWriteId')
+        || resource.data.get('currentSessionId', null) == request.resource.data.get('closedSessionId', '');
+    }
+    // Receipt doc: an offline-origin write may create the receipt, or rewrite
+    // the same offline receipt (same number), but never replace an online
+    // receipt or another terminal's offline receipt. Never call on delete.
+    function offlineReceiptWriteOk() {
+      return request.resource.data.get('offlineOrigin', false) != true
+        || resource == null
+        || (
+          resource.data.get('offlineOrigin', false) == true
+          && resource.data.get('receiptNumber', null) == request.resource.data.get('receiptNumber', null)
+        );
+    }
     // Uses .get(field, null) rather than direct field access so the guard is safe
     // on documents that have no PIN fields at all — this is applied to the
     // activeSessions wildcard block below, which also matches subcollection docs
@@ -271,9 +318,23 @@ service cloud.firestore {
     // separate for the same reason as above (request.resource is null on delete).
     // closedSessions is deliberately NOT guarded: the cashier client copies
     // projections there at billout.
-    match /stores/{storeId}/sessions/{docPath=**} {
-      allow create, update: if hasStoreAccess(storeId) && linkFieldsUnchanged();
+    //
+    // Audit B16 (2026-10-29): the session doc and its subcollections are split
+    // so the session doc can carry an offline compare-and-swap, and the
+    // session's activityLogs subcollection can be append-only (B01 slice).
+    match /stores/{storeId}/sessions/{sessionId} {
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk();
       allow delete: if hasStoreAccess(storeId);
+    }
+    // Every doc under a session (billLines, payments, kitchentickets, ...).
+    // activityLogs is append-only: the timeline and loss-prevention review read
+    // it, so a past entry must never be edited or erased. No client updates or
+    // deletes it (writeActivityLog only creates).
+    match /stores/{storeId}/sessions/{sessionId}/{subcoll}/{subPath=**} {
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'activityLogs';
+      allow delete: if hasStoreAccess(storeId) && subcoll != 'activityLogs';
     }
 
     match /stores/{storeId}/closedSessions/{docPath=**} {
@@ -325,7 +386,57 @@ service cloud.firestore {
     // itself (the pricing/discount/charge cache) stays manager/admin-only via the
     // catch-all below.
     match /stores/{storeId}/storeConfig/current/tables/{tableId} {
-      allow read, write: if hasStoreAccess(storeId);
+      allow read: if hasStoreAccess(storeId);
+      // tableReleaseOk(): offline release must still match the seated session
+      // (audit B16). Residual: managers/admins also pass the storeConfig
+      // catch-all, which ORs past this guard for them.
+      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk();
+      allow delete: if hasStoreAccess(storeId);
+    }
+
+    // -----------------------------
+    // CHECKOUT RECORDS (audit B01 first slice + B16, 2026-10-29)
+    // -----------------------------
+    // These collections are excluded from the catch-all's write grant below
+    // (rules OR across blocks, so they must be) and written only through these
+    // blocks. Reads still come from the catch-all.
+    //
+    // receipts: no client ever deletes one — voids and refunds append status /
+    // a refund receipt instead. Deleting a paid receipt erased the sale from
+    // every report, so delete is denied. create/update stay open (online and
+    // offline checkout, print counter, edits, voids, refunds, analytics flags)
+    // with the offline overwrite guard.
+    match /stores/{storeId}/receipts/{receiptId} {
+      allow create, update: if hasStoreAccess(storeId) && offlineReceiptWriteOk();
+    }
+    // receipts/{id}/revisions/{v} — edit history snapshots: append/update only.
+    match /stores/{storeId}/receipts/{receiptId}/{subcoll}/{subPath=**} {
+      allow create, update: if hasStoreAccess(storeId);
+    }
+
+    // tables: the offline release guard; everything else as before.
+    match /stores/{storeId}/tables/{docPath=**} {
+      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk();
+      allow delete: if hasStoreAccess(storeId);
+    }
+
+    // counters/receipts is the receipt-number sequence. The only client writer
+    // (completePaymentFromUnits) bumps it by exactly one inside a transaction,
+    // so a client may not rewind it (duplicate receipt numbers) or delete it.
+    match /stores/{storeId}/counters/{counterId} {
+      allow create: if hasStoreAccess(storeId);
+      allow update: if hasStoreAccess(storeId)
+        && (!('seq' in resource.data) || request.resource.data.get('seq', null) == resource.data.seq + 1);
+    }
+
+    // Activity / audit logs are append-only: the only client writers
+    // (writeActivityLog, lib/firebase/activity-log.ts) only create. Without
+    // this any shift role could rewrite or erase the record of a void.
+    match /stores/{storeId}/activityLogs/{docPath=**} {
+      allow create: if hasStoreAccess(storeId);
+    }
+    match /stores/{storeId}/activityLogsByDay/{docPath=**} {
+      allow create: if hasStoreAccess(storeId);
     }
 
     // -----------------------------
@@ -419,6 +530,10 @@ service cloud.firestore {
         // customer message went unanswered — i.e. edit a colleague's (or their
         // own) performance score. create is still granted by that block.
         && coll != 'chatPresenceLog'
+        // Checkout records with dedicated blocks above (audit B01/B16): receipts
+        // (no delete, offline overwrite guard), tables (offline release guard),
+        // counters (monotonic), activity logs (append-only).
+        && !(coll in ['receipts', 'tables', 'counters', 'activityLogs', 'activityLogsByDay'])
         // catalogCache (CUSTOMER app menu/price cache, written by
         // rebuildCustomerCatalog) and inventoryCache (the internal shared
         // inventory-scan cache both rebuildCustomerCatalog and
@@ -486,17 +601,30 @@ service cloud.firestore {
     // Top-level (cross-branch). Server-only writes via Admin SDK.
     // -----------------------------
     match /customers/{phone} {
-      // get stays open to staff: it needs an exact phone, so it cannot
-      // enumerate, and OnlineOrdersClient.tsx looks customers up this way.
-      allow get: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
+      // Staff no longer read customer docs directly (audit B05, 2026-10-29):
+      // the doc carried passwordHash and cross-branch PII, and an exact-phone
+      // get is still targeted lookup/enumeration. Staff reach customers only
+      // through scoped Admin-SDK routes (/api/loyalty/visit-count, lookup,
+      // find-customer, store-customers). The card holder may read their own
+      // doc; admins keep get to match their list access.
+      allow get: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isAdmin();
       // list IS enumeration of the whole cross-branch customer base. Store-scoped
       // staff go through /api/loyalty/store-customers instead.
       allow list: if isAdmin();
       allow create, update, delete: if false;
 
+      // No POS/ERP/website client reads the ledger; CUSTOMER reads it server-side.
       match /pointsLedger/{ledgerId} {
-        allow get, list: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isActiveStaff();
+        allow get, list: if (isLoyaltyCustomer() && loyaltyPhone() == phone) || isAdmin();
         allow create, update, delete: if false;
+      }
+
+      // Password hash + auth secrets (customers/{phone}/secrets/auth). Admin
+      // SDK only — not even the card holder or an admin client. The root read
+      // fallbacks already skip the whole `customers` tree, so this deny is not
+      // undone by OR. See src/lib/server/customer-secrets.ts.
+      match /secrets/{secretId} {
+        allow read, write: if false;
       }
     }
 
@@ -633,10 +761,8 @@ service cloud.firestore {
     // No client reads loyaltyRedemptions; pinRegistry staff/customer reads keep
     // working through its dedicated block.
     //
-    // Known residual: 'staff' is still readable by every active staffer through
-    // this fallback. ApprovalQueue.tsx and lib/session-timeline/actors.ts look
-    // up colleagues' staff docs by id from cashier screens, so closing it needs
-    // a server name-resolution endpoint first.
+    // 'staff' is excluded too: colleagues' names now come from /api/staff/names,
+    // so /staff/{uid}'s own block (admin, or get-own-doc) is the only reader.
     match /{collection}/{docId} {
       allow read: if isActiveStaff()
         && collection != 'paymongoIntentIndex'
@@ -647,7 +773,8 @@ service cloud.firestore {
         && collection != 'loyaltyLogsDaily'
         && collection != 'legacyLoyaltyCustomers'
         && collection != 'loyaltyRedemptions'
-        && collection != 'pinRegistry';
+        && collection != 'pinRegistry'
+        && collection != 'staff';
       allow create, update, delete: if false;
     }
     match /{collection}/{docId}/{docPath=**} {
@@ -667,7 +794,8 @@ service cloud.firestore {
         && collection != 'loyaltyLogsDaily'
         && collection != 'legacyLoyaltyCustomers'
         && collection != 'loyaltyRedemptions'
-        && collection != 'pinRegistry';
+        && collection != 'pinRegistry'
+        && collection != 'staff';
       allow create, update, delete: if false;
     }
   }

@@ -28,7 +28,14 @@ import {
 } from "@/lib/offline/offlineReceiptNumber";
 import { deviceReceiptTag, getBrowserDeviceId } from "@/lib/offline/browserDevice";
 import { buildOfflinePaymentSummary } from "@/lib/offline/offlinePaymentSummary";
-import { addToQueue } from "@/lib/offline/payment-queue";
+import { addToQueue, updateQueueItem } from "@/lib/offline/payment-queue";
+import { toast } from "@/hooks/use-toast";
+import {
+  planGatewayChecks,
+  verifyBridgeTender,
+  verifyReservationTender,
+  type CheckoutPayment,
+} from "@/components/cashier/gatewayTenders";
 
 /**
  * Records a completed sale entirely from the local Firestore cache — no
@@ -43,7 +50,7 @@ export async function completePaymentOffline(
   storeId: string,
   sessionId: string,
   user: AppUser,
-  payments: Payment[],
+  payments: CheckoutPayment[],
   store: Store,
   paymentMethods: ModeOfPayment[],
   expectedTotal?: number,
@@ -84,6 +91,26 @@ export async function completePaymentOffline(
     throw new Error("Bill changed during payment. Review the bill and try again.");
   }
 
+  // 1b. Gateway (PayMongo QR) tenders must match a paid bridge doc for this
+  // session (audit B03). Offline we can only read the cached copy the QR
+  // overlay / recovery query already loaded; if it isn't cached, refuse.
+  for (const check of planGatewayChecks(payments, paymentMethods)) {
+    let problem: string | null;
+    try {
+      if (check.kind === "bridge") {
+        const bSnap = await getDoc(doc(db, `stores/${storeId}/paymentIntents`, check.intentDocId));
+        problem = verifyBridgeTender(check, bSnap.exists() ? bSnap.data() : null, { storeId, sessionId });
+      } else {
+        const reservationId = sessionData.reservationId;
+        const rSnap = reservationId ? await getDoc(doc(db, `stores/${storeId}/reservations`, String(reservationId))) : null;
+        problem = verifyReservationTender(check, rSnap?.exists() ? rSnap.data() : null, { sessionId });
+      }
+    } catch {
+      problem = "A scan-to-pay tender can't be verified offline. Reconnect to finish this payment.";
+    }
+    if (problem) throw new Error(problem);
+  }
+
   // 2. Tender/change validation + MOP (pure, shared with tests).
   const amountDueCents = Math.round(Number(amountDue || 0) * 100);
   const summary = buildOfflinePaymentSummary({ payments, paymentMethods, amountDueCents });
@@ -102,6 +129,12 @@ export async function completePaymentOffline(
   const actor = getActorStamp(user);
   const serverTs = serverTimestamp();
   const batch = writeBatch(db);
+  // Audit B16: a fresh id per offline write. firestore.rules treats a session
+  // update carrying a NEW offlineWriteId as a compare-and-swap (session must
+  // still be open on the server, revision exactly +1) and a table update
+  // carrying a new releasedByWriteId as "only if still seated by this session".
+  // The batch is atomic, so a stale write is rejected whole on reconnect.
+  const offlineWriteId = uuidv4();
 
   // payments subcollection
   const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
@@ -137,6 +170,7 @@ export async function completePaymentOffline(
     closedAt: serverTs,
     closedAtClientMs: now,
     revision: Number(sessionData.revision ?? 1) + 1,
+    offlineWriteId,
     updatedAt: serverTs,
   });
 
@@ -207,7 +241,13 @@ export async function completePaymentOffline(
     const tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
     const tableSnap = await getDoc(tableRef);
     if (tableSnap.exists() && (tableSnap.data() as any).currentSessionId === sessionId) {
-      batch.update(tableRef, { status: "available", currentSessionId: null, updatedAt: serverTs });
+      batch.update(tableRef, {
+        status: "available",
+        currentSessionId: null,
+        closedSessionId: sessionId,
+        releasedByWriteId: offlineWriteId,
+        updatedAt: serverTs,
+      });
       const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
       batch.update(tableProjectionRef, {
         status: "available",
@@ -218,30 +258,60 @@ export async function completePaymentOffline(
         guestCount: null,
         itemCount: null,
         startedAtMs: null,
+        closedSessionId: sessionId,
+        releasedByWriteId: offlineWriteId,
         updatedAt: serverTs,
       });
     }
   }
 
-  // 5. Commit local-first (does not await the server ack that never comes offline).
-  commitLocalFirst(batch, (err) => console.error("[completePaymentOffline] batch sync failed", err));
-
-  // 6. Record a deferred-finalization marker (Plan 4's outbox drains loyalty/PINs/analytics).
+  // 5. Record the deferred-finalization marker BEFORE committing (audit B17).
+  // If it can't be saved (localStorage full / blocked) the sale is NOT taken:
+  // a closed sale with no marker would never get its loyalty / PIN / analytics
+  // effects. The marker also keeps the receipt number + tenders so a sale the
+  // server later rejects can be reconciled by hand.
   const projData: any = activeProjectionSnap.exists() ? activeProjectionSnap.data() : {};
   const pin = projData.customerPin ? String(projData.customerPin) : null;
   const phone = projData.linkedCustomerPhone ? String(projData.linkedCustomerPhone) : null;
-  addToQueue({
-    storeId,
-    sessionId,
-    receiptId: sessionId,
-    ctx: { pin, phone, amount: amountDue },
-    effects: {
-      analytics: "pending",
-      loyaltyFinalize: "pending",
-      loyaltyEarn: phone ? "pending" : "skip",
-      pinFinalize: pin ? "pending" : "skip",
-      loyaltyReverse: "skip", // payment sales never reverse loyalty (void-only effect)
-    },
+  let queued: { id: string };
+  try {
+    queued = addToQueue({
+      storeId,
+      sessionId,
+      receiptId: sessionId,
+      receiptNumber,
+      offlineWriteId,
+      ctx: {
+        pin,
+        phone,
+        amount: amountDue,
+        tenders: payments.map((p) => ({ methodId: p.methodId, amount: p.amount, reference: p.reference ?? null })),
+      },
+      effects: {
+        analytics: "pending",
+        loyaltyFinalize: "pending",
+        loyaltyEarn: phone ? "pending" : "skip",
+        pinFinalize: pin ? "pending" : "skip",
+        loyaltyReverse: "skip", // payment sales never reverse loyalty (void-only effect)
+      },
+    });
+  } catch {
+    throw new Error("This device couldn't save the offline sale record, so the payment was not taken. Free up browser storage or reconnect, then try again.");
+  }
+
+  // 6. Commit local-first (does not await the server ack that never comes offline).
+  // A server rejection (e.g. the session was settled on another terminal, or the
+  // table was re-seated) marks the queued sale failed so it is never replayed
+  // as if accepted, and tells the cashier.
+  commitLocalFirst(batch, (err) => {
+    console.error("[completePaymentOffline] batch sync failed", err);
+    const message = (err as any)?.message ?? String(err);
+    updateQueueItem(queued.id, { status: "failed", errorMessage: `Server rejected offline sale: ${message}` });
+    toast({
+      variant: "destructive",
+      title: "Offline sale was not accepted",
+      description: `Receipt ${receiptNumber} (session ${sessionId.slice(0, 6)}…) was rejected by the server. Check this bill with a manager.`,
+    });
   });
 
   return { receiptId: sessionId, receiptNumber };

@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDocs, getDoc, documentId, increment } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { writeActivityLog } from "@/components/cashier/activity-log";
 import { recomputeSessionAdjustmentFlags, approveGuestCountChange, type GuestCountApprovalResult } from "@/components/cashier/firestore";
 import { bundleExtraPax } from "@/lib/billing/bundle";
+import { fetchStaffNames } from "@/lib/session-timeline/actors";
 
 type ChangeRequest = {
   sessionId: string;
@@ -55,19 +56,14 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
         if (data.packageChange?.requestedByUid) userIds.add(data.packageChange.requestedByUid);
       });
 
+      // Names come from the server (names only, this store's staff) — the
+      // client no longer reads whole staff docs (audit B06).
       let userProfiles: Record<string, string> = {};
       if (userIds.size > 0) {
-        const idChunks: string[][] = [];
-        const userIdsArray = Array.from(userIds);
-        for (let i = 0; i < userIdsArray.length; i += 10) {
-          idChunks.push(userIdsArray.slice(i, i + 10));
-        }
-
-        for (const chunk of idChunks) {
-          if (chunk.length === 0) continue;
-          const staffQuery = query(collection(db, "staff"), where(documentId(), "in", chunk));
-          const userSnap = await getDocs(staffQuery);
-          userSnap.forEach(doc => userProfiles[doc.id] = doc.data().name || "Unknown");
+        try {
+          userProfiles = await fetchStaffNames(storeId, Array.from(userIds));
+        } catch (err) {
+          console.warn("[ApprovalQueue] staff name lookup failed:", err);
         }
       }
 

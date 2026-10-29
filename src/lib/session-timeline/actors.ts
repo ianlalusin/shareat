@@ -1,7 +1,6 @@
 "use client";
 
-import { collection, documentId, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { auth } from "@/lib/firebase/client";
 import type { ActivityLog, KitchenTicket, Receipt, SessionDoc } from "@/lib/types";
 
 /**
@@ -16,8 +15,8 @@ import type { ActivityLog, KitchenTicket, Receipt, SessionDoc } from "@/lib/type
  *      `serverProfileName` for its own actor, and the session/receipt/ticket docs
  *      carry names for verify, close, payment and serve. Cross-referencing by UID
  *      resolves most events at zero read cost.
- *   2. A `staff` lookup for whatever tier 1 missed, chunked ten at a time and
- *      memoised for the page's lifetime.
+ *   2. A server name lookup (/api/staff/names — names only, this store's staff)
+ *      for whatever tier 1 missed, memoised for the page's lifetime.
  *   3. A shortened UID with the full value on hover — never a bare UID.
  */
 
@@ -79,47 +78,73 @@ export function collectLocalActorNames(sources: {
 }
 
 // Tier 2. Module-level so every expanded row and every drawer on the page share
-// one cache; `inflight` keeps concurrent callers from firing duplicate queries
-// for the same UID.
+// one cache; `inflight` keeps concurrent callers from firing duplicate requests
+// for the same UID. Keys are `${storeId}:${uid}` (names are store-scoped).
 const staffNameCache: ActorNameMap = new Map();
 const inflight = new Map<string, Promise<void>>();
 
-async function fetchStaffChunk(uids: string[]): Promise<void> {
-  const snap = await getDocs(query(collection(db, "staff"), where(documentId(), "in", uids)));
-  snap.forEach((d) => {
-    const data = d.data() as any;
-    const name = data?.name ?? data?.displayName ?? data?.username;
-    if (typeof name === "string" && name.trim()) staffNameCache.set(d.id, name.trim());
-  });
-  // Remember the misses too, as an empty string, so a deleted or unreadable
-  // staff doc is not re-queried on every expansion.
-  for (const uid of uids) if (!staffNameCache.has(uid)) staffNameCache.set(uid, "");
+const NAMES_CHUNK = 100; // server max per request
+
+/**
+ * uid -> display name for staff of `storeId`, via the server (audit B06: the
+ * client no longer reads whole `staff` docs). Uids the caller may not see, or
+ * that do not exist, are absent. Throws on network/auth failure.
+ */
+export async function fetchStaffNames(storeId: string, uids: string[]): Promise<Record<string, string>> {
+  const wanted = Array.from(new Set(uids.filter((u): u is string => !!u)));
+  if (!storeId || wanted.length === 0) return {};
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in");
+  const token = await user.getIdToken();
+  const out: Record<string, string> = {};
+  for (let i = 0; i < wanted.length; i += NAMES_CHUNK) {
+    const res = await fetch("/api/staff/names", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ storeId, uids: wanted.slice(i, i + NAMES_CHUNK) }),
+    });
+    if (!res.ok) throw new Error(`Staff name lookup failed (${res.status})`);
+    const data = await res.json();
+    Object.assign(out, data?.names ?? {});
+  }
+  return out;
+}
+
+async function fetchStaffChunk(storeId: string, uids: string[]): Promise<void> {
+  const names = await fetchStaffNames(storeId, uids);
+  for (const uid of uids) {
+    // Misses are remembered as "" so an unknown/other-store uid is not
+    // re-requested on every expansion.
+    const name = names[uid];
+    staffNameCache.set(`${storeId}:${uid}`, typeof name === "string" ? name.trim() : "");
+  }
 }
 
 /**
  * Tier 2 — look up whatever tier 1 could not resolve. Safe to call with UIDs
  * already cached or already in flight; those are skipped.
  */
-export async function resolveStaffNames(uids: string[]): Promise<ActorNameMap> {
+export async function resolveStaffNames(storeId: string, uids: string[]): Promise<ActorNameMap> {
   const wanted = Array.from(new Set(uids.filter((u): u is string => !!u)));
-  const missing = wanted.filter((u) => !staffNameCache.has(u) && !inflight.has(u));
+  const key = (uid: string) => `${storeId}:${uid}`;
+  const missing = wanted.filter((u) => !staffNameCache.has(key(u)) && !inflight.has(key(u)));
 
-  for (let i = 0; i < missing.length; i += 10) {
-    const chunk = missing.slice(i, i + 10);
-    const p = fetchStaffChunk(chunk).catch(() => {
+  for (let i = 0; i < missing.length; i += NAMES_CHUNK) {
+    const chunk = missing.slice(i, i + NAMES_CHUNK);
+    const p = fetchStaffChunk(storeId, chunk).catch(() => {
       // A failed lookup must not break the timeline — tier 3 covers it. Clear
       // the markers so a later expansion can retry.
-      for (const uid of chunk) inflight.delete(uid);
+      for (const uid of chunk) inflight.delete(key(uid));
     });
-    for (const uid of chunk) inflight.set(uid, p);
+    for (const uid of chunk) inflight.set(key(uid), p);
   }
 
-  await Promise.all(wanted.map((u) => inflight.get(u)).filter(Boolean));
-  for (const uid of wanted) inflight.delete(uid);
+  await Promise.all(wanted.map((u) => inflight.get(key(u))).filter(Boolean));
+  for (const uid of wanted) inflight.delete(key(uid));
 
   const out: ActorNameMap = new Map();
   for (const uid of wanted) {
-    const name = staffNameCache.get(uid);
+    const name = staffNameCache.get(key(uid));
     if (name) out.set(uid, name);
   }
   return out;

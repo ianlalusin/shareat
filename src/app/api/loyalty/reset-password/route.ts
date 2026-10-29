@@ -5,6 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { normalizePhone } from "@/lib/phone";
 import { PRESENCE_WINDOW_MS, resolvePhonePresence } from "@/lib/server/loyaltyPresence";
+import { writeCustomerPasswordHash } from "@/lib/server/customer-secrets";
 
 export const runtime = "nodejs";
 
@@ -95,8 +96,9 @@ export async function POST(req: Request) {
   const newPassword = customNewPassword || generateTempPassword();
   const passwordHash = await bcrypt.hash(newPassword, 10);
 
-  await customerRef.update({
-    passwordHash,
+  // Secret doc + (during the transition) the legacy profile field, atomically.
+  // See src/lib/server/customer-secrets.ts (audit B05).
+  await writeCustomerPasswordHash(db, phone, passwordHash, {
     passwordResetAt: FieldValue.serverTimestamp(),
     passwordResetByUid: uid,
     updatedAt: FieldValue.serverTimestamp(),

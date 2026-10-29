@@ -15,7 +15,9 @@ import { collection, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, wh
 import { db } from "@/lib/firebase/client";
 import { completePaymentFromUnits } from "@/components/cashier/firestore";
 import { completePaymentOffline } from "@/components/cashier/offlinePayment";
-import type { Payment, ModeOfPayment, Store, Reservation, PosPaymentIntentDoc } from "@/lib/types";
+import type { ModeOfPayment, Store, Reservation, PosPaymentIntentDoc } from "@/lib/types";
+// CheckoutPayment = Payment + intentDocId (the PayMongo bridge doc a QR tender settles against).
+import type { CheckoutPayment as Payment } from "@/components/cashier/gatewayTenders";
 import type { AppUser } from "@/context/auth-context";
 import type { User } from "firebase/auth";
 import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
@@ -189,6 +191,7 @@ export function PaymentModal({
             methodId: data.methodId,
             amount: Math.round((Number(data.amount) || 0) * 100) / 100,
             reference,
+            intentDocId: dSnap.id,
           });
         }
       } catch (e) {
@@ -325,10 +328,10 @@ export function PaymentModal({
   // PayMongo payment id as its reference, then close the overlay so it sits
   // in the list like any other tender. Feeds the SAME completePaymentFromUnits
   // path via the normal Confirm Payment button — no second completion path.
-  const handleQrPaid = useCallback(({ amount, reference }: { amount: number; reference: string }) => {
+  const handleQrPaid = useCallback(({ amount, reference, intentDocId }: { amount: number; reference: string; intentDocId: string }) => {
     if (!qrTender) return;
     const newId = `pay-qr-${Date.now()}`;
-    setPayments(prev => [...prev, { id: newId, methodId: qrTender.methodId, amount, reference }]);
+    setPayments(prev => [...prev, { id: newId, methodId: qrTender.methodId, amount, reference, intentDocId }]);
     setQrTender(null);
   }, [qrTender]);
 

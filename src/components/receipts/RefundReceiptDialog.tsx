@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import type { Receipt, SessionBillLine, ModeOfPayment } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import { createRefundReceipt } from "@/components/cashier/firestore";
+import { reverseReceiptLoyalty } from "@/lib/loyalty/reverse-receipt-client";
 import { previewLineRefund, previewRefundTotal, remainingRefundableQty } from "@/lib/analytics/refund-quote";
 import { v4 as uuidv4 } from "uuid";
 
@@ -98,6 +99,13 @@ function RefundContent({
         requestId,
       );
       toast({ title: "Refund created", description: `Refund receipt RF-${receipt.receiptNumber} has been saved.` });
+      // Take back the share of loyalty points this refund covers (and return
+      // vouchers once fully refunded). Server-side, idempotent per refund
+      // receipt; fire-and-forget with a toast on failure.
+      reverseReceiptLoyalty(
+        { storeId: receipt.storeId, receiptId: receipt.receiptId ?? receipt.id, reason: "refund", refundReceiptId: refundId },
+        toast,
+      );
       onSuccess(refundId);
       onClose();
     } catch (err: any) {

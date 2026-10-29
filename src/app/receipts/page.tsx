@@ -33,6 +33,7 @@ import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
 import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
+import { reverseReceiptLoyalty } from "@/lib/loyalty/reverse-receipt-client";
 import { v4 as uuidv4 } from "uuid";
 import { Badge } from "@/components/ui/badge";
 import ReasonModal from "@/components/shared/ReasonModal";
@@ -560,6 +561,10 @@ export default function ReceiptsPage() {
             total: receipt.total,
           },
         });
+
+        // 3. Take back loyalty points earned on this sale and return vouchers
+        //    used on it (server, idempotent). Fire-and-forget; toasts on failure.
+        reverseReceiptLoyalty({ storeId: activeStore.id, receiptId: receipt.id, reason: "receipt_void" }, toast);
       } catch (error) {
           console.error("Error voiding receipt:", error);
           // Re-throw the error so the caller can handle it (e.g., show a toast)

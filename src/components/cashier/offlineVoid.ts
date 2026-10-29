@@ -12,6 +12,7 @@ import {
   deleteField,
   arrayRemove,
 } from "firebase/firestore";
+import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/firebase/client";
 import type { AppUser } from "@/context/auth-context";
 import { getActorStamp } from "@/components/cashier/firestore";
@@ -76,6 +77,11 @@ export async function voidSessionOffline(args: {
     : [];
 
   const batch = writeBatch(db);
+  // Audit B16: see offlinePayment.ts — a fresh id makes firestore.rules treat
+  // the session/table writes as compare-and-swap against the server copy, so a
+  // void built from a stale cache cannot reopen-and-void a session another
+  // terminal already settled, nor clear a re-seated table.
+  const offlineWriteId = uuidv4();
 
   // Cancel any remaining active tickets (verbatim from online voidSession).
   for (const ticketDoc of activeTicketsSnap.docs) {
@@ -118,6 +124,7 @@ export async function voidSessionOffline(args: {
     voidReason: safeReason,
     updatedAt: serverTimestamp(),
     revision: Number(sessionData.revision ?? 1) + 1,
+    offlineWriteId,
     // Stamp the offline origin so a future guardrail rule (Plan 4B) can reject a
     // void of a session already finalized on the server (stale-cache void).
     offlineOrigin: true,
@@ -144,7 +151,13 @@ export async function voidSessionOffline(args: {
     const tableRef = doc(db, "stores", storeId, "tables", sessionData.tableId);
     const tableSnap = await getDoc(tableRef);
     if (tableSnap.exists() && (tableSnap.data() as any).currentSessionId === sessionId) {
-      batch.update(tableRef, { status: "available", currentSessionId: null, updatedAt: serverTimestamp() });
+      batch.update(tableRef, {
+        status: "available",
+        currentSessionId: null,
+        closedSessionId: sessionId,
+        releasedByWriteId: offlineWriteId,
+        updatedAt: serverTimestamp(),
+      });
 
       const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
       batch.update(tableProjectionRef, {
@@ -156,6 +169,8 @@ export async function voidSessionOffline(args: {
         guestCount: null,
         itemCount: null,
         startedAtMs: null,
+        closedSessionId: sessionId,
+        releasedByWriteId: offlineWriteId,
         updatedAt: serverTimestamp(),
       });
     }

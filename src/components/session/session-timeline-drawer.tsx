@@ -50,7 +50,7 @@ export function SessionTimelineDrawer({ open, onOpenChange, storeId, sessionId }
     const missing = actorUids.filter((uid) => !localNames.has(uid));
     if (missing.length === 0) return;
     let cancelled = false;
-    resolveStaffNames(missing)
+    resolveStaffNames(storeId, missing)
       .then((resolved) => { if (!cancelled && resolved.size) setStaffNames((prev) => new Map([...prev, ...resolved])); })
       .catch(() => {/* tier 3 renders a shortened uid */});
     return () => { cancelled = true; };

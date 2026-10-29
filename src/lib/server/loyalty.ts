@@ -27,7 +27,8 @@ export class LoyaltyEarnRejected extends Error {
 
 /** Thrown for reversals that are refused; carries a suggested HTTP status. */
 class LoyaltyReverseRejected extends Error {
-  constructor(message: string, public status: number) {
+  /** precondition: the void/refund itself is not valid (vs. a problem finding the earn). */
+  constructor(message: string, public status: number, public precondition = false) {
     super(message);
   }
 }
@@ -125,14 +126,15 @@ export async function writeLoyaltyEarn({
       const [customerSnap, legacySnap] = await Promise.all([tx.get(customerRef), tx.get(legacyLedgerRef)]);
       if (!customerSnap.exists) throw new LoyaltyEarnRejected("Customer not found", 404);
       if (legacySnap.exists && (legacySnap.data() as any)?.type === "earn") {
-        tx.set(markerRef, { storeId, receiptId, sessionId, points: Number((legacySnap.data() as any)?.points) || 0, ledgerId: receiptId, createdAt: FieldValue.serverTimestamp() });
+        tx.set(markerRef, { storeId, receiptId, sessionId, phone, amount: Number((legacySnap.data() as any)?.amount) || amount, points: Number((legacySnap.data() as any)?.points) || 0, ledgerId: receiptId, createdAt: FieldValue.serverTimestamp() });
         return { duplicate: true as const, points: Number((legacySnap.data() as any)?.points) || 0 };
       }
       const customerName = (customerSnap.data() as any)?.name || "";
       const ledgerId = `earn_${earnMarkerId(storeId, receiptId)}`;
       const ledgerRef = customerRef.collection("pointsLedger").doc(ledgerId);
 
-      tx.set(markerRef, { storeId, receiptId, sessionId, points, ledgerId, createdAt: FieldValue.serverTimestamp(), createdByUid: staffUid });
+      // phone + amount let reverseLoyaltyEarn find the ledger and pro-rate refunds.
+      tx.set(markerRef, { storeId, receiptId, sessionId, phone, amount, points, ledgerId, createdAt: FieldValue.serverTimestamp(), createdByUid: staffUid });
       tx.set(ledgerRef, {
         type: "earn",
         points,
@@ -209,6 +211,276 @@ export async function writeLoyaltyEarn({
     console.error("[writeLoyaltyEarn] failed:", err);
     return { ok: false, error: err.message || String(err) };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Earn reversal (paid receipt voided or refunded)
+// ---------------------------------------------------------------------------
+
+export type EarnReversalReason = "receipt_void" | "refund";
+
+/**
+ * Deterministic ledger id for one reversal. A void reverses once per
+ * store+receipt; a refund reverses once per store+refund receipt.
+ */
+export function earnReversalLedgerId(storeId: string, receiptId: string, reason: EarnReversalReason, refundReceiptId?: string): string {
+  return reason === "refund"
+    ? `earn_refund_${earnMarkerId(storeId, String(refundReceiptId || ""))}`
+    : `earn_void_${earnMarkerId(storeId, receiptId)}`;
+}
+
+const toCents = (v: unknown) => Math.round(Math.abs(Number(v) || 0) * 100);
+
+/**
+ * Take back the points a paid receipt earned, after that receipt was voided
+ * or (partly) refunded.
+ *
+ * - Void: reverses whatever is still un-reversed (earned minus earlier refund
+ *   reversals). Requires the original receipt to be `voided`.
+ * - Refund: requires a non-voided refund receipt whose parentReceiptId is this
+ *   receipt. Reversal is proportional on a running total: after this refund,
+ *   reversed points = floor(earned * refundedSoFar / earnedAmount), reaching
+ *   the full earn once everything is refunded (so rounding never leaks).
+ *
+ * Idempotent: each void / refund receipt is applied once (marker `reversals`
+ * map + deterministic ledger id), so retries and double clicks are no-ops.
+ *
+ * Never drives the balance negative. Deduction is clamped to the customer's
+ * spendable points (balance minus points held by pending Hub vouchers, so a
+ * held voucher can still finalize). Anything that could not be taken back is
+ * recorded as `shortfall` on the ledger entry, on the earn marker
+ * (shortfallPoints) and in loyaltyStats/global (totalPointsReversalShortfall)
+ * for admin follow-up; it is not retried later.
+ *
+ * A receipt that never earned (no card linked, loyalty off) is a no-op.
+ */
+export async function reverseLoyaltyEarn({
+  storeId,
+  receiptId,
+  staffUid,
+  reason,
+  refundReceiptId,
+}: {
+  storeId: string;
+  receiptId: string;
+  staffUid: string;
+  reason: string;
+  refundReceiptId?: string;
+}): Promise<{ ok: boolean; reversed?: number; requested?: number; shortfall?: number; duplicate?: boolean; noEarn?: boolean; error?: string; status?: number; precondition?: boolean }> {
+  if (!storeId || !receiptId) return { ok: false, error: "Missing store or receipt", status: 400, precondition: true };
+  if (reason !== "receipt_void" && reason !== "refund") return { ok: false, error: "Invalid reversal reason", status: 400, precondition: true };
+  if (reason === "refund" && !refundReceiptId) return { ok: false, error: "Refund receipt required", status: 400, precondition: true };
+
+  const db = getAdminDb();
+  const markerRef = db.doc(`loyaltyEarnReceipts/${earnMarkerId(storeId, receiptId)}`);
+  const receiptRef = db.doc(`stores/${storeId}/receipts/${receiptId}`);
+  const refundRef = reason === "refund" ? db.doc(`stores/${storeId}/receipts/${refundReceiptId}`) : null;
+  const reversalId = earnReversalLedgerId(storeId, receiptId, reason, refundReceiptId);
+  const statsRef = db.doc("loyaltyStats/global");
+  const logRef = db.collection("loyaltyLogs").doc();
+
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const [markerSnap, receiptSnap, refundSnap] = await Promise.all([
+        tx.get(markerRef),
+        tx.get(receiptRef),
+        refundRef ? tx.get(refundRef) : Promise.resolve(null),
+      ]);
+
+      // The void / refund must be committed before points are taken back.
+      if (!receiptSnap.exists) throw new LoyaltyReverseRejected("Receipt not found", 404, true);
+      const receipt = receiptSnap.data() as any;
+      if (receipt.isRefund === true || receipt.parentReceiptId) throw new LoyaltyReverseRejected("Pass the original sale receipt, not a refund", 409, true);
+      let refundCents = 0;
+      if (reason === "receipt_void") {
+        if (receipt.status !== "voided") throw new LoyaltyReverseRejected("Receipt is not voided", 409, true);
+      } else {
+        const refund = refundSnap?.exists ? (refundSnap.data() as any) : null;
+        if (!refund || refund.isRefund !== true || refund.status === "voided" || String(refund.parentReceiptId || "") !== receiptId) {
+          throw new LoyaltyReverseRejected("Refund receipt does not match the original sale", 409, true);
+        }
+        refundCents = toCents(refund.total);
+        if (refundCents <= 0) throw new LoyaltyReverseRejected("Refund amount is not valid", 409, true);
+      }
+
+      // Locate the earn. Marker first; pre-hardening earns only have a ledger
+      // entry under the receipt id on the session's (locked) linked card.
+      let m: any = markerSnap.exists ? (markerSnap.data() as any) : null;
+      let phone = m?.phone ? customerDocId(m.phone) : "";
+      if (!phone) {
+        const sessionId = String(m?.sessionId || receipt.sessionId || "");
+        const sessSnap = sessionId ? await tx.get(db.doc(`stores/${storeId}/sessions/${sessionId}`)) : null;
+        const linked = sessSnap?.exists ? (sessSnap.data() as any)?.linkedCustomerPhone : "";
+        phone = linked ? customerDocId(linked) : "";
+      }
+      if (!m) {
+        if (!phone) return { noEarn: true as const };
+        const legacySnap = await tx.get(db.doc(`customers/${phone}/pointsLedger/${receiptId}`));
+        const legacy = legacySnap.exists ? (legacySnap.data() as any) : null;
+        if (!legacy || legacy.type !== "earn") return { noEarn: true as const };
+        m = { storeId, receiptId, sessionId: receipt.sessionId ?? "", points: Number(legacy.points) || 0, amount: Number(legacy.amount) || 0, ledgerId: receiptId };
+      }
+      if (!phone) throw new LoyaltyReverseRejected("Cannot find the card that earned on this receipt", 409);
+
+      const reversals: Record<string, any> = { ...(m.reversals ?? {}) };
+      if (reversals[reversalId]) return { duplicate: true as const, reversed: Number(reversals[reversalId].deducted) || 0 };
+
+      const customerRef = db.doc(`customers/${phone}`);
+      const earnLedgerRef = customerRef.collection("pointsLedger").doc(String(m.ledgerId || ""));
+      const [customerSnap, earnLedgerSnap] = await Promise.all([tx.get(customerRef), tx.get(earnLedgerRef)]);
+      if (!customerSnap.exists) throw new LoyaltyReverseRejected("Customer not found", 404);
+      if (!earnLedgerSnap.exists || (earnLedgerSnap.data() as any)?.type !== "earn") {
+        throw new LoyaltyReverseRejected("Earn entry for this receipt not found", 409);
+      }
+
+      const earned = Math.max(0, Math.floor(Number(m.points) || 0));
+      const alreadyReversed = Math.max(0, Math.floor(Number(m.reversedPoints) || 0));
+      const remaining = Math.max(0, earned - alreadyReversed);
+      let requested = 0;
+      let refundedCents = Math.max(0, Math.floor(Number(m.refundedCents) || 0));
+      if (m.voidReversed === true) {
+        requested = 0; // a void already took back everything
+      } else if (reason === "receipt_void") {
+        requested = remaining;
+      } else {
+        refundedCents += refundCents;
+        const earnCents = toCents(m.amount) || toCents(receipt.total);
+        const target = earnCents <= 0 || refundedCents >= earnCents ? earned : Math.floor((earned * refundedCents) / earnCents);
+        requested = Math.min(remaining, Math.max(0, target - alreadyReversed));
+      }
+
+      const c = customerSnap.data() as any;
+      const balance = Number(c.pointsBalance ?? 0);
+      const held = Math.max(0, Number(c.pointsReserved ?? 0));
+      const spendable = Number.isFinite(balance) && Number.isFinite(held) ? Math.max(0, Math.floor(balance - held)) : 0;
+      const deducted = Math.min(requested, spendable);
+      const shortfall = requested - deducted;
+
+      reversals[reversalId] = { reason, refundReceiptId: refundReceiptId ?? null, requested, deducted, shortfall, atMs: Date.now(), byUid: staffUid };
+      tx.set(markerRef, {
+        ...m,
+        phone,
+        reversals,
+        reversedPoints: alreadyReversed + requested,
+        deductedPoints: Math.max(0, Math.floor(Number(m.deductedPoints) || 0)) + deducted,
+        shortfallPoints: Math.max(0, Math.floor(Number(m.shortfallPoints) || 0)) + shortfall,
+        ...(reason === "refund" ? { refundedCents } : { voidReversed: true }),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      if (requested > 0) {
+        tx.set(customerRef.collection("pointsLedger").doc(reversalId), {
+          type: "earn_reversal",
+          points: -deducted,
+          requestedPoints: requested,
+          shortfall,
+          amount: reason === "refund" ? -refundCents / 100 : -(Number(m.amount) || 0),
+          reason,
+          storeId,
+          storeName: "",
+          sessionId: m.sessionId ?? receipt.sessionId ?? "",
+          receiptId,
+          refundReceiptId: refundReceiptId ?? null,
+          earnLedgerId: m.ledgerId,
+          createdAt: FieldValue.serverTimestamp(),
+          createdByUid: staffUid,
+        });
+        if (deducted > 0) {
+          tx.update(customerRef, {
+            pointsBalance: FieldValue.increment(-deducted),
+            [`storeVisits.${storeId}.pointsEarned`]: FieldValue.increment(-deducted),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+        tx.set(statsRef, {
+          totalPointsOutstanding: FieldValue.increment(-deducted),
+          totalPointsReversedEver: FieldValue.increment(deducted),
+          ...(shortfall > 0 ? { totalPointsReversalShortfall: FieldValue.increment(shortfall) } : {}),
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        // Not a presence-granting type (see loyaltyPresence.grantsPresence).
+        tx.set(logRef, {
+          type: "points_reversed",
+          phone,
+          customerName: c.name || "",
+          actorUid: staffUid,
+          storeId,
+          sessionId: m.sessionId ?? receipt.sessionId ?? "",
+          receiptId,
+          refundReceiptId: refundReceiptId ?? null,
+          reason,
+          points: deducted,
+          requestedPoints: requested,
+          shortfall,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+      return { reversed: deducted, requested, shortfall };
+    });
+
+    if ("noEarn" in result) return { ok: true, reversed: 0, noEarn: true };
+    if ("duplicate" in result) return { ok: true, reversed: result.reversed, duplicate: true };
+    if (result.shortfall > 0) console.warn("[reverseLoyaltyEarn] shortfall", { storeId, receiptId, reason, ...result });
+    return { ok: true, ...result };
+  } catch (err: any) {
+    if (err instanceof LoyaltyReverseRejected) return { ok: false, error: err.message, status: err.status, ...(err.precondition ? { precondition: true } : {}) };
+    console.error("[reverseLoyaltyEarn] failed:", err);
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
+/**
+ * Everything loyalty-related a paid-receipt void / refund must undo:
+ * 1. the points the receipt earned (reverseLoyaltyEarn), and
+ * 2. vouchers/rewards used on it (reverseLoyaltyRedeem with receipt_void /
+ *    refund). Vouchers are returned on a void, or on a refund only once the
+ *    receipt is FULLY refunded: a partial refund already returns the paid
+ *    amount net of the voucher discount, so giving the voucher's points back
+ *    too would pay the customer twice.
+ * Only vouchers applied at this same store are touched.
+ */
+export async function reverseLoyaltyForReceipt(args: {
+  storeId: string;
+  receiptId: string;
+  staffUid: string;
+  reason: string;
+  refundReceiptId?: string;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  status?: number;
+  earn: Awaited<ReturnType<typeof reverseLoyaltyEarn>>;
+  vouchers: { reversed: string[]; failed: Array<{ redemptionId: string; error: string }>; deferred: boolean };
+}> {
+  const earn = await reverseLoyaltyEarn(args);
+  const vouchers = { reversed: [] as string[], failed: [] as Array<{ redemptionId: string; error: string }>, deferred: false };
+  // An invalid void/refund (receipt not voided, refund not matching, bad
+  // reason) stops here; an earn-side problem still lets vouchers be returned.
+  if (!earn.ok && earn.precondition) return { ok: false, error: earn.error, status: earn.status, earn, vouchers };
+
+  const snap = await getAdminDb().doc(`stores/${args.storeId}/receipts/${args.receiptId}`).get();
+  const receipt = snap.exists ? (snap.data() as any) : null;
+  const ids: string[] = Array.isArray(receipt?.loyaltyRedemptions)
+    ? [...new Set<string>(receipt.loyaltyRedemptions.map((e: any) => e?.redemptionId).filter((x: unknown): x is string => typeof x === "string" && !!x))]
+    : [];
+  const fullyRefunded = !!receipt && toCents(receipt.totalRefunded) >= toCents(receipt.total) && toCents(receipt.total) > 0;
+  if (ids.length && args.reason === "refund" && !fullyRefunded) vouchers.deferred = true;
+
+  if (ids.length && (args.reason === "receipt_void" || fullyRefunded)) {
+    for (const redemptionId of ids) {
+      const r = await reverseLoyaltyRedeem(redemptionId, args.staffUid, args.reason, {
+        refundReceiptId: args.refundReceiptId,
+        authorize: (appliedStoreId) => {
+          if (appliedStoreId !== args.storeId) throw new LoyaltyReverseRejected("Voucher was applied at another store", 403);
+        },
+      });
+      if (r.ok) vouchers.reversed.push(redemptionId);
+      else vouchers.failed.push({ redemptionId, error: r.error || "failed" });
+    }
+  }
+
+  const ok = earn.ok && vouchers.failed.length === 0;
+  return { ok, ...(ok ? {} : { error: earn.error || vouchers.failed[0]?.error, status: earn.status ?? 500 }), earn, vouchers };
 }
 
 // ---------------------------------------------------------------------------

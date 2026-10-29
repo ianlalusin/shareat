@@ -56,6 +56,7 @@ import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from '@/components/cashier/activity-log';
 import { commitLocalFirst } from '@/lib/offline/commit';
 import { sessionOwnershipFields } from '@/lib/offline/sessionOwnership';
+import { planGatewayChecks, verifyBridgeTender, verifyReservationTender, type CheckoutPayment } from '@/components/cashier/gatewayTenders';
 import { getBrowserDeviceId } from '@/lib/offline/browserDevice';
 import { getActiveLocalProfile } from '@/lib/server-profiles/activeLocalProfile';
 import { calculateBillTotals } from '@/lib/tax';
@@ -425,11 +426,15 @@ export async function completePaymentFromUnits(
   storeId: string,
   sessionId: string,
   user: AppUser,
-  payments: Payment[],
+  payments: CheckoutPayment[],
   store: Store,
   paymentMethods: ModeOfPayment[],
   expectedTotal?: number
 ) {
+  // Audit B03: reject bad amounts and unlinked/duplicate gateway tenders up
+  // front; each gateway tender is then proven against its bridge doc (or the
+  // reservation deposit) inside the transaction below.
+  const gatewayChecks = planGatewayChecks(payments, paymentMethods);
   let finalReceipt: Receipt | null = null;
   let receiptId = '';
   let sessionContextForLog: any = null;
@@ -510,7 +515,22 @@ export async function completePaymentFromUnits(
       tableSnap = await tx.get(tableRef);
     }
 
-    
+    // Audit B03: every gateway tender must be backed by a server-written,
+    // webhook-confirmed bridge doc for THIS session and amount (clients cannot
+    // write paymentIntents), or by this session's reservation deposit.
+    for (const check of gatewayChecks) {
+      let problem: string | null;
+      if (check.kind === "bridge") {
+        const bridgeSnap = await tx.get(doc(db, `stores/${storeId}/paymentIntents`, check.intentDocId));
+        problem = verifyBridgeTender(check, bridgeSnap.exists() ? bridgeSnap.data() : null, { storeId, sessionId });
+      } else {
+        const reservationId = (sessionData as any).reservationId;
+        const resSnap = reservationId ? await tx.get(doc(db, `stores/${storeId}/reservations`, String(reservationId))) : null;
+        problem = verifyReservationTender(check, resSnap?.exists() ? resSnap.data() : null, { sessionId });
+      }
+      if (problem) throw new Error(problem);
+    }
+
     const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
     const amountDueCents = Math.round(Number(amountDue || 0) * 100);
 

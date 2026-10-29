@@ -105,6 +105,24 @@ describe("B06: loyaltyRedemptions is unreachable through the root fallbacks", ()
   });
 });
 
+describe("B06: staff docs are no longer readable by every staffer", () => {
+  it("denies a cashier getting a colleague's staff doc", async () => {
+    await assertFails(getDoc(doc(db("cashier"), "staff", STAFF.manager.uid)));
+  });
+
+  it("denies a cashier listing staff", async () => {
+    await assertFails(getDocs(collection(db("cashier"), "staff")));
+  });
+
+  it("still lets a cashier get their own staff doc", async () => {
+    await assertSucceeds(getDoc(doc(db("cashier"), "staff", STAFF.cashier.uid)));
+  });
+
+  it("still lets an admin get any staff doc", async () => {
+    await assertSucceeds(getDoc(doc(db("admin"), "staff", STAFF.kitchen.uid)));
+  });
+});
+
 describe("B06: pinRegistry stays store-scoped", () => {
   it("denies a store-A cashier getting a store-B PIN", async () => {
     await assertFails(getDoc(doc(db("cashier"), "pinRegistry", "2222")));
