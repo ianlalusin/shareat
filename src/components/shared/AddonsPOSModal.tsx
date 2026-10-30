@@ -35,6 +35,7 @@ import { writeActivityLog } from "../cashier/activity-log";
 import { ModifierPicker, type PickerResult } from "../cashier/modifier-picker";
 import { FamilyOrderModal, type FamilyOrderAddArgs } from "../cashier/family-order-modal";
 import { getAuth } from "firebase/auth";
+import { loadOptionGroups } from "@/lib/billing/option-groups-load";
 
 interface AddonsPOSModalProps {
   open: boolean;
@@ -149,6 +150,9 @@ function POSContent({
   const [modifierPickerOpen, setModifierPickerOpen] = useState(false);
   const [pendingOptionGroups, setPendingOptionGroups] = useState<OptionGroup[]>([]);
   const [loadingOptionGroups, setLoadingOptionGroups] = useState(false);
+  // F08: set when the modifier config for the selected item could not be
+  // confirmed; the item is NOT added and the cashier can retry.
+  const [optionGroupsError, setOptionGroupsError] = useState<string | null>(null);
 
   const categories = useMemo(() => {
     return ["All", ...Array.from(new Set(addons.map((a) => a.subCategory || "Uncategorized")))];
@@ -194,6 +198,7 @@ function POSContent({
   const handleSelectAddon = (addon: EnrichedStoreAddon) => {
     setSelectedAddon(addon);
     setQuantity(1);
+    setOptionGroupsError(null);
   };
 
   // Click on a family tile opens the combined FamilyOrderModal which handles
@@ -229,29 +234,36 @@ function POSContent({
       return;
     }
 
-    // Look up option groups attached to the underlying Product.
+    // Look up option groups attached to the underlying Product. Only a
+    // confirmed answer may proceed: a successful empty list adds directly; any
+    // failure (offline, auth, non-2xx, malformed) blocks the add so required
+    // modifiers and their charges can't be silently skipped (F08).
     const productId = (selectedAddon as any).productId || selectedAddon.id;
     setLoadingOptionGroups(true);
+    setOptionGroupsError(null);
     try {
-      const user = getAuth().currentUser;
-      const idToken = user ? await user.getIdToken() : null;
-      const res = idToken
-        ? await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups?storeId=${encodeURIComponent(storeId)}`, {
-            headers: { Authorization: `Bearer ${idToken}` },
-          })
-        : null;
-      const json = res ? await res.json().catch(() => ({})) : ({} as any);
-      const groups: OptionGroup[] = res?.ok && json?.ok ? (json.optionGroups || []) : [];
-      if (groups.length === 0) {
+      const result = await loadOptionGroups({
+        storeId,
+        productId,
+        getIdToken: async () => {
+          const user = getAuth().currentUser;
+          return user ? await user.getIdToken() : null;
+        },
+      });
+      if (result.status !== "ok") {
+        const msg = !isOnline || result.reason === "network"
+          ? "Can't load this item's options while offline. Reconnect and try again."
+          : "Couldn't load this item's options. Try again.";
+        setOptionGroupsError(msg);
+        toast({ variant: "destructive", title: "Item options unavailable", description: msg });
+        return;
+      }
+      if (result.groups.length === 0) {
         await performAdd([], "", 0);
       } else {
-        setPendingOptionGroups(groups);
+        setPendingOptionGroups(result.groups);
         setModifierPickerOpen(true);
       }
-    } catch {
-      // If the fetch fails for any reason, fall through to add without modifiers
-      // rather than block the cashier. The line still goes on the bill correctly.
-      await performAdd([], "", 0);
     } finally {
       setLoadingOptionGroups(false);
     }
@@ -649,11 +661,14 @@ function POSContent({
               <Plus className="h-4 w-4" />
             </Button>
 
-            <Button className="ml-auto" onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading || sessionIsLocked}>
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Add to Order
+            <Button className="ml-auto" onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading || loadingOptionGroups || sessionIsLocked}>
+              {isSubmitting || loadingOptionGroups ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {optionGroupsError ? "Retry" : "Add to Order"}
             </Button>
           </div>
+          {optionGroupsError && selectedAddon && (
+            <p role="alert" className="text-xs text-destructive">{optionGroupsError}</p>
+          )}
         </div>
       </div>
     </>

@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { postServerProfileOp } from "@/lib/server-profiles/api";
 import { PasscodePad } from "./PasscodePad";
 import { CreateServerProfileModal } from "./CreateServerProfileModal";
+import type { ProfileSessionGrant } from "@/hooks/useServerProfile";
 
 /** No passcodeHash: the secret is server-side only and never sent to clients. */
 interface ProfileDoc {
@@ -22,7 +23,7 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   storeId: string;
   currentProfileId: string | null;
-  onSignIn: (profileId: string, name: string) => void;
+  onSignIn: (profileId: string, name: string, session?: ProfileSessionGrant | null) => void;
   onSignOut: () => void;
 }
 
@@ -81,7 +82,7 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
         profileId: selected.id,
         passcode,
       });
-      onSignIn(selected.id, json.profile?.name ?? selected.name);
+      onSignIn(selected.id, json.profile?.name ?? selected.name, json.session ?? null);
       onOpenChange(false);
     } catch (err: any) {
       setShake(true);
@@ -176,9 +177,9 @@ export function ServerProfileSwitcher({ open, onOpenChange, storeId, currentProf
         open={createOpen}
         onOpenChange={setCreateOpen}
         storeId={storeId}
-        onCreated={(id, name) => {
+        onCreated={(id, name, session) => {
           setCreateOpen(false);
-          onSignIn(id, name);
+          onSignIn(id, name, session);
           onOpenChange(false);
         }}
       />

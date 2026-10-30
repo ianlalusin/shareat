@@ -15,7 +15,8 @@ import { useCallback, useRef, useState } from 'react';
 import { doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { getReceiptSettings } from '@/lib/receipts/receipt-settings';
-import { formatReceiptText, formatPinText } from '@/lib/printing/receiptFormatter';
+import { formatPinText } from '@/lib/printing/receiptFormatter';
+import { buildNativeReceiptJob, type PaperWidth } from '@/lib/printing/receiptJob';
 import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import { getPinQrMode, renderPinQr, PIN_QR_NATIVE_DOTS } from '@/lib/printing/pinQr';
 import {
@@ -41,10 +42,16 @@ interface UsePrintOptions {
   storeId: string | null | undefined;
   sessionId?: string | null;
   appUser?: AppUser | null;
+  /**
+   * Paper chosen on screen. When set it overrides the store default for the
+   * native job, so preview, browser print and Bluetooth output all match.
+   */
+  paperWidth?: PaperWidth;
 }
 
 interface UsePrintReturn {
-  printReceipt: () => Promise<void>;
+  /** Resolves true once the print was dispatched (native job sent / browser dialog shown). */
+  printReceipt: () => Promise<boolean>;
   isPrinting: boolean;
   error: string | null;
 }
@@ -54,6 +61,7 @@ export function usePrint({
   storeId,
   sessionId,
   appUser,
+  paperWidth: selectedPaperWidth,
 }: UsePrintOptions): UsePrintReturn {
   const [isPrinting, setIsPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +81,8 @@ export function usePrint({
     }
   }, [storeId, sessionId, appUser]);
 
-  const printReceipt = useCallback(async () => {
-    if (!receiptData || isPrinting) return;
+  const printReceipt = useCallback(async (): Promise<boolean> => {
+    if (!receiptData || isPrinting) return false;
     setIsPrinting(true);
     setError(null);
 
@@ -87,49 +95,33 @@ export function usePrint({
             title: 'No Printer',
             description: 'Go to Manager Tools → Printer Setup to connect a printer.',
           });
-          return;
+          return false;
         }
         const liveSettings = storeId
           ? await getReceiptSettings(db, storeId)
           : receiptData.settings;
-        const paperWidth: 58 | 80 = liveSettings.paperWidth === '58mm' ? 58 : 80;
-        // A thermal printer only has built-in ROM fonts, so the CSS fontFamily
-        // can't apply on paper (it stays a screen/PDF concern). Map the numeric
-        // fontSize to the three sizes the printer can actually do: small = Font
-        // B, normal = Font A, large = Font A double-height.
-        const fontSizeVal = liveSettings.fontSize ?? 12;
-        const fontMode: 'small' | 'normal' | 'large' =
-          fontSizeVal <= 10 ? 'small' : fontSizeVal >= 14 ? 'large' : 'normal';
-        const text = formatReceiptText({ ...receiptData, settings: liveSettings }, paperWidth, fontMode);
-        await printViaNativeBluetooth({
-          target: 'receipt',
-          text,
-          widthMm: paperWidth,
-          cut: true,
-          beep: true,
-          encoding: 'CP437',
-          showLogo: liveSettings.showLogo ?? false,
-          logoWidthPct: liveSettings.logoWidthPct,
-          font: fontMode,
-          storeId,
-        });
+        const job = buildNativeReceiptJob(receiptData, liveSettings, storeId, selectedPaperWidth);
+        await printViaNativeBluetooth(job);
         await writeAudit();
         toast({ title: 'Printed', description: 'Receipt sent to thermal printer.' });
+        return true;
       } else {
         await new Promise<void>(r =>
           requestAnimationFrame(() => requestAnimationFrame(() => r())),
         );
         window.print();
         await writeAudit();
+        return true;
       }
     } catch (e: any) {
       const msg: string = e?.message ?? 'Unknown print error';
       setError(msg);
       toast({ variant: 'destructive', title: 'Print Failed', description: msg });
+      return false;
     } finally {
       setIsPrinting(false);
     }
-  }, [receiptData, isPrinting, storeId, writeAudit, toast]);
+  }, [receiptData, isPrinting, storeId, writeAudit, toast, selectedPaperWidth]);
 
   return { printReceipt, isPrinting, error };
 }

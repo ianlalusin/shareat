@@ -4,13 +4,16 @@
 import { useMemo } from "react";
 import { format } from 'date-fns';
 import Image from "next/image";
-import type { ModeOfPayment, SessionBillLine, Store, ReceiptData, ReceiptSettings } from "@/lib/types";
+import type { ModeOfPayment, ReceiptData } from "@/lib/types";
 import { toJsDate } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
+import { buildReceiptModel, formatMoney } from "@/lib/printing/receiptModel";
 
 interface ReceiptViewProps {
     data: ReceiptData | null;
     paymentMethods?: ModeOfPayment[];
+    /** Paper chosen on screen; overrides settings.paperWidth so preview, browser print and native output agree. */
+    paperWidth?: "58mm" | "80mm";
 }
 
 function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurrency = false, prefix = '', suffix = '' }: { label: string, value: string | number, isBold?: boolean, isEmphasized?: boolean, isCurrency?: boolean, prefix?: string, suffix?: string }) {
@@ -27,35 +30,17 @@ function ReceiptRow({ label, value, isBold = false, isEmphasized = false, isCurr
     );
 }
 
-export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
-    if (!data || !data.session || !data.settings) {
+export function ReceiptView({ data, paymentMethods = [], paperWidth: paperWidthProp }: ReceiptViewProps) {
+    const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
+    const model = useMemo(() => (data && data.session && data.settings ? buildReceiptModel(data) : null), [data]);
+
+    if (!data || !data.session || !data.settings || !model) {
         return null;
     }
-    const { session, lines, settings, createdByUsername, store } = data;
-    const paperWidth = settings.paperWidth || "80mm";
-    const analytics = data.analytics || {};
+    const { session, settings, createdByUsername, store } = data;
+    const paperWidth = paperWidthProp || settings.paperWidth || "80mm";
 
-    const paymentMethodMap = useMemo(() => new Map(paymentMethods.map(p => [p.id, p.name])), [paymentMethods]);
-
-    const activeLines = useMemo(() => (lines || [])
-        .filter(line => (line.qtyOrdered - (line.voidedQty || 0)) > 0)
-        // Pin the package/bundle line to the top (dine-in); stable for the rest.
-        .sort((a, b) => (a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1)), [lines]);
-
-    const freeItems = useMemo(() => {
-        const map = new Map<string, { qty: number }>();
-        (lines || []).forEach(item => {
-            if (item.freeQty > 0) {
-                 const key = item.itemName;
-                 const existing = map.get(key);
-                 if (existing) existing.qty += item.freeQty;
-                 else map.set(key, { qty: item.freeQty });
-            }
-        });
-        return Array.from(map.entries());
-    }, [lines]);
-
-    const isRefundReceipt = !!(data.receiptNumber?.startsWith('RF-') || (data as any).isRefund);
+    const isRefundReceipt = model.isRefund;
     const receiptDate = toJsDate(data.receiptCreatedAt) ?? toJsDate(session.closedAt);
     const dateLabel = receiptDate ? format(receiptDate, "MM/dd/yy HH:mm") : "N/A";
     const rawCashier = createdByUsername || session.cashierName || session.startedByUid?.substring(0, 6);
@@ -68,23 +53,8 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
         if (found) return found.name;
         return id;
     };
-    
-    const { 
-        subtotal = 0,
-        discountsTotal = 0,
-        chargesTotal = 0,
-        grandTotal = 0,
-        taxAmount = 0,
-        totalPaid = 0,
-        change = 0,
-        mop = {}
-    } = analytics;
 
-    const paymentsFromAnalytics = Object.entries(mop).map(([methodId, amount]) => ({ methodId, amount: amount as number }));
-    // Prefer the VAT split persisted on the receipt; historical receipts predate
-    // these fields, so fall back to the old derivation (no exempt portion).
-    const vatExemptSales = (analytics as any)?.vatExemptSales ?? 0;
-    const vatableSales = (analytics as any)?.vatableSales ?? (grandTotal - taxAmount - vatExemptSales);
+    const { subtotal, discountsEffect, chargesEffect, grandTotal, taxAmount, totalPaid, change, vatableSales, vatExemptSales } = model;
 
     const receiptStyles: React.CSSProperties = {
         fontFamily: settings?.fontFamily || undefined,
@@ -147,76 +117,50 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
                     <span>Item</span>
                     <span className="text-right">Total</span>
                 </div>
-                {activeLines.map(line => {
-                    const billableQty = line.qtyOrdered - (line.voidedQty || 0);
-                    const modTotal = Number((line as any).modifiersTotal || 0);
-                    const lineTotal = billableQty * (line.unitPrice + modTotal);
-
-                    const hasDiscount = (line.discountValue ?? 0) > 0 && line.discountQty > 0;
-                    
-                    let lineDiscountAmount = 0;
-                    if (hasDiscount && store) {
-                        const taxRate = (store.taxRatePct || 0) / 100;
-                        const isVatInclusive = store.taxType === "VAT_INCLUSIVE";
-                        const discountedQty = Math.min(line.discountQty, billableQty);
-                        
-                        const discountBaseUnit = isVatInclusive && taxRate > 0
-                          ? (line.unitPrice / (1 + taxRate))
-                          : line.unitPrice;
-
-                        if (line.discountType === "percent") {
-                           lineDiscountAmount = (discountedQty * discountBaseUnit) * (line.discountValue! / 100);
-                        } else { // fixed
-                           lineDiscountAmount = Math.min(discountBaseUnit, (line.discountValue ?? 0)) * discountedQty;
-                        }
-                    }
-
-                    return (
-                        <div key={line.id} className="receipt-item-row mb-1">
-                             <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 items-start">
-                                <span>{billableQty}</span>
-                                <div className="min-w-0">
-                                  <div className="whitespace-normal break-words leading-tight">
-                                    {line.itemName}
-                                  </div>
-                                  {(line as any).modifiersText && (
-                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">
-                                      — {(line as any).modifiersText}
-                                    </div>
-                                  )}
-                                  {(line as any).note && (
-                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">
-                                      Note: {(line as any).note}
-                                    </div>
-                                  )}
-                                </div>
-                                <span className="text-right whitespace-nowrap">
-                                  {lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
+                {model.rows.map(row => (
+                    <div key={row.key} className="receipt-item-row mb-1">
+                        <div className="grid grid-cols-[20px,1fr,auto] gap-x-2 items-start">
+                            <span>{row.qty}</span>
+                            <div className="min-w-0">
+                                <div className="whitespace-normal break-words leading-tight">{row.name}</div>
+                                {row.modifiersText && (
+                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">— {row.modifiersText}</div>
+                                )}
+                                {row.note && (
+                                    <div className="text-xs italic pl-2 opacity-80 break-words leading-tight">Note: {row.note}</div>
+                                )}
+                                {row.freeQty > 0 && (
+                                    <div className="text-xs italic pl-2 opacity-80 leading-tight">Free ({row.freeQty}x)</div>
+                                )}
                             </div>
-                             {hasDiscount && settings.showDiscountBreakdown && (
-                                <div className="pl-4 italic">
-                                    <span>Discount ({line.discountQty}x)</span>
-                                    <span className="text-right whitespace-nowrap">- {lineDiscountAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                </div>
-                            )}
+                            <span className="text-right whitespace-nowrap">{formatMoney(row.amount)}</span>
                         </div>
-                    );
-                })}
+                        {row.discount !== 0 && settings.showDiscountBreakdown && (
+                            <div className="pl-4 italic flex justify-between">
+                                <span>Discount ({row.discountQty}x)</span>
+                                <span className="text-right whitespace-nowrap">{formatMoney(row.discount)}</span>
+                            </div>
+                        )}
+                    </div>
+                ))}
             </section>
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 receipt-section">
                 <ReceiptRow label="Subtotal" value={subtotal} isCurrency />
-                {(discountsTotal > 0) && (
-                    <ReceiptRow label="Discounts" value={discountsTotal} isCurrency prefix="(- " suffix=")" />
+                {discountsEffect !== 0 && (
+                    discountsEffect < 0
+                        ? <ReceiptRow label="Discounts" value={-discountsEffect} isCurrency prefix="(- " suffix=")" />
+                        : <ReceiptRow label="Discounts" value={discountsEffect} isCurrency prefix="+ " />
                 )}
-                 {(chargesTotal > 0) && (
-                    <ReceiptRow label="Charges" value={chargesTotal} isCurrency prefix="+ " />
+                {chargesEffect !== 0 && (
+                    chargesEffect > 0
+                        ? <ReceiptRow label="Charges" value={chargesEffect} isCurrency prefix="+ " />
+                        : <ReceiptRow label="Charges" value={-chargesEffect} isCurrency prefix="(- " suffix=")" />
                 )}
              </section>
              
-             {(taxAmount > 0 || vatExemptSales > 0) && (
+             {(taxAmount !== 0 || vatExemptSales !== 0) && (
                  <>
                     <hr className="border-dashed border-black my-2" />
                     <section className="space-y-px mb-2 receipt-section">
@@ -229,25 +173,25 @@ export function ReceiptView({ data, paymentMethods = [] }: ReceiptViewProps) {
 
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px my-2 receipt-section">
-                <ReceiptRow label="TOTAL" value={isRefundReceipt ? -Math.abs(grandTotal) : grandTotal} isBold={true} isCurrency prefix="PHP " />
+                <ReceiptRow label="TOTAL" value={grandTotal} isBold={true} isCurrency prefix="PHP " />
              </section>
             
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 receipt-section">
-                {paymentsFromAnalytics.map((p, i) => (
+                {model.payments.map((p, i) => (
                     <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount} isCurrency />
                 ))}
-                 <ReceiptRow label={isRefundReceipt ? "Total Refunded" : "Total Paid"} value={isRefundReceipt ? -Math.abs(totalPaid) : totalPaid} isCurrency />
+                 <ReceiptRow label={isRefundReceipt ? "Total Refunded" : "Total Paid"} value={totalPaid} isCurrency />
                  <ReceiptRow label="CHANGE" value={change} isBold={true} isCurrency />
              </section>
 
-             {freeItems.length > 0 && (
+             {model.freeItems.length > 0 && (
                 <>
                  <hr className="border-dashed border-black my-2" />
                  <section className="space-y-px mb-2 receipt-section">
                     <p className="font-bold">Free Items:</p>
-                    {freeItems.map(([name, item]) => (
-                        <p key={name}>{item.qty}x {name}</p>
+                    {model.freeItems.map(item => (
+                        <p key={item.name}>{item.qty}x {item.name}</p>
                     ))}
                  </section>
                 </>

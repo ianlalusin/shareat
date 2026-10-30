@@ -700,7 +700,7 @@ export default function ReceiptsPage() {
         <RoleGuard allow={["admin", "manager", "cashier"]}>
             <div className="no-print">
                 <PageHeader title="Receipts" description="Browse, preview, and reprint past receipts.">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button variant="outline" onClick={() => router.back()}>
                             <ArrowLeft className="mr-2 h-4 w-4" /> Back
                         </Button>

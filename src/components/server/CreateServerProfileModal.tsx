@@ -9,12 +9,14 @@ import { Loader2, UserPlus, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { postServerProfileOp } from "@/lib/server-profiles/api";
 import { PasscodePad } from "./PasscodePad";
+import type { ProfileSessionGrant } from "@/hooks/useServerProfile";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   storeId: string;
-  onCreated: (profileId: string, name: string) => void;
+  /** `session`: the signed profile session the server issued (audit F02). */
+  onCreated: (profileId: string, name: string, session?: ProfileSessionGrant | null) => void;
 }
 
 type Step = "name" | "passcode" | "confirm";
@@ -67,7 +69,7 @@ export function CreateServerProfileModal({ open, onOpenChange, storeId, onCreate
       });
 
       toast({ title: "Profile created", description: `Signed in as ${trimmedName}.` });
-      onCreated(json.profile.id, trimmedName);
+      onCreated(json.profile.id, trimmedName, json.session ?? null);
       onOpenChange(false);
     } catch (err: any) {
       // A duplicate name is a correctable mistake, not a failure — send them

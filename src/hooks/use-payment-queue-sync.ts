@@ -3,6 +3,9 @@ import { useEffect, useRef, useCallback } from "react";
 import { useOnlineStatus } from "./use-online-status";
 import { getQueue, updateQueueItem, removeFromQueue, type QueuedPayment } from "@/lib/offline/payment-queue";
 import { useToast } from "./use-toast";
+import { registerSyncRetry, setSyncRuntime } from "@/lib/offline/sync-status";
+
+const MAX_AUTO_RETRIES = 5;
 
 export function usePaymentQueueSync(
   onSync: (item: QueuedPayment) => Promise<{ item: QueuedPayment; complete: boolean }>,
@@ -23,10 +26,18 @@ export function usePaymentQueueSync(
     // within a session, so any "syncing" left in storage is from a prior session
     // hard-killed mid-await — reprocess it (per-effect state stops done effects re-firing).
     const queue = getQueue().filter((q) => q.status === "pending" || q.status === "syncing");
-    if (queue.length === 0) { attemptsRef.current = 0; return; }
+    if (queue.length === 0) {
+      attemptsRef.current = 0;
+      setSyncRuntime({ stalled: false });
+      return;
+    }
 
     isSyncingRef.current = true;
+    // Shared sync status for the banner (audit F23): real queue state, not
+    // navigator.onLine.
+    setSyncRuntime({ syncing: true });
     let anyIncomplete = false;
+    let completed = 0;
     try {
       for (const item of queue) {
         updateQueueItem(item.id, { status: "syncing" });
@@ -34,6 +45,7 @@ export function usePaymentQueueSync(
           const { item: updated, complete } = await onSyncRef.current(item);
           if (complete) {
             removeFromQueue(item.id);
+            completed += 1;
             toast({ title: "Offline sale synced", description: `Session ${item.sessionId.slice(0, 6)}… finalized.` });
           } else {
             anyIncomplete = true;
@@ -49,20 +61,44 @@ export function usePaymentQueueSync(
       isSyncingRef.current = false;
     }
 
-    if (anyIncomplete && isOnline && ready && attemptsRef.current < 5) {
+    let stalled = false;
+    if (anyIncomplete && isOnline && ready && attemptsRef.current < MAX_AUTO_RETRIES) {
       attemptsRef.current += 1;
       const delay = Math.min(30000, 2000 * 2 ** (attemptsRef.current - 1)); // 2s,4s,8s,16s,30s
       if (retryRef.current) clearTimeout(retryRef.current);
       retryRef.current = setTimeout(() => { void processQueue(); }, delay);
     } else if (!anyIncomplete) {
       attemptsRef.current = 0;
+    } else {
+      stalled = true; // automatic retries used up; the banner offers Retry
     }
+    setSyncRuntime({
+      syncing: false,
+      stalled,
+      ...(completed > 0 ? { lastCompletedCount: completed, lastCompletedAt: Date.now() } : {}),
+    });
   }, [ready, isOnline, toast]);
 
   useEffect(() => {
+    // A fresh reconnect gets a fresh set of automatic retries.
+    if (isOnline) attemptsRef.current = 0;
     if (isOnline && ready) void processQueue();
     return () => { if (retryRef.current) clearTimeout(retryRef.current); };
   }, [isOnline, ready, processQueue]);
+
+  // Manual retry from the banner: give failed (conflict) items one more pass
+  // through the server gate and restart automatic retries.
+  useEffect(() => {
+    registerSyncRetry(() => {
+      for (const q of getQueue()) {
+        if (q.status === "failed") updateQueueItem(q.id, { status: "pending", errorMessage: undefined });
+      }
+      attemptsRef.current = 0;
+      setSyncRuntime({ stalled: false });
+      void processQueue();
+    });
+    return () => registerSyncRetry(null);
+  }, [processQueue]);
 
   // Listen for SW background sync message (PWA)
   useEffect(() => {

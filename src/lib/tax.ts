@@ -1,5 +1,6 @@
 
 import type { SessionBillLine, Charge, Discount, Store, Adjustment, LineAdjustment } from "@/lib/types";
+import { sanitizeAdjustmentValue } from "@/lib/billing/adjustment-validation";
 
 export interface TaxAndTotals {
   subtotal: number;
@@ -97,10 +98,12 @@ export function calculateBillTotals(
             const qtyToApply = Math.min(Number(adj.qty || 0), remainingQtyForDiscounts);
             if (qtyToApply <= 0) continue;
 
+            // Guard (F09): non-finite/negative -> 0, percent capped at 100.
+            const adjValue = sanitizeAdjustmentValue(adj.type, adj.value);
             if (adj.type === "percent") {
-                lineDiscountsTotal += (qtyToApply * discountUnitBase) * (Number(adj.value || 0) / 100);
+                lineDiscountsTotal += (qtyToApply * discountUnitBase) * (adjValue / 100);
             } else { // fixed
-                lineDiscountsTotal += Math.min(discountUnitBase, Number(adj.value || 0)) * qtyToApply;
+                lineDiscountsTotal += Math.min(discountUnitBase, adjValue) * qtyToApply;
             }
             remainingQtyForDiscounts -= qtyToApply;
 
@@ -108,10 +111,11 @@ export function calculateBillTotals(
             const qtyToApply = Math.min(Number(adj.qty || 0), billableQty);
             if (qtyToApply <= 0) continue;
 
+            const chargeValue = sanitizeAdjustmentValue(adj.type, adj.value);
             if (adj.type === "percent") {
-                lineChargesTotal += (qtyToApply * baseUnitPrice) * (Number(adj.value || 0) / 100);
+                lineChargesTotal += (qtyToApply * baseUnitPrice) * (chargeValue / 100);
             } else { // fixed
-                lineChargesTotal += Number(adj.value || 0) * qtyToApply;
+                lineChargesTotal += chargeValue * qtyToApply;
             }
         }
     }
@@ -120,10 +124,11 @@ export function calculateBillTotals(
     if (!hasAdjDiscount && line.discountValue && line.discountValue > 0 && line.discountQty > 0) {
       const discountedQty = Math.min(line.discountQty, billableQty);
       
+      const legacyValue = sanitizeAdjustmentValue(line.discountType, line.discountValue);
       if (line.discountType === "percent") {
-        lineDiscountsTotal += (discountedQty * discountUnitBase) * ((line.discountValue ?? 0) / 100);
+        lineDiscountsTotal += (discountedQty * discountUnitBase) * (legacyValue / 100);
       } else { // fixed
-        lineDiscountsTotal += Math.min(discountUnitBase, (line.discountValue ?? 0)) * discountedQty;
+        lineDiscountsTotal += Math.min(discountUnitBase, legacyValue) * discountedQty;
       }
     }
   });
@@ -137,6 +142,7 @@ export function calculateBillTotals(
   // taken on the VAT-removed net price. It is handled as its own branch and is
   // not stacked with loyalty rewards.
   const isVatExemptBill = !!billDiscount?.vatExempt;
+  const billDiscountValue = billDiscount ? sanitizeAdjustmentValue(billDiscount.type, billDiscount.value) : 0;
   let billDiscountTotal = 0;
   let loyaltyDiscountTotal = 0;
 
@@ -146,8 +152,8 @@ export function calculateBillTotals(
       ? grossAfterLine / (1 + taxRate)
       : grossAfterLine;
     const exemptDiscount = billDiscount.type === "percent"
-      ? netBeforeExempt * (billDiscount.value / 100)
-      : Math.min(netBeforeExempt, billDiscount.value);
+      ? netBeforeExempt * (billDiscountValue / 100)
+      : Math.min(netBeforeExempt, billDiscountValue);
     billDiscountTotal = round(exemptDiscount);
     vatExemptSales = round(Math.max(0, netBeforeExempt - exemptDiscount));
     vatableSales = 0;
@@ -157,9 +163,9 @@ export function calculateBillTotals(
       // Discount taken on the gross (VAT-inclusive) amount after line discounts.
       const discountBaseTotal = grossSubtotal - lineDiscountsTotal;
       if (billDiscount.type === 'percent') {
-        billDiscountTotal = discountBaseTotal * (billDiscount.value / 100);
+        billDiscountTotal = discountBaseTotal * (billDiscountValue / 100);
       } else { // fixed
-        billDiscountTotal = Math.min(discountBaseTotal, billDiscount.value);
+        billDiscountTotal = Math.min(discountBaseTotal, billDiscountValue);
       }
     }
     billDiscountTotal = round(billDiscountTotal);
@@ -170,8 +176,9 @@ export function calculateBillTotals(
     if (Array.isArray(loyaltyDiscount) && loyaltyDiscount.length > 0) {
       let remainingGross = grossSubtotal - lineDiscountsTotal - billDiscountTotal;
       for (const lr of loyaltyDiscount) {
-        if (!lr || !(lr.value > 0) || remainingGross <= 0) continue;
-        const amt = lr.type === "percent" ? remainingGross * (lr.value / 100) : Math.min(remainingGross, lr.value);
+        const lrValue = lr ? sanitizeAdjustmentValue(lr.type, lr.value) : 0;
+        if (!lr || !(lrValue > 0) || remainingGross <= 0) continue;
+        const amt = lr.type === "percent" ? remainingGross * (lrValue / 100) : Math.min(remainingGross, lrValue);
         loyaltyDiscountTotal += amt;
         remainingGross -= amt;
       }
@@ -201,7 +208,7 @@ export function calculateBillTotals(
     : netSalesAfterAllDiscounts;
 
   const billChargesTotal = customAdjustments.reduce((sum, charge) => {
-    const value = Number(charge.amount || 0);
+    const value = sanitizeAdjustmentValue(charge.type, charge.amount);
     if (charge.type === "percent") {
       const base = charge.appliesTo === "total" ? totalBeforeCharges : netSalesAfterAllDiscounts;
       return sum + base * (value / 100);

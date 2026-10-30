@@ -1,10 +1,9 @@
 
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
@@ -23,6 +22,7 @@ import { serverTimestamp, doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useStoreContext } from "@/context/store-context";
 import { allowsDecimalQty } from "@/lib/uom";
+import { makeLineEditSchema, buildLineEditCommand, newLineEditOpIds, type LineEditFormValues, type LineEditOpIds } from "@/lib/billing/line-edit";
 
 const VOID_REASONS = {
   wrong_item: "Wrong Item Ordered",
@@ -33,40 +33,7 @@ const VOID_REASONS = {
   kitchen_cancel: "Cancelled by Kitchen",
 };
 
-const formSchema = z.object({
-  qtyOrdered: z.coerce.number().min(0, "Quantity must be non-negative."),
-  unitPrice: z.coerce.number().min(0),
-
-  applyDiscount: z.boolean().default(false),
-  discountId: z.string().optional(),
-  discountType: z.enum(["fixed", "percent"]).nullable().optional(),
-  discountValue: z.coerce.number().min(0).default(0),
-  discountQty: z.coerce.number().min(0),
-
-  applyCharge: z.boolean().default(false),
-  chargeId: z.string().optional(),
-  chargeType: z.enum(["fixed", "percent"]).nullable().optional(),
-  chargeValue: z.coerce.number().min(0).default(0),
-  chargeQty: z.coerce.number().min(0),
-
-  applyFree: z.boolean().default(false),
-  freeQty: z.coerce.number().min(0),
-
-  applyVoid: z.boolean().default(false),
-  voidQty: z.coerce.number().min(0),
-  voidReason: z.string().optional(),
-  voidNote: z.string().optional(),
-  note: z.string().optional(),
-}).refine(data => data.applyDiscount ? (data.discountId && data.discountType && data.discountValue > 0 && data.discountQty > 0) || (data.discountId === 'custom' && data.discountValue > 0 && data.discountQty > 0) : true, {
-    message: "If discount is applied, you must select a valid preset or custom value and quantity.",
-    path: ["applyDiscount"],
-}).refine(data => data.applyCharge ? (data.chargeId && data.chargeType && data.chargeValue > 0 && data.chargeQty > 0) || (data.chargeId === 'custom' && data.chargeValue > 0 && data.chargeQty > 0) : true, {
-    message: "If charge is applied, you must select a valid preset or custom value and quantity.",
-    path: ["applyCharge"],
-});
-
-
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = LineEditFormValues;
 
 interface EditBillableItemDialogProps {
     isOpen: boolean;
@@ -77,8 +44,12 @@ interface EditBillableItemDialogProps {
     isLocked?: boolean;
     /** Bundle flat line: lock the qty at 1 (a bundle is one unit, not per-cover). */
     lockQty?: boolean;
-    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => void | Promise<void>;
-    onAddLineAdjustment: (lineId: string, adj: LineAdjustment) => void | Promise<void>;
+    /**
+     * Commits the whole edit as ONE atomic write: core line patch plus every new
+     * adjustment (F25). Adjustment IDs are stable across retries of the same edit,
+     * so callers must write them by key (`lineAdjustments.<id>`), never append.
+     */
+    onSave: (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>, adjustments: LineAdjustment[]) => void | Promise<void>;
     refundedQty?: number;
 }
 
@@ -129,7 +100,6 @@ export function EditBillableItemDialog({
     isLocked,
     lockQty = false,
     onSave,
-    onAddLineAdjustment,
   refundedQty = 0,
 }: EditBillableItemDialogProps) {
     const { appUser } = useAuthContext();
@@ -141,13 +111,28 @@ export function EditBillableItemDialog({
     const isPackage = line?.type === 'package';
     const isAddon = line?.type === 'addon';
     
+    // F09: fixed line discounts are per unit, capped at the unit price incl. modifiers.
+    const discountEligibleUnit = line ? (Number(line.unitPrice) || 0) + (Number((line as any).modifiersTotal) || 0) : null;
+    const formSchema = useMemo(() => makeLineEditSchema({ discountEligibleUnit }), [discountEligibleUnit]);
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
+        mode: "onChange",
     });
+
+    // F25: stable adjustment IDs for this editing attempt. Created when the
+    // dialog opens for a line and kept across failed-save retries, so a retry
+    // overwrites the same lineAdjustments key instead of adding a second one.
+    const opIdsRef = useRef<LineEditOpIds | null>(null);
     
-    const { control, handleSubmit, reset, setValue, watch, getValues, trigger } = form;
+    const { control, handleSubmit, reset, setValue, watch, getValues, trigger, formState } = form;
     
     const watchedValues = watch();
+
+    const lineIdForOps = line?.id;
+    useEffect(() => {
+        if (lineIdForOps && isOpen) opIdsRef.current = newLineEditOpIds();
+        if (!isOpen) opIdsRef.current = null;
+    }, [lineIdForOps, isOpen]);
 
      useEffect(() => {
         if (line && isOpen) {
@@ -310,7 +295,6 @@ export function EditBillableItemDialog({
             return;
         }
 
-        const isIncreasingQty = data.qtyOrdered > line.qtyOrdered;
         if ((isPackage || isAddon) && data.qtyOrdered < line.qtyOrdered) {
             toast({
                 variant: 'destructive',
@@ -332,67 +316,20 @@ export function EditBillableItemDialog({
         setIsSubmitting(true);
 
         try {
-            // Part 1: Save core line changes (qty, price, void, free)
-            const before: Partial<SessionBillLine> = {
-                qtyOrdered: line.qtyOrdered,
-                unitPrice: line.unitPrice,
-                freeQty: line.freeQty,
-                voidedQty: line.voidedQty,
-                note: line.note ?? null,
-            };
-
-            const after: Partial<SessionBillLine> = {
-                qtyOrdered: data.qtyOrdered,
-                unitPrice: data.unitPrice,
-                freeQty: data.applyFree ? data.freeQty : 0,
-                voidedQty: data.applyVoid ? data.voidQty : 0,
-                note: (data.note ?? "").trim() || null,
-            };
-            
-            if (isPackage && isIncreasingQty) {
-                (after as any).qtyOverrideActive = true;
-                (after as any).qtyOverrideAt = new Date();
-            }
-
-            await onSave(line.id, before, after);
-
-            // Part 2: Add new discount adjustment if applicable
-            if (data.applyDiscount && data.discountQty > 0 && data.discountValue > 0) {
-                const selectedDiscount = discounts.find(d => d.id === data.discountId);
-                const adj: LineAdjustment = {
-                    id: `adj_${Date.now()}`,
-                    kind: "discount",
-                    note: selectedDiscount?.name || "Custom Discount",
-                    type: data.discountType!,
-                    value: data.discountValue,
-                    qty: data.discountQty,
-                    refId: data.discountId !== 'custom' ? data.discountId : null,
-                    stackable: selectedDiscount?.stackable ?? true,
-                    createdAtClientMs: Date.now(),
-                    createdByUid: appUser.uid,
-                    createdByName: appUser.displayName || appUser.name || undefined,
-                };
-                await onAddLineAdjustment(line.id, adj);
-            }
-
-            // Part 3: Add new charge adjustment if applicable
-            if (data.applyCharge && data.chargeQty > 0 && data.chargeValue > 0) {
-                const selectedCharge = charges.find(c => c.id === data.chargeId);
-                const adj: LineAdjustment = {
-                    id: `adj_${Date.now() + 1}`,
-                    kind: "charge",
-                    note: selectedCharge?.name || "Custom Charge",
-                    type: data.chargeType!,
-                    value: data.chargeValue,
-                    qty: data.chargeQty,
-                    refId: data.chargeId !== 'custom' ? data.chargeId! : null,
-                    createdAtClientMs: Date.now(),
-                    createdByUid: appUser.uid,
-                    createdByName: appUser.displayName || appUser.name || undefined,
-                };
-                await onAddLineAdjustment(line.id, adj);
-            }
-
+            if (!opIdsRef.current) opIdsRef.current = newLineEditOpIds();
+            const { before, after, adjustments } = buildLineEditCommand({
+                line,
+                data,
+                discounts,
+                charges,
+                actor: { uid: appUser.uid, name: appUser.displayName || appUser.name || null },
+                opIds: opIdsRef.current,
+                isPackage,
+            });
+            // One atomic command (F25). On failure the form keeps its values and
+            // the same op IDs, so Retry cannot duplicate an adjustment.
+            await onSave(line.id, before, after, adjustments);
+            opIdsRef.current = null;
             onClose();
         } finally {
             setIsSubmitting(false);
@@ -487,7 +424,7 @@ export function EditBillableItemDialog({
                                                     <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value || ""} disabled={isLocked}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
                                                 )} />
                                                 <FormField name="discountValue" control={control} render={({ field }) => (
-                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={watchedValues.discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
+                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" inputMode="decimal" step="0.01" min={0} max={watchedValues.discountType === 'percent' ? 100 : undefined} {...field} disabled={watchedValues.discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
                                                 )} />
                                             </div>
                                         </div>
@@ -515,7 +452,7 @@ export function EditBillableItemDialog({
                                                     <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value || ""} disabled={isLocked}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
                                                 )} />
                                                 <FormField name="chargeValue" control={control} render={({ field }) => (
-                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" {...field} disabled={watchedValues.chargeId !== 'custom'}/></FormControl><FormMessage/></FormItem>
+                                                    <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" inputMode="decimal" step="0.01" min={0} max={watchedValues.chargeType === 'percent' ? 100 : undefined} {...field} disabled={watchedValues.chargeId !== 'custom'}/></FormControl><FormMessage/></FormItem>
                                                 )} />
                                             </div>
                                         </div>
@@ -575,7 +512,7 @@ export function EditBillableItemDialog({
                 </div>
                 <DialogFooter className="p-6 pt-0">
                     <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
-                    <Button type="submit" form="edit-item-form" disabled={isSubmitting || isLocked}>
+                    <Button type="submit" form="edit-item-form" disabled={isSubmitting || isLocked || !formState.isValid}>
                          {isSubmitting ? <Loader2 className="animate-spin" /> : "Save Changes"}
                     </Button>
                 </DialogFooter>

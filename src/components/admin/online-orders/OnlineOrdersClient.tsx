@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -27,6 +27,8 @@ import { ChatThreadPane } from "@/components/cashier/ChatThreadPane";
 import { ChatInbox } from "@/components/cashier/ChatInbox";
 import { normalizePhone } from "@/lib/phone";
 import { paymentLabel } from "@/lib/payment-label";
+import { useOnlineOrdersFeed, useOrderById } from "@/components/admin/online-orders/useOnlineOrdersFeed";
+import { useConfirmedRemoteValue } from "@/components/admin/online-orders/useConfirmedRemoteValue";
 
 type Modifier = { groupName?: string; valueName?: string; priceDelta?: number };
 type OrderLine = {
@@ -66,6 +68,8 @@ type OnlineOrder = {
   statusHistory?: any[];
 };
 
+const NO_AVAIL: OnlineAvailabilityInput = {};
+
 const peso = (n: number) => `₱${Number(n || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const STATUS_LABEL: Record<string, string> = {
@@ -90,6 +94,9 @@ const TAB_STATES: Record<TabKey, string[]> = {
   completed: ["completed"],
   cancelled: ["cancelled", "rejected", "expired"],
 };
+
+/** Tabs fed by the windowed history listener (F12); the rest come from the complete open set. */
+const HISTORY_TABS: TabKey[] = ["completed", "cancelled"];
 
 function ordinalSuffix(n: number): string {
   const rem100 = n % 100;
@@ -196,9 +203,7 @@ export default function OnlineOrdersClient() {
   const canToggleAvailability = appUser?.role === "admin" || appUser?.role === "manager" || appUser?.role === "cashier";
   const isManagerOrAbove = appUser?.role === "admin" || appUser?.role === "manager";
 
-  const [orders, setOrders] = useState<OnlineOrder[]>([]);
   const [pricingOpen, setPricingOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("new");
   const [selected, setSelected] = useState<OnlineOrder | null>(null);
   const [busy, setBusy] = useState(false);
@@ -212,6 +217,23 @@ export default function OnlineOrdersClient() {
   // "Un-mark as paid" panel — only ever offered before a receipt exists.
   const [unpayOpen, setUnpayOpen] = useState(false);
   const [unpayReason, setUnpayReason] = useState("");
+
+  // F12: open orders and history are separate listeners — see useOnlineOrdersFeed.
+  const {
+    orders: feedOrders,
+    isLoading,
+    openError,
+    historyHasMore,
+    historyLimit,
+    loadMoreHistory,
+  } = useOnlineOrdersFeed(storeId, (err, which) => {
+    toast({
+      variant: "destructive",
+      title: which === "open" ? "Failed to load open orders" : "Failed to load order history",
+      description: err.message,
+    });
+  });
+  const orders = feedOrders as OnlineOrder[];
 
   const { config: storeConfig } = useStoreConfigDoc(storeId);
   const activeModes = useMemo(
@@ -338,8 +360,14 @@ export default function OnlineOrdersClient() {
   // Online-ordering availability (the open/closed switch). Read live from the
   // store doc (every role may read it; stays correct across store-switches and
   // external edits). Admin/manager set it via the server set-availability op.
-  const [avail, setAvail] = useState<OnlineAvailabilityInput>({});
-  const [savingAvail, setSavingAvail] = useState(false);
+  // F13: confirmed value (from the live store doc) + optimistic draft while a
+  // request is in flight; a failed request falls back to the confirmed value.
+  const {
+    value: avail,
+    saving: savingAvail,
+    confirm: confirmAvail,
+    run: runAvail,
+  } = useConfirmedRemoteValue<OnlineAvailabilityInput>(storeId, NO_AVAIL);
   // Re-evaluate the schedule window so the live status flips at open/close time
   // even with no user action (only matters in "auto" mode).
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -354,7 +382,7 @@ export default function OnlineOrdersClient() {
       doc(db, "stores", storeId),
       (snap) => {
         const d = (snap.data() as any) || {};
-        setAvail({
+        confirmAvail(storeId, {
           acceptsOnlineOrders: d.acceptsOnlineOrders,
           onlineOrderMode: d.onlineOrderMode,
           onlineOrderManualOpen: d.onlineOrderManualOpen,
@@ -365,7 +393,7 @@ export default function OnlineOrdersClient() {
       () => {} // non-fatal: keep the last known value
     );
     return () => unsub();
-  }, [storeId]);
+  }, [storeId, confirmAvail]);
 
   const availability = useMemo(
     () => computeOnlineAvailability(avail, new Date(nowTick)),
@@ -379,29 +407,19 @@ export default function OnlineOrdersClient() {
 
   const setAvailability = async (mode: "auto" | "open" | "closed") => {
     if (savingAvail || !storeId || mode === selectedMode) return;
-    setSavingAvail(true);
     const body =
       mode === "auto"
         ? { op: "set-availability", storeId, mode: "auto" }
         : { op: "set-availability", storeId, mode: "manual", manualOpen: mode === "open" };
     // optimistic (enrollment itself — acceptsOnlineOrders — is a separate
     // switch on the store-edit dialog now; this op never touches it)
-    setAvail((p) => ({
-      ...p,
+    const next: OnlineAvailabilityInput = {
+      ...avail,
       onlineOrderMode: mode === "auto" ? "auto" : "manual",
-      onlineOrderManualOpen: mode === "auto" ? p.onlineOrderManualOpen : mode === "open",
-    }));
-    try {
-      const u = user || getAuth().currentUser;
-      if (!u) throw new Error("Not signed in.");
-      const idToken = await u.getIdToken();
-      const res = await fetch("/api/admin/storefront-catalog", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+      onlineOrderManualOpen: mode === "auto" ? avail.onlineOrderManualOpen : mode === "open",
+    };
+    const { result, error } = await runAvail(next, () => postStorefrontOp(body));
+    if (result === "ok") {
       toast({
         title:
           mode === "auto"
@@ -414,79 +432,74 @@ export default function OnlineOrdersClient() {
             ? "It now opens and closes with the store's hours."
             : "Change reflects on the SharEat website within a minute.",
       });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Could not change availability", description: e?.message });
-      // the live snapshot will re-sync the true state
-    } finally {
-      setSavingAvail(false);
+    } else if (result === "failed") {
+      // The switch is already back on the last confirmed setting.
+      toast({
+        variant: "destructive",
+        title: "Could not change availability",
+        description: `${(error as any)?.message || "Request failed."} Showing the last confirmed setting.`,
+      });
     }
+    // "stale": the user switched stores mid-request — nothing to show here.
   };
+
+  // Shared POST for the two storefront switches. Throws on any non-ok result.
+  async function postStorefrontOp(body: Record<string, unknown>) {
+    const u = user || getAuth().currentUser;
+    if (!u) throw new Error("Not signed in.");
+    const idToken = await u.getIdToken();
+    const res = await fetch("/api/admin/storefront-catalog", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+  }
 
   // Delivery pause switch — reads storefrontConfig/main.deliveryEnabled live.
   // Absent doc/field defaults to true (mirrors the website's opt-out default;
   // there is otherwise no admin UI at all that has ever written this field).
-  const [deliveryEnabled, setDeliveryEnabledState] = useState(true);
-  const [savingDelivery, setSavingDelivery] = useState(false);
+  const {
+    value: deliveryEnabled,
+    saving: savingDelivery,
+    confirm: confirmDelivery,
+    run: runDelivery,
+  } = useConfirmedRemoteValue<boolean>(storeId, true);
   useEffect(() => {
     if (!storeId) return;
     const unsub = onSnapshot(
       doc(db, `stores/${storeId}/storefrontConfig/main`),
       (snap) => {
         const d = (snap.data() as any) || {};
-        setDeliveryEnabledState(d.deliveryEnabled !== false);
+        confirmDelivery(storeId, d.deliveryEnabled !== false);
       },
       () => {} // non-fatal: keep the last known value
     );
     return () => unsub();
-  }, [storeId]);
+  }, [storeId, confirmDelivery]);
 
   const setDeliveryEnabled = async (next: boolean) => {
     if (savingDelivery || !storeId || next === deliveryEnabled) return;
-    setSavingDelivery(true);
-    setDeliveryEnabledState(next); // optimistic
-    try {
-      const u = user || getAuth().currentUser;
-      if (!u) throw new Error("Not signed in.");
-      const idToken = await u.getIdToken();
-      const res = await fetch("/api/admin/storefront-catalog", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "set-delivery-enabled", storeId, deliveryEnabled: next }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+    const { result, error } = await runDelivery(next, () =>
+      postStorefrontOp({ op: "set-delivery-enabled", storeId, deliveryEnabled: next })
+    );
+    if (result === "ok") {
       toast({
         title: next ? "Delivery resumed" : "Delivery paused",
         description: next
           ? "This branch is offering delivery again on the website."
           : "Pickup keeps working; delivery is hidden until you turn this back on.",
       });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Could not change delivery availability", description: e?.message });
-      // the live snapshot will re-sync the true state
-    } finally {
-      setSavingDelivery(false);
+    } else if (result === "failed") {
+      toast({
+        variant: "destructive",
+        title: "Could not change delivery availability",
+        description: `${(error as any)?.message || "Request failed."} Showing the last confirmed setting.`,
+      });
     }
   };
 
-  useEffect(() => {
-    if (!storeId) return;
-    setIsLoading(true);
-    const q = query(collection(db, `stores/${storeId}/onlineOrders`), orderBy("createdAtClientMs", "desc"), limit(200));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setOrders(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-        setIsLoading(false);
-      },
-      (err) => {
-        console.error(err);
-        toast({ variant: "destructive", title: "Failed to load orders", description: err.message });
-        setIsLoading(false);
-      }
-    );
-    return () => unsub();
-  }, [storeId, toast]);
 
   const counts = useMemo(() => {
     const c: Record<TabKey, number> = { new: 0, awaiting: 0, active: 0, completed: 0, cancelled: 0 };
@@ -500,12 +513,19 @@ export default function OnlineOrdersClient() {
 
   const visible = useMemo(() => orders.filter((o) => TAB_STATES[tab].includes(o.status)), [orders, tab]);
 
-  // Keep the open detail dialog in sync with live snapshots.
+  // Keep the open detail dialog in sync with live snapshots. If the selected
+  // order is in neither list window, follow it by id instead.
+  const selectedInFeed = !!selected && orders.some((o) => o.id === selected.id);
+  const selectedById = useOrderById<OnlineOrder>(storeId, selected?.id ?? null, !!selected && !selectedInFeed);
   useEffect(() => {
     if (!selected) return;
-    const fresh = orders.find((o) => o.id === selected.id);
+    const fresh = orders.find((o) => o.id === selected.id) ?? selectedById;
     if (fresh && fresh !== selected) setSelected(fresh);
-  }, [orders, selected]);
+  }, [orders, selected, selectedById]);
+  // A store switch closes the dialog — it belongs to the previous store.
+  useEffect(() => {
+    setSelected(null);
+  }, [storeId]);
 
   const transition = async (order: OnlineOrder, toStatus: string, reason?: string) => {
     if (busy) return;
@@ -626,17 +646,40 @@ export default function OnlineOrdersClient() {
           <Card><CardContent className="py-10 text-center text-muted-foreground">Select a store to view its online orders.</CardContent></Card>
         ) : (
           <>
-            <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
+            <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="max-w-full overflow-x-auto">
               <TabsList>
                 {(Object.keys(TAB_STATES) as TabKey[]).map((k) => (
                   <TabsTrigger key={k} value={k} className="capitalize">
                     {k === "awaiting" ? "Awaiting payment" : k}
-                    {counts[k] > 0 && <Badge variant="secondary" className="ml-2">{counts[k]}</Badge>}
+                    {counts[k] > 0 && (
+                      <Badge variant="secondary" className="ml-2">
+                        {counts[k]}
+                        {/* History tabs are windowed: more may exist beyond the loaded page. */}
+                        {HISTORY_TABS.includes(k) && historyHasMore ? "+" : ""}
+                      </Badge>
+                    )}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </Tabs>
 
+            {openError && (
+              <Card className="border-destructive">
+                <CardContent className="py-4 text-sm text-destructive">
+                  Open orders could not be loaded ({openError.message}). The New / Awaiting / Active tabs may be incomplete — reload the page to retry.
+                </CardContent>
+              </Card>
+            )}
+            {HISTORY_TABS.includes(tab) && !isLoading && (
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  Showing {tab} orders from the latest {historyLimit} online orders.
+                </span>
+                {historyHasMore && (
+                  <Button variant="outline" size="sm" onClick={loadMoreHistory}>Load older orders</Button>
+                )}
+              </div>
+            )}
             {isLoading ? (
               <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : visible.length === 0 ? (

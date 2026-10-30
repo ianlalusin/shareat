@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { useStoreContext } from "@/context/store-context";
@@ -32,16 +32,108 @@ import { takeReservationSeatHandoff } from "@/lib/reservations/seat-handoff";
 import { useLocalProfile } from "@/context/local-profile-context";
 import { reservationEvent, appendReservationEvent } from "@/lib/reservations/history";
 
+type ActiveSessionsState = {
+    storeId: string;
+    sessions: ActiveSession[];
+    loaded: boolean;
+    error: Error | null;
+};
+
+/**
+ * F18: live `activeSessions` projection for one store, with a terminal error
+ * state. A listener failure (permission, missing index, network) ends loading
+ * and is reported - it must never leave the cashier on an endless spinner or
+ * read as "No active sessions". Data is tagged with its store so a store switch
+ * never shows the previous store's sessions.
+ *
+ * @internal Exported for tests.
+ */
+export function useActiveSessions(storeId: string | null, enabled: boolean) {
+    const [state, setState] = useState<ActiveSessionsState | null>(null);
+    const [attempt, setAttempt] = useState(0);
+    const retry = useCallback(() => setAttempt((a) => a + 1), []);
+
+    useEffect(() => {
+        if (!storeId || !enabled) {
+            setState(null);
+            return;
+        }
+        // Keep last-known rows for the SAME store across a retry (they are shown
+        // marked as possibly stale); drop them on a store change.
+        setState((prev) => ({
+            storeId,
+            sessions: prev?.storeId === storeId ? prev.sessions : [],
+            loaded: false,
+            error: null,
+        }));
+        let cancelled = false;
+
+        const sessionsQuery = query(
+            collection(db, "stores", storeId, "activeSessions"),
+            orderBy("startedAtClientMs", "asc")
+        );
+
+        const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
+            if (cancelled) return;
+            const rows = snapshot.docs.map(d => {
+                const data = d.data();
+                return {
+                    id: d.id,
+                    ...data,
+                    startedAtClientMs: data.startedAtClientMs ?? null,
+                    startedAt: data.startedAt ?? null,
+                } as ActiveSession;
+            });
+            setState({ storeId, sessions: rows, loaded: true, error: null });
+        }, (error) => {
+            if (cancelled) return;
+            console.error("Session listener failed:", error);
+            setState((prev) => ({
+                storeId,
+                sessions: prev?.storeId === storeId ? prev.sessions : [],
+                loaded: true,
+                error: error instanceof Error ? error : new Error(String(error)),
+            }));
+        });
+
+        return () => {
+            cancelled = true;
+            unsubscribe();
+        };
+    }, [storeId, enabled, attempt]);
+
+    if (!storeId || !enabled) {
+        return { sessions: [] as ActiveSession[], isLoading: false, error: null as Error | null, retry };
+    }
+    if (!state || state.storeId !== storeId) {
+        return { sessions: [] as ActiveSession[], isLoading: true, error: null as Error | null, retry };
+    }
+    return { sessions: state.sessions, isLoading: !state.loaded, error: state.error, retry };
+}
+
+/** Plain-language text for a sessions listener failure. @internal Exported for tests. */
+export function describeSessionsError(error: Error | null): string {
+    const code = (error as any)?.code as string | undefined;
+    if (code === "permission-denied") return "You don't have permission to view this store's active sessions.";
+    if (code === "failed-precondition") return "The active-sessions query needs a database index that isn't ready yet.";
+    if (code === "unavailable") return "Can't reach the server. Check the connection.";
+    return error?.message || "Unknown error.";
+}
+
 export function SessionListView() {
     const { appUser, isSigningOut } = useAuthContext();
     const { currentProfile } = useLocalProfile();
     const { activeStore } = useStoreContext();
     const router = useRouter();
 
-    const { config: storeConfig, isLoading: isConfigLoading, error: configError } = useStoreConfigDoc(activeStore?.id);
+    const { config: storeConfig, isLoading: isConfigLoading, error: configError, retry: retryConfig } = useStoreConfigDoc(activeStore?.id);
 
-    const [isLoadingSessions, setIsLoadingSessions] = useState(true);
-    const [sessions, setSessions] = useState<ActiveSession[]>([]);
+    const {
+        sessions,
+        isLoading: isLoadingSessions,
+        error: sessionsError,
+        retry: retrySessions,
+    } = useActiveSessions(activeStore?.id ?? null, !!appUser && !isSigningOut);
 
     const [cachedTables, setCachedTables] = useState<any[]>([]);
     const [isLoadingTables, setIsLoadingTables] = useState(true);
@@ -160,41 +252,6 @@ export function SessionListView() {
         return [...after, ...before];
     }, [cachedTables, sessions]);
 
-    useEffect(() => {
-        if (!activeStore) {
-            setIsLoadingSessions(false);
-            return;
-        };
-        setIsLoadingSessions(true);
-
-        const handleError = (error: any) => {
-            if (isSigningOut || !appUser) return;
-            console.error("Session listener failed:", error);
-        };
-        
-        // Fetch active sessions from the NEW projection collection
-        const sessionsQuery = query(
-            collection(db, "stores", activeStore.id, "activeSessions"),
-            orderBy("startedAtClientMs", "asc")
-        );
-
-        const unsubscribe = onSnapshot(sessionsQuery, (snapshot) => {
-            setSessions(snapshot.docs.map(d => {
-                const data = d.data();
-                return { 
-                    id: d.id, 
-                    ...data,
-                    startedAtClientMs: data.startedAtClientMs ?? null,
-                    startedAt: data.startedAt ?? null,
-                } as ActiveSession
-            }));
-            setIsLoadingSessions(false);
-        }, handleError);
-
-        return () => unsubscribe();
-
-    }, [activeStore, appUser, isSigningOut]);
-
     // Badge flags (hasVoids/hasFree/hasDiscounts) are maintained on the
     // activeSessions projection at write time by recomputeSessionAdjustmentFlags;
     // see firestore.ts. No per-session sessionBillLines listener needed here.
@@ -254,9 +311,14 @@ export function SessionListView() {
                     {!isConfigLoading && !storeConfig && (
                         <Alert variant="destructive">
                             <AlertCircle className="h-4 w-4" />
-                            <AlertTitle>Configuration Missing</AlertTitle>
+                            <AlertTitle>{configError ? "Configuration Failed to Load" : "Configuration Missing"}</AlertTitle>
                             <AlertDescription>
-                                This store's configuration document could not be loaded. Some features like starting new sessions may be unavailable.
+                                {configError
+                                    ? `This store's configuration could not be loaded (${configError.message}). Starting new sessions is unavailable until it loads.`
+                                    : "This store's configuration document could not be loaded. Some features like starting new sessions may be unavailable."}
+                                {configError && (
+                                    <Button variant="outline" size="sm" className="ml-2" onClick={retryConfig}>Retry</Button>
+                                )}
                             </AlertDescription>
                         </Alert>
                     )}
@@ -301,7 +363,21 @@ export function SessionListView() {
                             />
                         </div>
                         <div className="lg:col-span-2 space-y-8">
-                            <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} />
+                            {sessionsError && (
+                                <Alert variant="destructive" data-testid="active-sessions-error">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertTitle>Active sessions could not be loaded</AlertTitle>
+                                    <AlertDescription>
+                                        {describeSessionsError(sessionsError)}
+                                        {sessions.length > 0 && " The tables below are the last known list and may be out of date."}
+                                        <Button variant="outline" size="sm" className="ml-2" onClick={retrySessions}>Retry</Button>
+                                    </AlertDescription>
+                                </Alert>
+                            )}
+                            {/* On error with nothing loaded, show only the error - never "No active sessions". */}
+                            {(!sessionsError || sessions.length > 0) && (
+                                <ActiveSessionsGrid sessions={sessions} storeId={activeStore.id} />
+                            )}
                             <PastSessionsCard />
                         </div>
                     </div>

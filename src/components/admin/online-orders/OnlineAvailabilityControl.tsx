@@ -29,8 +29,8 @@ export function OnlineAvailabilityControl({
   onSelect: (mode: SelectedMode) => void;
 }) {
   return (
-    <div className="flex flex-col items-end gap-1 rounded-lg border bg-card px-3 py-2" data-testid="availability-control">
-      <div className="flex items-center gap-3">
+    <div className="flex max-w-full flex-col items-end gap-1 rounded-lg border bg-card px-3 py-2" data-testid="availability-control">
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
         <span
           data-testid="status"
           className={`inline-flex items-center gap-1.5 text-sm font-semibold ${availability.openNow ? "text-green-600" : "text-muted-foreground"}`}

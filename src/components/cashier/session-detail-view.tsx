@@ -13,7 +13,7 @@ import { updateSessionBillLine, removeLineAdjustment, getActorStamp, createKitch
 import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
 import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
 import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
-import { Loader2, History, ArrowLeft, Receipt } from "lucide-react";
+import { Loader2, History, ArrowLeft, Receipt, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SessionHeader } from "@/components/cashier/session-header";
 import { LoyaltyRedeemCard } from "@/components/cashier/LoyaltyRedeemCard";
@@ -37,6 +37,8 @@ import { useDataAnalysis } from "@/hooks/use-data-analysis";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { commitLocalFirst } from "@/lib/offline/commit";
 import { formatDurationVerbose } from "@/lib/utils/date";
+import { overlayAddedLine } from "@/lib/billing/bill-lines";
+import { lineEditUpdateFields } from "@/lib/billing/line-edit";
 import { sessionDialogLabel } from "@/lib/sessionLabel";
 import {
   Accordion,
@@ -55,7 +57,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const isMobile = useIsMobile();
   const isOnline = useOnlineStatus();
 
-  const { config: storeConfig, isLoading: isConfigLoading } = useStoreConfigDoc(activeStore?.id);
+  const { config: storeConfig, isLoading: isConfigLoading, error: configError, retry: retryConfig } = useStoreConfigDoc(activeStore?.id);
   const sessionAnalysis = useDataAnalysis(activeStore?.id, { kind: "thisMonth" });
 
   const [session, setSession] = useState<PendingSession | null>(null);
@@ -257,7 +259,12 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
   const billableDiscounts = useMemo(() => discounts.filter(d => Array.isArray(d.scope) ? d.scope.includes("bill") : d.scope === "bill"), [discounts]);
   const itemDiscounts = useMemo(() => discounts.filter(d => Array.isArray(d.scope) ? d.scope.includes("item") : d.scope === "item"), [discounts]);
   
-  const isBillingLocked = session?.status !== 'active' || session?.isPaid;
+  // F17: without a confirmed config for THIS store (missing doc or listener
+  // error) we cannot trust payment methods, discounts or charges, so every
+  // money-changing control is disabled and a message explains why.
+  const configUnavailable = !isConfigLoading && (!!configError || !storeConfig);
+  const isSessionClosed = session?.status !== 'active' || !!session?.isPaid;
+  const isBillingLocked = isSessionClosed || configUnavailable;
 
   const billTotals = useMemo(() => {
     return calculateBillTotals(billLines, activeStore, billDiscount, customAdjustments,
@@ -281,8 +288,9 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
+  const handleUpdateLine = async (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>, adjustments: LineAdjustment[] = []) => {
     if (!appUser || !storeId || !sessionId || !session) return;
+    if (configUnavailable) throw new Error("Store settings are unavailable for this branch. Reload before editing the bill.");
     // Best-effort server side-effects: awaited online, fired local-first when
     // offline (their internal batch.commit() never resolves with no internet;
     // the local write still applies and syncs on reconnect).
@@ -298,8 +306,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                 const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
                 const actor = getActorStamp(appUser);
 
+                // F25: core patch + every new adjustment (keyed by stable id)
+                // in the same transaction/batch: all or nothing, retry-safe.
                 const updatePayload = {
-                    ...after,
+                    ...lineEditUpdateFields(after, adjustments),
                     updatedAt: serverTimestamp(),
                     updatedByUid: actor.uid,
                     updatedByName: actor.username,
@@ -333,7 +343,7 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             const actor = getActorStamp(appUser);
 
             const updatePayload = {
-                ...after,
+                ...lineEditUpdateFields(after, adjustments),
                 updatedAt: serverTimestamp(),
                 updatedByUid: actor.uid,
                 updatedByName: actor.username,
@@ -401,7 +411,8 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           "voidedQty" in after ||
           "freeQty" in after ||
           "discountQty" in after ||
-          "discountValue" in after;
+          "discountValue" in after ||
+          adjustments.some((a) => a.kind === "discount");
         if (flagFieldsTouched) {
           await sideEffect(() => recomputeSessionAdjustmentFlags(storeId, sessionId));
         }
@@ -496,6 +507,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
           }));
         }
 
+        for (const adj of adjustments) {
+          if (adj.kind === "discount") await sideEffect(() => logLineDiscountApplied(line, adj));
+        }
+
         toast({ title: "Line Item Updated"});
     } catch(e: any) {
         toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
@@ -503,85 +518,44 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const handleAddLineAdjustment = async (lineId: string, adj: LineAdjustment) => {
-    if (!appUser || !storeId || !sessionId || !activeStore || !session) return;
-    try {
-        // Best-effort server side-effects: awaited online, fired local-first offline
-        // (their internal batch.commit()/updateDoc never resolves with no internet).
-        const sideEffect = (run: () => Promise<unknown>): Promise<void> => {
-          if (isOnline) return run().then(() => undefined);
-          run().catch((err) => console.warn("[handleAddLineAdjustment] offline side-effect deferred", err));
-          return Promise.resolve();
-        };
-        const lineRef = doc(db, 'stores', storeId, 'sessions', sessionId, 'sessionBillLines', lineId);
-        const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
-        const batch = writeBatch(db);
-        batch.update(lineRef, {
-            [`lineAdjustments.${adj.id}`]: adj,
-        });
-        batch.update(sessionRef, {
-            billingRevision: increment(1),
-            updatedAt: serverTimestamp(),
-        });
-        if (isOnline) {
-          await batch.commit();
-        } else {
-          commitLocalFirst(batch, (err) => console.error("[handleAddLineAdjustment] offline sync failed", err));
-        }
-        toast({ title: 'Adjustment Added'});
-
-        if (adj.kind === "discount") {
-          await sideEffect(() => recomputeSessionAdjustmentFlags(storeId, sessionId));
-        }
-
-        if (adj.kind === 'discount') {
-            const line = billLines.find(l => l.id === lineId);
-            if(line) {
-                const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
-                const qtyToApply = Math.min(adj.qty, billableQty);
-                const unitPrice = line.unitPrice || 0;
-                const taxRate = (activeStore.taxRatePct || 0) / 100;
-                const isVatInclusive = activeStore.taxType === 'VAT_INCLUSIVE';
-                const baseUnitPrice = isVatInclusive ? unitPrice / (1 + taxRate) : unitPrice;
-
-                let calculatedAmount = 0;
-                if (adj.type === 'percent') {
-                    calculatedAmount = (qtyToApply * baseUnitPrice) * (adj.value / 100);
-                } else {
-                    calculatedAmount = Math.min(baseUnitPrice, adj.value) * qtyToApply;
-                }
-
-                await sideEffect(() => writeActivityLog({
-                    action: "DISCOUNT_APPLIED",
-                    storeId,
-                    sessionId,
-                    user: appUser,
-                    note: `Applied to ${line.itemName}`,
-                    sessionContext: {
-                        sessionStatus: session.status,
-                        sessionStartedAt: session.startedAt,
-                        sessionMode: session.sessionMode,
-                        customerName: session.customer?.name ?? session.customerName,
-                        tableNumber: session.tableNumber,
-                        tableDisplayName: session.tableDisplayName ?? null,
-                    },
-                    meta: {
-                        itemId: line.id,
-                        itemName: line.itemName,
-                        discountName: adj.note,
-                        scope: "item",
-                        qty: adj.qty,
-                        discountType: adj.type,
-                        amount: calculatedAmount,
-                    }
-                }));
-            }
-        }
-    } catch(e: any) {
-        toast({ variant: 'destructive', title: 'Update Failed', description: e.message });
-        throw e;
-    }
-  }
+  // Audit entry for a line discount committed via handleUpdateLine (F25: the
+  // adjustment itself is written atomically with the line patch there).
+  const logLineDiscountApplied = (line: SessionBillLine, adj: LineAdjustment) => {
+    if (!appUser || !storeId || !sessionId || !activeStore || !session) return Promise.resolve();
+    const billableQty = line.qtyOrdered - (line.voidedQty || 0) - (line.freeQty || 0);
+    const qtyToApply = Math.min(adj.qty, billableQty);
+    const unitPrice = line.unitPrice || 0;
+    const taxRate = (activeStore.taxRatePct || 0) / 100;
+    const isVatInclusive = activeStore.taxType === 'VAT_INCLUSIVE';
+    const baseUnitPrice = isVatInclusive ? unitPrice / (1 + taxRate) : unitPrice;
+    const calculatedAmount = adj.type === 'percent'
+      ? (qtyToApply * baseUnitPrice) * (adj.value / 100)
+      : Math.min(baseUnitPrice, adj.value) * qtyToApply;
+    return writeActivityLog({
+      action: "DISCOUNT_APPLIED",
+      storeId,
+      sessionId,
+      user: appUser,
+      note: `Applied to ${line.itemName}`,
+      sessionContext: {
+        sessionStatus: session.status,
+        sessionStartedAt: session.startedAt,
+        sessionMode: session.sessionMode,
+        customerName: session.customer?.name ?? session.customerName,
+        tableNumber: session.tableNumber,
+        tableDisplayName: session.tableDisplayName ?? null,
+      },
+      meta: {
+        itemId: line.id,
+        itemName: line.itemName,
+        discountName: adj.note,
+        scope: "item",
+        qty: adj.qty,
+        discountType: adj.type,
+        amount: calculatedAmount,
+      },
+    });
+  };
 
   const handleRemoveLineAdjustment = async (lineId: string, adjId: string) => {
     if (!activeStore?.id || !sessionId || !appUser || !session) return;
@@ -752,6 +726,19 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
         </div>
       </header>
       
+      {configUnavailable && (
+        <div role="alert" className="flex items-center gap-3 border-b border-destructive/40 bg-destructive/10 px-6 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            {configError
+              ? "Store settings for this branch could not be loaded. Payments, discounts, charges and item edits are disabled until they load."
+              : "This branch has no store settings yet. Payments, discounts, charges and item edits are disabled."}
+          </span>
+          {configError && (
+            <Button type="button" variant="outline" size="sm" onClick={() => retryConfig?.()}>Retry</Button>
+          )}
+        </div>
+      )}
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
         <div className="flex-1 overflow-hidden min-h-0">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 h-full">
@@ -780,28 +767,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         discounts={itemDiscounts}
                         isLocked={isBillingLocked}
                         onUpdateLine={(line) => setEditingLineId(line.id)}
-                        onAddLine={(newLine) => {
-                            setBillLines((currentLines) => {
-                                // Check if an identical addon line already exists
-                                const existingLineIndex = currentLines.findIndex(
-                                    (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
-                                );
-
-                                if (existingLineIndex >= 0) {
-                                    // If it exists, update the quantity
-                                    const nextLines = [...currentLines];
-                                    const existingLine = nextLines[existingLineIndex];
-                                    nextLines[existingLineIndex] = {
-                                        ...existingLine,
-                                        qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
-                                    };
-                                    return nextLines;
-                                } else {
-                                    // If it doesn't exist, add the new line
-                                    return [...currentLines, newLine];
-                                }
-                            });
-                        }}
+                        // F24: the bill-lines snapshot is the only source of
+                        // committed lines. Never increment here; only show a
+                        // not-yet-observed line (by its real bill-line id) until
+                        // the next snapshot replaces the list.
+                        onAddLine={(newLine) => setBillLines((currentLines) => overlayAddedLine(currentLines, newLine))}
                     />
                   </div>
 
@@ -821,9 +791,10 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
                         billDiscount={billDiscount}
                         isLocked={isBillingLocked}
                         busy={isMutatingBill}
+                        discountEligibleAmount={billTotals.subtotal - billTotals.lineDiscountsTotal}
                       />
                       <Button type="button" className="flex-1" size="lg" disabled={isBillingLocked || grandTotal <= 0} onClick={handlePayClick}>
-                          {isBillingLocked ? "Payment Finalized" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          {isSessionClosed ? "Payment Finalized" : configUnavailable ? "Settings unavailable" : `Pay ₱${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                       </Button>
                     </div>
                   </div>
@@ -846,12 +817,11 @@ export function SessionDetailView({ sessionId }: { sessionId: string }) {
             isLocked={isBillingLocked}
             lockQty={!!session?.packageSnapshot?.isBundle && editingLine.type === 'package'}
             onSave={handleUpdateLine}
-            onAddLineAdjustment={handleAddLineAdjustment}
         />
       )}
       {Dialog}
 
-      {session && appUser && activeStore && storeId && (
+      {session && appUser && activeStore && storeId && !configUnavailable && (
         <PaymentModal
           open={isPaymentOpen}
           onOpenChange={setIsPaymentOpen}

@@ -11,6 +11,7 @@ import { Check, Trash2, X } from "lucide-react";
 import type { Discount, Charge, Adjustment } from "@/lib/types";
 import { type AppUser } from "@/context/auth-context";
 import { useToast } from "@/hooks/use-toast";
+import { validateChargeValue, validateDiscountValue } from "@/lib/billing/adjustment-validation";
 
 interface BillAdjustmentsProps {
   appUser: AppUser | null;
@@ -31,12 +32,18 @@ interface BillAdjustmentsProps {
   busy?: boolean;
   /** Popover side; defaults to "top" for the sticky-footer placement. */
   side?: "top" | "bottom" | "left" | "right";
+  /**
+   * Amount a fixed bill discount may not exceed (bill subtotal after line
+   * discounts). When omitted, only the finite / > 0 / percent <= 100 rules apply.
+   */
+  discountEligibleAmount?: number;
 }
 
-function CurrencyInput({ value, onChange, disabled }: { value: number, onChange: (val: number) => void, disabled?: boolean }) {
+function CurrencyInput({ value, onChange, disabled, invalid, describedBy }: { value: number, onChange: (val: number) => void, disabled?: boolean, invalid?: boolean, describedBy?: string }) {
     const [displayValue, setDisplayValue] = useState(value.toString());
 
     useEffect(() => {
+        if (!Number.isFinite(value)) return;
         if (document.activeElement?.id !== `currency-input-${value}`) {
             setDisplayValue(value.toString());
         }
@@ -49,11 +56,14 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
     };
 
     const handleBlur = () => {
-        if (displayValue === "" || isNaN(parseFloat(displayValue))) {
+        const n = displayValue.trim() === "" ? NaN : Number(displayValue);
+        if (displayValue.trim() === "") {
             setDisplayValue("0");
             onChange(0);
         } else {
-            onChange(parseFloat(displayValue));
+            // Keep invalid text visible and report NaN so the caller's
+            // validation (F09) shows an error instead of silently using 0.
+            onChange(n);
         }
     };
 
@@ -62,10 +72,7 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
     };
 
     const handleKeyUp = () => {
-        const numVal = parseFloat(displayValue);
-        if (!isNaN(numVal)) {
-            onChange(numVal);
-        }
+        onChange(displayValue.trim() === "" ? 0 : Number(displayValue));
     }
 
     return (
@@ -80,6 +87,10 @@ function CurrencyInput({ value, onChange, disabled }: { value: number, onChange:
             onKeyUp={handleKeyUp}
             className="h-9"
             disabled={disabled}
+            step="0.01"
+            min={0}
+            aria-invalid={invalid || undefined}
+            aria-describedby={describedBy}
         />
     )
 }
@@ -108,6 +119,7 @@ export function BillAdjustments({
   isLocked = false,
   busy = false,
   side = "top",
+  discountEligibleAmount,
 }: BillAdjustmentsProps) {
   const [discountOpen, setDiscountOpen] = useState(false);
   const [chargeOpen, setChargeOpen] = useState(false);
@@ -167,7 +179,12 @@ export function BillAdjustments({
     }
   };
 
+  // F09: one shared rule set; errors show under the value, Apply disabled while invalid.
+  const discountError = validateDiscountValue(tempDiscountType, tempDiscountValue, discountEligibleAmount);
+  const customChargeError = showCustomCharge ? validateChargeValue("fixed", customChargeAmount) : null;
+
   const handleApplyDiscount = async () => {
+    if (discountError) return;
     let discountToApply: Discount;
     if (isCustomDiscount) {
          discountToApply = {
@@ -216,6 +233,7 @@ export function BillAdjustments({
   }
 
   const handleApplyCustomCharge = async () => {
+    if (customChargeError || !customChargeNote.trim()) return;
     await runBillingMutation(async () => {
       await onAddCustomAdjustment(customChargeNote, customChargeAmount);
       setCustomChargeNote("");
@@ -276,11 +294,16 @@ export function BillAdjustments({
                             value={tempDiscountValue}
                             onChange={setTempDiscountValue}
                             disabled={isLocked || isSaving || busy || !isCustomDiscount}
+                            invalid={!!discountError && tempDiscountValue !== 0}
+                            describedBy="bill-discount-error"
                         />
                     </div>
+                    {discountError && tempDiscountValue !== 0 && (
+                        <p id="bill-discount-error" role="alert" className="text-xs text-destructive">{discountError}</p>
+                    )}
                     <div className="flex justify-end gap-2">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleClearDiscount} disabled={isLocked || isSaving || busy}><Trash2 size={16} /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked || isSaving || busy}><Check size={16} /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={handleApplyDiscount} disabled={isLocked || isSaving || busy || !!discountError} aria-label="Apply bill discount"><Check size={16} /></Button>
                     </div>
                 </PopoverContent>
             </Popover>
@@ -325,8 +348,13 @@ export function BillAdjustments({
                             value={customChargeAmount}
                             onChange={setCustomChargeAmount}
                             disabled={isSaving || busy}
+                            invalid={!!customChargeError && customChargeAmount !== 0}
+                            describedBy="custom-charge-error"
                         />
-                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={isSaving || busy || !customChargeNote || customChargeAmount <= 0}>Apply Custom Charge</Button>
+                        {customChargeError && customChargeAmount !== 0 && (
+                            <p id="custom-charge-error" role="alert" className="text-xs text-destructive">{customChargeError}</p>
+                        )}
+                        <Button size="sm" className="w-full" onClick={handleApplyCustomCharge} disabled={isSaving || busy || !customChargeNote.trim() || !!customChargeError}>Apply Custom Charge</Button>
                     </div>
                 )}
             </PopoverContent>

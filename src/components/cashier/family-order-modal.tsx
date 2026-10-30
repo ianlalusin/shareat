@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
+import { loadOptionGroups } from "@/lib/billing/option-groups-load";
 import Image from "next/image";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
@@ -68,6 +69,8 @@ function FamilyOrderContent({
   const [selectedVariant, setSelectedVariant] = useState<EnrichedStoreAddon | null>(null);
   const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [groupsRetry, setGroupsRetry] = useState(0);
   const [selections, setSelections] = useState<Record<string, Set<string>>>({});
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
@@ -94,19 +97,25 @@ function FamilyOrderContent({
     (async () => {
       try {
         setLoadingGroups(true);
+        setGroupsError(null);
         const productId = (selectedVariant as any).productId || selectedVariant.id;
-        const user = getAuth().currentUser;
-        if (!user) {
+        // An unknown option list is not an empty one: adding without it would
+        // skip required modifiers and their charges (frontend audit F08).
+        const result = await loadOptionGroups({
+          storeId,
+          productId,
+          getIdToken: async () => {
+            const user = getAuth().currentUser;
+            return user ? await user.getIdToken() : null;
+          },
+        });
+        if (cancelled) return;
+        if (result.status !== "ok") {
           setOptionGroups([]);
+          setGroupsError("Couldn't load this item's options. Check the connection and try again.");
           return;
         }
-        const idToken = await user.getIdToken();
-        const res = await fetch(`/api/products/${encodeURIComponent(productId)}/option-groups?storeId=${encodeURIComponent(storeId)}`, {
-          headers: { Authorization: `Bearer ${idToken}` },
-        });
-        const json = await res.json().catch(() => ({}));
-        if (cancelled) return;
-        const groups: OptionGroup[] = res.ok && json?.ok ? json.optionGroups || [] : [];
+        const groups: OptionGroup[] = result.groups;
         setOptionGroups(groups);
         // Pre-select first value of any required single-select group.
         const initial: Record<string, Set<string>> = {};
@@ -120,7 +129,10 @@ function FamilyOrderContent({
         }
         setSelections(initial);
       } catch {
-        if (!cancelled) setOptionGroups([]);
+        if (!cancelled) {
+          setOptionGroups([]);
+          setGroupsError("Couldn't load this item's options. Check the connection and try again.");
+        }
       } finally {
         if (!cancelled) setLoadingGroups(false);
       }
@@ -128,7 +140,7 @@ function FamilyOrderContent({
     return () => {
       cancelled = true;
     };
-  }, [selectedVariant?.id, storeId]);
+  }, [selectedVariant?.id, storeId, groupsRetry]);
 
   function toggleSingle(g: OptionGroup, valueId: string) {
     setSelections((prev) => ({ ...prev, [g.id]: new Set([valueId]) }));
@@ -177,6 +189,7 @@ function FamilyOrderContent({
     !submitting &&
     !!selectedVariant &&
     !loadingGroups &&
+    !groupsError &&
     Object.keys(errors).length === 0 &&
     quantity > 0;
 
@@ -276,6 +289,13 @@ function FamilyOrderContent({
         ) : loadingGroups ? (
           <div className="py-4 text-center text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin inline" />
+          </div>
+        ) : groupsError ? (
+          <div role="alert" className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+            <span>{groupsError}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setGroupsRetry((n) => n + 1)}>
+              Retry
+            </Button>
           </div>
         ) : optionGroups.length === 0 ? (
           <div className="text-xs text-muted-foreground italic">No modifiers for this item.</div>

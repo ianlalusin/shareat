@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { AddInventoryDialog } from "@/components/manager/inventory/add-inventory-dialog";
 import { EditInventoryDialog } from "@/components/manager/inventory/edit-inventory-dialog";
 import { QuickPriceCell } from "@/components/manager/inventory/quick-price-cell";
+import { InventoryItemCard } from "@/components/manager/inventory/inventory-item-card";
 import OptionGroupsClient from "@/components/admin/option-groups/OptionGroupsClient";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import type { InventoryItem, KitchenLocation, Product } from "@/lib/types";
@@ -669,6 +670,31 @@ export default function InventoryManagementPage() {
     );
   };
 
+  /** Phone (<768px) card for one item — same data and handlers as renderItemRow (audit F21). */
+  const renderItemCard = (item: InventoryItem, indent = false) => {
+    const ariaLabel = getDisplayName(item);
+    return (
+      <InventoryItemCard
+        key={item.id}
+        item={item}
+        label={indent ? getEffectiveVariantLabel(item) || item.name : ariaLabel}
+        ariaLabel={ariaLabel}
+        imageUrl={item.imageUrl ?? productImageById.get(item.productId) ?? null}
+        indent={indent}
+        showArchived={showArchived}
+        warnings={showArchived ? [] : pricingWarnings(item)}
+        withheldOnline={item.onlineEnabled === true && withheldByOnlinePrice(item)}
+        canArchive={!!appUser?.isPlatformAdmin}
+        canRestore={!!appUser?.isPlatformAdmin}
+        onQuickPrice={(field, next) => handleQuickPrice(item, field, next)}
+        onToggle={(field) => handleToggle(item, field)}
+        onEdit={() => { setSelectedItem(item); setIsEditOpen(true); }}
+        onArchive={() => handleDeleteItem(item)}
+        onRestore={() => handleRestoreItem(item)}
+      />
+    );
+  };
+
   /** Family header row: chevron, name, variant count, and a rollup so "may vary" is visible without expanding. */
   const renderFamilyHeaderRow = (row: Extract<ReturnType<typeof groupIntoFamilies<InventoryItem>>[number], { kind: "family" }>) => {
     const expanded = !collapsedFamilyIds.has(row.groupId);
@@ -750,12 +776,12 @@ export default function InventoryManagementPage() {
       </div>
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle>{showArchived ? "Archived Stock" : "Current Stock"}</CardTitle>
               <CardDescription>{showArchived ? "Archived products. These are hidden from all parts of the app." : "All products currently tracked in this store's inventory."}</CardDescription>
             </div>
-             <div className="flex items-center gap-4">
+             <div className="flex flex-wrap items-center gap-4">
                 <div className="relative w-full max-w-sm">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -774,11 +800,44 @@ export default function InventoryManagementPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 sm:px-6">
           {isLoading ? (
             <div className="flex justify-center items-center h-40"><Loader className="animate-spin" /></div>
           ) : inventory.length > 0 ? (
-            <Table>
+            <>
+            {/* Phones: compact cards with every editor and action (audit F21). */}
+            <div className="space-y-5 md:hidden">
+              {Object.entries(familyGroupedInventory).map(([subCategory, rows]) => (
+                <section key={subCategory} className="space-y-2">
+                  <h3 className="text-base font-semibold">{subCategory}</h3>
+                  {rows.map((row) => {
+                    if (row.kind === "single") return renderItemCard(row.item);
+                    const expanded = !collapsedFamilyIds.has(row.groupId);
+                    return (
+                      <div key={`family-${row.groupId}`} className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleFamilyExpanded(row.groupId)}
+                          aria-expanded={expanded}
+                          className="flex min-h-10 w-full items-center gap-2 rounded-md bg-muted/40 px-2 text-left"
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+                          <span className="min-w-0 flex-1 break-words font-semibold">{row.groupName}</span>
+                          <Badge variant="outline" className="shrink-0 text-xs">Family · {row.variants.length}</Badge>
+                        </button>
+                        {expanded && row.variants.map((v) => renderItemCard(v, true))}
+                      </div>
+                    );
+                  })}
+                </section>
+              ))}
+              {Object.keys(familyGroupedInventory).length === 0 && debouncedSearchTerm && (
+                <p className="py-8 text-center text-muted-foreground">No results found for "{debouncedSearchTerm}".</p>
+              )}
+            </div>
+            {/* Tablets and up: the aligned table; horizontal overflow stays inside it. */}
+            <div className="hidden md:block">
+            <Table className="min-w-[760px]">
               {Object.entries(familyGroupedInventory).map(([subCategory, rows]) => (
                 <React.Fragment key={subCategory}>
                   <TableHeader className="bg-muted/50">
@@ -824,6 +883,8 @@ export default function InventoryManagementPage() {
                 </TableBody>
               )}
             </Table>
+            </div>
+            </>
           ) : (
             <p className="text-center text-muted-foreground py-8">{showArchived ? 'No archived items found.' : 'No inventory items found. Click "Add Products" to get started.'}</p>
           )}

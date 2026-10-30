@@ -18,7 +18,7 @@ export function PageHeader({ title, description, children, className }: PageHead
           <p className="text-lg text-muted-foreground">{description}</p>
         )}
       </div>
-      {children && <div className="flex items-center gap-2">{children}</div>}
+      {children && <div className="flex max-w-full flex-wrap items-center gap-2">{children}</div>}
     </div>
   );
 }

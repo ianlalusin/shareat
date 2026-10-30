@@ -132,7 +132,7 @@ export function applyInheritedImages(
  *
  * A rejection (a real error — permissions, a malformed query) still propagates;
  * nothing is cached for that chunk. Callers must handle it (see
- * fetchStoreAddons).
+ * the add-ons subscription effect in StoreContextProvider).
  */
 export async function resolveProductImages(
   cache: Map<string, string | null>,
@@ -294,20 +294,42 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
   }, [appUser, loadStoresOnce]);
 
 
-  const fetchStoreAddons = useCallback(() => {
-    if (!activeStore?.id || !appUser) {
-        setStoreAddons([]);
-        setStoreAddonsLoading(false);
-        return () => {};
+  // F11: the provider owns exactly ONE inventory/add-ons listener. "Refresh"
+  // never opens a second one — it bumps this generation, which re-runs the
+  // subscription effect below; React disposes the previous listener first.
+  const [addonsGeneration, setAddonsGeneration] = useState(0);
+  // Which store the rows currently in `storeAddons` belong to, so a store switch
+  // clears the previous store's add-ons instead of showing them under the new one.
+  const addonsStoreIdRef = useRef<string | null>(null);
+  const activeStoreIdForAddons = activeStore?.id ?? null;
+  const hasAppUser = !!appUser;
+
+  useEffect(() => {
+    if (!addonsEnabled) return;
+    if (!activeStoreIdForAddons || !hasAppUser) {
+      addonsStoreIdRef.current = null;
+      setStoreAddons([]);
+      setStoreAddonsLoading(false);
+      return;
+    }
+
+    const storeId = activeStoreIdForAddons;
+    if (addonsStoreIdRef.current !== storeId) {
+      // Never show store A's add-ons/prices while store B's are loading.
+      addonsStoreIdRef.current = storeId;
+      setStoreAddons([]);
     }
     setStoreAddonsLoading(true);
 
+    // Set by the cleanup. Every callback below checks it, so a listener that
+    // belonged to a previous store / generation can never write state.
     let cancelled = false;
 
-    const addonsRef = collection(db, "stores", activeStore.id, "inventory");
+    const addonsRef = collection(db, "stores", storeId, "inventory");
     const q = query(addonsRef, where("isAddon", "==", true), where("isActive", "==", true));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
+        if (cancelled) return;
         const addonsData = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data(),
@@ -348,9 +370,8 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
           setStoreAddons(applyInheritedImages(addonsData, productImageCacheRef.current));
         })();
     }, (error) => {
-        if(appUser) {
-          console.error("Failed to fetch store addons:", error);
-        }
+        if (cancelled) return;
+        console.error("Failed to fetch store addons:", error);
         setStoreAddonsLoading(false);
     });
 
@@ -358,14 +379,7 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
       cancelled = true;
       unsubscribe();
     };
-  }, [activeStore?.id, appUser]);
-
-
-  useEffect(() => {
-      if (!addonsEnabled) return;
-      const unsub = fetchStoreAddons();
-      return () => { unsub(); }
-  }, [addonsEnabled, fetchStoreAddons])
+  }, [addonsEnabled, activeStoreIdForAddons, hasAppUser, addonsGeneration]);
 
   /**
    * The add-on picker's manual "Refresh" button (AddonsPOSModal). Drops the
@@ -377,11 +391,15 @@ export function StoreContextProvider({ children }: { children: React.ReactNode }
    *    without this there is nothing to trigger a retry until a page reload;
    *  - an admin promoting or rejecting a global photo mid-shift, which the
    *    session cache otherwise would not pick up.
+   *
+   * Re-subscribes by bumping the generation (see above), so repeated clicks
+   * still leave exactly one live listener. Safe to pass straight to onClick:
+   * it ignores its arguments and returns nothing.
    */
   const refreshStoreAddons = useCallback(() => {
       productImageCacheRef.current.clear();
-      return fetchStoreAddons();
-  }, [fetchStoreAddons]);
+      setAddonsGeneration((g) => g + 1);
+  }, []);
 
   const enableStoreAddons = useCallback(() => {
       setAddonsEnabled((prev) => prev || true);

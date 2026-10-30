@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { doc, getDoc, collection, orderBy, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
@@ -18,6 +18,13 @@ import { useToast } from "@/hooks/use-toast";
 import { usePrint } from "@/hooks/use-print";
 import type { ModeOfPayment, Store, ReceiptData } from "@/lib/types";
 import { useReceiptSettings } from "@/hooks/use-receipt-settings";
+import {
+    IDLE_RECEIPT_STATE,
+    ReceiptLoader,
+    maybeAutoprint,
+    receiptLoadKey,
+    type ReceiptLoadState,
+} from "@/lib/printing/receiptLoad";
 
 type StrippedReceiptData = Omit<ReceiptData, "settings">;
 
@@ -33,10 +40,6 @@ export default function ReceiptPage() {
 
     const { settings: receiptSettings, isLoading: settingsLoading } = useReceiptSettings(activeStoreId);
 
-    const [receiptData, setReceiptData] = useState<StrippedReceiptData | null>(null);
-    const { printReceipt, isPrinting } = usePrint({ receiptData: receiptData as any, storeId: activeStoreId, sessionId, appUser });
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
     const { toast } = useToast();
     const [paymentMethods, setPaymentMethods] = useState<ModeOfPayment[]>([]);
@@ -69,52 +72,77 @@ export default function ReceiptPage() {
         return () => unsubscribe();
     }, [activeStoreId]);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            if (!sessionId || !activeStoreId || !activeStore) return;
-            try {
-                const receiptSnap = await getDoc(doc(db, "stores", activeStoreId, "receipts", sessionId as string));
-                if (!receiptSnap.exists()) throw new Error("Receipt not found.");
-                const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
-                const sessionDataForPreview = {
-                    id: receiptDocData.sessionId,
-                    tableNumber: receiptDocData.tableNumber,
-                    customerName: receiptDocData.customerName,
-                    sessionMode: receiptDocData.sessionMode,
-                    paymentSummary: receiptDocData.analytics,
-                    closedAt: receiptDocData.createdAt,
-                    startedByUid: "N/A",
-                    cashierName: receiptDocData.createdByUsername,
-                };
-                setReceiptData({
-                    session: sessionDataForPreview as any,
-                    lines: receiptDocData.lines || [],
-                    payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
-                    store: activeStore as Store,
-                    receiptCreatedAt: receiptDocData.createdAt,
-                    createdByUsername: receiptDocData.createdByUsername,
-                    receiptNumber: receiptDocData.receiptNumber,
-                    analytics: receiptDocData.analytics,
-                });
-            } catch (err: any) {
-                setError(err.message);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchData();
-    }, [sessionId, activeStoreId, activeStore, storageKey]);
+    // Receipt load state is keyed by store+receipt id (F14): a key change clears
+    // the old record at once and a superseded fetch can never write its result.
+    const activeStoreRef = useRef(activeStore);
+    activeStoreRef.current = activeStore;
+    const [loadState, setLoadState] = useState<ReceiptLoadState<StrippedReceiptData>>(IDLE_RECEIPT_STATE);
+    const loaderRef = useRef<ReceiptLoader<StrippedReceiptData> | null>(null);
+    if (!loaderRef.current) {
+        loaderRef.current = new ReceiptLoader<StrippedReceiptData>(async (storeId, receiptId) => {
+            const receiptSnap = await getDoc(doc(db, "stores", storeId, "receipts", receiptId));
+            if (!receiptSnap.exists()) throw new Error("Receipt not found.");
+            const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+            const sessionDataForPreview = {
+                id: receiptDocData.sessionId,
+                tableNumber: receiptDocData.tableNumber,
+                customerName: receiptDocData.customerName,
+                sessionMode: receiptDocData.sessionMode,
+                paymentSummary: receiptDocData.analytics,
+                closedAt: receiptDocData.createdAt,
+                startedByUid: "N/A",
+                cashierName: receiptDocData.createdByUsername,
+            };
+            return {
+                session: sessionDataForPreview as any,
+                lines: receiptDocData.lines || [],
+                payments: Object.entries(receiptDocData.analytics?.mop || {}).map(([key, value]) => ({ methodId: key, amount: value as number })),
+                store: activeStoreRef.current as Store,
+                receiptCreatedAt: receiptDocData.createdAt,
+                createdByUsername: receiptDocData.createdByUsername,
+                receiptNumber: receiptDocData.receiptNumber,
+                analytics: receiptDocData.analytics,
+                isRefund: receiptDocData.isRefund === true,
+            } as StrippedReceiptData;
+        }, setLoadState);
+    }
 
+    const hasActiveStore = !!activeStore;
     useEffect(() => {
-        if (shouldAutoPrint && receiptData && !isLoading && !settingsLoading) {
-            const printKey = `autoprint:${sessionId}`;
-            if (sessionStorage.getItem(printKey) !== "1") {
-                sessionStorage.setItem(printKey, "1");
-                printReceipt();
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shouldAutoPrint, receiptData, isLoading, settingsLoading, sessionId]);
+        if (!hasActiveStore) return;
+        loaderRef.current!.load(activeStoreId, sessionId);
+    }, [activeStoreId, sessionId, hasActiveStore]);
+    useEffect(() => () => loaderRef.current?.dispose(), []);
+
+    const requestedKey = receiptLoadKey(activeStoreId, sessionId);
+    const isCurrent = loadState.key !== null && loadState.key === requestedKey;
+    const receiptData = isCurrent && loadState.status === "loaded" ? loadState.data : null;
+    const error = isCurrent && loadState.status === "error" ? loadState.error : null;
+    const isLoading = !isCurrent || loadState.status === "loading";
+
+    // Print the record that is on screen, under its own store/receipt id, at the selected width (F15).
+    const { printReceipt, isPrinting } = usePrint({
+        receiptData: receiptData as any,
+        storeId: isCurrent ? loadState.storeId : null,
+        sessionId: isCurrent ? loadState.receiptId : null,
+        appUser,
+        paperWidth,
+    });
+
+    const autoprintAttempted = useRef(new Set<string>());
+    useEffect(() => {
+        let storage: Storage | null = null;
+        try { storage = window.sessionStorage; } catch { storage = null; }
+        void maybeAutoprint({
+            enabled: shouldAutoPrint,
+            ready: !settingsLoading && !!receiptSettings,
+            requestedKey,
+            state: loadState,
+            attempted: autoprintAttempted.current,
+            storage,
+            print: () => printReceipt(),
+        });
+    }, [shouldAutoPrint, settingsLoading, receiptSettings, requestedKey, loadState, printReceipt]);
 
     const handlePaperWidthChange = (value: "58mm" | "80mm") => {
         setPaperWidth(value);
@@ -161,7 +189,7 @@ export default function ReceiptPage() {
                             </Select>
                         </div>
                         <div className="flex gap-2 w-full sm:w-auto">
-                            <Button onClick={printReceipt} disabled={!receiptData || isPrinting || settingsLoading} className="flex-1 sm:flex-none">
+                            <Button onClick={() => { void printReceipt(); }} disabled={!receiptData || isPrinting || settingsLoading} className="flex-1 sm:flex-none">
                                 {isPrinting || settingsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
                                 {printedCount > 0 ? "Reprint" : "Print"}
                             </Button>
@@ -182,7 +210,7 @@ export default function ReceiptPage() {
                 </div>
                 <div id="receipt-print-root" data-paper={paperWidth}>
                     <div id="print-receipt-area">
-                        {receiptData && receiptSettings && <ReceiptView data={{ ...receiptData, settings: receiptSettings }} paymentMethods={paymentMethods} />}
+                        {receiptData && receiptSettings && <ReceiptView data={{ ...receiptData, settings: receiptSettings }} paymentMethods={paymentMethods} paperWidth={paperWidth} />}
                     </div>
                 </div>
             </div>

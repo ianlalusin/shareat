@@ -12,7 +12,9 @@ import { BillAdjustments, BillAppliedAdjustments } from "../cashier/bill-adjustm
 import { PaymentSection } from "../cashier/payment-section";
 import { EditBillableItemDialog } from "../cashier/edit-billable-item-dialog";
 import type { Receipt, Discount, Charge, Payment, SessionBillLine, ModeOfPayment, Store, Adjustment, PendingSession, ReceiptAnalyticsV2, LineAdjustment } from "@/lib/types";
-import { calculateBillTotals } from "@/lib/tax";
+import { receiptCorrectionTotals } from "@/lib/billing/receipt-correction";
+import { applyLineEditLocally } from "@/lib/billing/line-edit";
+import { mergeLocalAddedLine } from "@/lib/billing/bill-lines";
 import { Loader2 } from "lucide-react";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -106,18 +108,6 @@ function EditReceiptContent({
 
   const [editingLine, setEditingLine] = useState<SessionBillLine | null>(null);
   
-  const handleAddLineAdjustment = (lineId: string, adj: LineAdjustment) => {
-    setLines(cur => cur.map(l => {
-      if (l.id !== lineId) return l;
-      const next = { ...(l as any) };
-      const map = { ...(next.lineAdjustments ?? {}) };
-      map[adj.id] = adj;
-      next.lineAdjustments = map;
-      return next;
-    }));
-    setEditingLine(null);
-  };
-  
   const handleRemoveLineAdjustment = (lineId: string, adjId: string) => {
     setLines(cur => cur.map(l => {
       if (l.id !== lineId) return l;
@@ -149,17 +139,24 @@ function EditReceiptContent({
     setCustomAdjustments(cur => cur.filter(a => a.id !== id));
   };
 
+  // F10: rewards the customer already redeemed on this receipt are part of its
+  // settled total. Keep them in every recomputation (they are not editable here).
+  const loyaltyRedemptions = useMemo(
+    () => (Array.isArray(receipt.loyaltyRedemptions) ? receipt.loyaltyRedemptions : []),
+    [receipt.loyaltyRedemptions],
+  );
   const billTotals = useMemo(() => {
-    return calculateBillTotals(lines, store, billDiscount, customAdjustments);
-  }, [lines, store, billDiscount, customAdjustments]);
+    return receiptCorrectionTotals({ loyaltyRedemptions }, lines, store, billDiscount, customAdjustments);
+  }, [lines, store, billDiscount, customAdjustments, loyaltyRedemptions]);
 
   const { grandTotal } = billTotals;
   const totalPaid = useMemo(() => payments.reduce((sum, p) => sum + p.amount, 0), [payments]);
   const remainingBalance = grandTotal - totalPaid;
   const change = Math.max(0, -remainingBalance);
 
-  const handleUpdateLine = (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>) => {
-    setLines(currentLines => currentLines.map(l => l.id === lineId ? { ...l, ...after } : l));
+  const handleUpdateLine = (lineId: string, before: Partial<SessionBillLine>, after: Partial<SessionBillLine>, adjustments: LineAdjustment[] = []) => {
+    // One local update for the core patch + new adjustments (keyed by stable id).
+    setLines(currentLines => currentLines.map(l => l.id === lineId ? applyLineEditLocally(l, after, adjustments) : l));
     setEditingLine(null);
   };
   
@@ -379,28 +376,7 @@ function EditReceiptContent({
             session={mockSession}
             discounts={itemDiscounts}
             onUpdateLine={(line) => setEditingLine(line)}
-            onAddLine={(newLine) => {
-                setLines((currentLines) => {
-                    // Check if an identical addon line already exists
-                    const existingLineIndex = currentLines.findIndex(
-                        (l) => l.type === 'addon' && l.itemId === newLine.itemId && l.unitPrice === newLine.unitPrice
-                    );
-
-                    if (existingLineIndex >= 0) {
-                        // If it exists, update the quantity
-                        const nextLines = [...currentLines];
-                        const existingLine = nextLines[existingLineIndex];
-                        nextLines[existingLineIndex] = {
-                            ...existingLine,
-                            qtyOrdered: (existingLine.qtyOrdered ?? 0) + (newLine.qtyOrdered ?? 0),
-                        };
-                        return nextLines;
-                    } else {
-                        // If it doesn't exist, add the new line
-                        return [...currentLines, newLine];
-                    }
-                });
-            }}
+            onAddLine={(newLine) => setLines((currentLines) => mergeLocalAddedLine(currentLines, newLine))}
           />
           <PaymentSection
             paymentMethods={paymentMethods}
@@ -419,6 +395,7 @@ function EditReceiptContent({
             store={store}
             billDiscount={billDiscount}
             customAdjustments={customAdjustments}
+            loyaltyRedemptions={loyaltyRedemptions}
             totalPaid={totalPaid}
             onRemoveLineAdjustment={handleRemoveLineAdjustment}
           />
@@ -432,6 +409,7 @@ function EditReceiptContent({
               onAddCustomAdjustment={handleAddCustomAdjustment}
               onSetBillDiscount={setBillDiscount}
               busy={isSubmitting}
+              discountEligibleAmount={billTotals.subtotal - billTotals.lineDiscountsTotal}
               side="bottom"
             />
             <BillAppliedAdjustments
@@ -486,7 +464,6 @@ function EditReceiptContent({
           discounts={itemDiscounts}
           charges={itemCharges}
           onSave={handleUpdateLine}
-          onAddLineAdjustment={handleAddLineAdjustment}
           refundedQty={(receipt as any).refundedQtys?.[editingLine?.id ?? ''] ?? 0}
         />
       )}

@@ -8,6 +8,7 @@ import {
   isValidPasscode,
   verifyProfilePasscodeAtomic,
 } from "@/lib/server/server-profile-secrets";
+import { issueProfileSession, verifyProfileSession } from "@/lib/server/server-profile-session";
 
 /**
  * Local (device) server profiles.
@@ -76,8 +77,58 @@ export async function POST(req: Request) {
           case "wrong":
             return bad("Incorrect passcode.", 401);
           case "ok":
-            return NextResponse.json({ ok: true, profile: { id: profileId, name: outcome.name } });
+            // Signed, expiring session bound to this account + store + profile
+            // (audit F02). The client presents it on reload instead of trusting
+            // a bare localStorage identity. null when no signing secret exists.
+            return NextResponse.json({
+              ok: true,
+              profile: { id: profileId, name: outcome.name },
+              session: issueProfileSession({ uid: decoded.uid, storeId, profileId }),
+            });
         }
+      }
+
+      // ---------------------------------------------------------------------
+      // Rehydrate check (audit F02): is this stored profile session still
+      // valid for THIS Firebase account, this store and an existing profile?
+      case "check-session": {
+        await requireStaffStoreAccess(db, decoded, storeId, [...ALL_ROLES]);
+        const profileId = String(body?.profileId || "").trim();
+        if (!profileId || profileId.includes("/")) return bad("profileId is required.", 400);
+
+        const check = verifyProfileSession(body?.token, { uid: decoded.uid, storeId, profileId });
+        if (!check.ok) {
+          // no-key is a server config problem, not a bad client: 503 lets the
+          // device keep its locally-checked profile instead of logging out.
+          const status = check.reason === "no-key" ? 503 : 401;
+          return NextResponse.json(
+            { ok: false, error: "Local user session is not valid.", reason: check.reason },
+            { status }
+          );
+        }
+
+        const [pSnap, sSnap] = await Promise.all([
+          profileRef(db, storeId, profileId).get(),
+          secretRef(db, storeId, profileId).get(),
+        ]);
+        if (!pSnap.exists) {
+          return NextResponse.json(
+            { ok: false, error: "That local user no longer exists.", reason: "deleted" },
+            { status: 404 }
+          );
+        }
+        const validAfter = Number((sSnap.data() as any)?.sessionsValidAfterMs ?? 0);
+        if (validAfter > check.payload.iat) {
+          return NextResponse.json(
+            { ok: false, error: "Passcode was reset. Sign in again.", reason: "revoked" },
+            { status: 401 }
+          );
+        }
+        return NextResponse.json({
+          ok: true,
+          profile: { id: profileId, name: String((pSnap.data() as any)?.name ?? "") },
+          expiresAt: check.payload.exp,
+        });
       }
 
       // ---------------------------------------------------------------------
@@ -118,7 +169,11 @@ export async function POST(req: Request) {
         });
         await batch.commit();
 
-        return NextResponse.json({ ok: true, profile: { id: ref.id, name } });
+        return NextResponse.json({
+          ok: true,
+          profile: { id: ref.id, name },
+          session: issueProfileSession({ uid: decoded.uid, storeId, profileId: ref.id }),
+        });
       }
 
       // ---------------------------------------------------------------------
@@ -142,6 +197,8 @@ export async function POST(req: Request) {
             ...secret,
             failedAttempts: 0,
             lockedUntilMs: 0,
+            // Every profile session issued before this reset stops working (F02).
+            sessionsValidAfterMs: Date.now(),
             resetByUid: staff.uid,
             updatedAt: FieldValue.serverTimestamp(),
           },

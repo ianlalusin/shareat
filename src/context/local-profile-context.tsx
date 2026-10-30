@@ -2,14 +2,15 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useStoreContext } from "@/context/store-context";
-import { useServerProfile, type ServerProfileState } from "@/hooks/useServerProfile";
+import { useAuthContext } from "@/context/auth-context";
+import { useServerProfile, type ProfileSessionGrant, type ServerProfileState } from "@/hooks/useServerProfile";
 import { ServerProfileSwitcher } from "@/components/server/ServerProfileSwitcher";
 import { setActiveLocalProfile } from "@/lib/server-profiles/activeLocalProfile";
 
 interface LocalProfileContextValue {
   currentProfile: ServerProfileState | null;
   isReady: boolean;
-  signIn: (profileId: string, name: string) => void;
+  signIn: (profileId: string, name: string, session?: ProfileSessionGrant | null) => void;
   signOut: () => void;
   /** Opens the global local-user selector dialog. */
   openSwitcher: () => void;
@@ -26,7 +27,11 @@ const LocalProfileContext = createContext<LocalProfileContextValue | null>(null)
 export function LocalProfileProvider({ children }: { children: React.ReactNode }) {
   const { activeStore } = useStoreContext();
   const storeId = activeStore?.id ?? null;
-  const { currentProfile, signIn, signOut, isReady } = useServerProfile(storeId);
+  // The stored local-user session is bound to this Firebase uid (audit F02):
+  // undefined while auth resolves, so the gate waits instead of guessing.
+  const { user, authLoading } = useAuthContext();
+  const uid = authLoading ? undefined : (user?.uid ?? null);
+  const { currentProfile, signIn, signOut, isReady } = useServerProfile(storeId, uid);
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   // Expose the local profile to fire-and-forget loggers for attribution.

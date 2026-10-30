@@ -103,8 +103,10 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
 
   return (
     <nav className={cn(
-      "items-center space-x-4 lg:space-x-6",
-      isMobile ? "flex flex-col space-x-0 space-y-4 items-start" : "hidden md:flex"
+      "items-center space-x-4 xl:space-x-6",
+      // Inline links only from lg (1024px). Below that they live in the header
+      // sheet: up to eight admin links do not fit a 768–1023px row (audit F19).
+      isMobile ? "flex flex-col space-x-0 space-y-4 items-start" : "hidden lg:flex"
     )}>
       {accessibleLinks.map(({ href, label }) => {
         // Per-link "needs attention" badge + blink.

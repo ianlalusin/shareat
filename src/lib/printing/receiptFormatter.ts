@@ -1,8 +1,12 @@
 'use client';
 
 import { toJsDate } from "@/lib/utils/date";
-import type { ReceiptData, SessionBillLine } from "@/lib/types";
+import type { ReceiptData } from "@/lib/types";
 import { format } from "date-fns";
+import { buildReceiptModel, formatMoney, isRefundReceipt } from "./receiptModel";
+
+/** "(-20.00)" for a reduction, "+20.00" for an addition. */
+const signed = (n: number) => (n < 0 ? `(-${formatMoney(-n)})` : `+${formatMoney(n)}`);
 
 /**
  * Formats receipt data into plain text for thermal printing (ESC/POS).
@@ -33,6 +37,10 @@ export function formatReceiptText(
   const hr = () => "-".repeat(charsPerLine);
 
   const settings = data.settings;
+  if (isRefundReceipt(data as any)) {
+    lines.push(center("*** REFUND RECEIPT ***"));
+    lines.push("");
+  }
   if (settings.businessName) lines.push(center(settings.businessName.toUpperCase()));
   if (settings.address) lines.push(center(settings.address));
   if (settings.contact) lines.push(center(settings.contact));
@@ -60,38 +68,60 @@ export function formatReceiptText(
   const headerRow = 'Qty'.padEnd(qtyWidth) + 'Item'.padEnd(nameWidth) + 'Total'.padStart(priceWidth);
   lines.push(headerRow);
 
-  const activeLines = (data.lines || [])
-    .filter(l => (l.qtyOrdered - (l.voidedQty || 0)) > 0)
-    // Pin the package/bundle line to the top (dine-in); stable for the rest.
-    .sort((a, b) => ((a.type === 'package' ? 0 : 1) - (b.type === 'package' ? 0 : 1)));
-  activeLines.forEach(line => {
-    const billableQty = line.qtyOrdered - (line.voidedQty || 0);
-    const lineTotal = (billableQty * line.unitPrice).toFixed(2);
-    const name = line.itemName.substring(0, nameWidth - 1);
-    lines.push(String(billableQty).padEnd(qtyWidth) + name.padEnd(nameWidth) + lineTotal.padStart(priceWidth));
+  // Same row model as the browser ReceiptView: modifiers once, free units not
+  // billed, refund rows negative — so the item rows sum to SUBTOTAL.
+  const model = buildReceiptModel(data);
+  const indent = ' '.repeat(qtyWidth);
+  const wrap = (text: string, width: number): string[] => {
+    const out: string[] = [];
+    for (let rest = text; rest.length > 0; rest = rest.slice(width)) out.push(rest.slice(0, width));
+    return out.length ? out : [''];
+  };
+  model.rows.forEach(row => {
+    const nameLines = wrap(row.name, nameWidth - 1);
+    lines.push(String(row.qty).padEnd(qtyWidth) + nameLines[0].padEnd(nameWidth) + formatMoney(row.amount).padStart(priceWidth));
+    nameLines.slice(1).forEach(l => lines.push(indent + l));
+    const subWidth = charsPerLine - qtyWidth - 2;
+    if (row.modifiersText) wrap('- ' + row.modifiersText, subWidth).forEach(l => lines.push(indent + '  ' + l));
+    if (row.note) wrap('Note: ' + row.note, subWidth).forEach(l => lines.push(indent + '  ' + l));
+    if (row.freeQty > 0) lines.push(indent + '  ' + `Free (${row.freeQty}x)`);
+    if (row.discount !== 0 && settings.showDiscountBreakdown) {
+      lines.push(justify(indent + '  ' + `Discount (${row.discountQty}x)`, formatMoney(row.discount)));
+    }
   });
 
   lines.push(hr());
 
-  const analytics = data.analytics || {};
-  lines.push(justify("SUBTOTAL", (analytics.subtotal || 0).toFixed(2)));
-  if ((analytics.discountsTotal || 0) > 0) {
-    lines.push(justify("DISCOUNTS", `(-${analytics.discountsTotal.toFixed(2)})`));
+  lines.push(justify("SUBTOTAL", formatMoney(model.subtotal)));
+  if (model.discountsEffect !== 0) {
+    lines.push(justify("DISCOUNTS", signed(model.discountsEffect)));
   }
-  if ((analytics.chargesTotal || 0) > 0) {
-    lines.push(justify("CHARGES", `+${analytics.chargesTotal.toFixed(2)}`));
+  if (model.chargesEffect !== 0) {
+    lines.push(justify("CHARGES", signed(model.chargesEffect)));
+  }
+
+  if (model.taxAmount !== 0 || model.vatExemptSales !== 0) {
+    lines.push(hr());
+    lines.push(justify("VATABLE SALES", formatMoney(model.vatableSales)));
+    lines.push(justify("VAT-EXEMPT SALES", formatMoney(model.vatExemptSales)));
+    lines.push(justify(`VAT (${data.store?.taxRatePct || 12}%)`, formatMoney(model.taxAmount)));
   }
 
   lines.push(hr());
-  lines.push(justify("TOTAL", `PHP ${(analytics.grandTotal || 0).toFixed(2)}`));
+  lines.push(justify("TOTAL", `PHP ${formatMoney(model.grandTotal)}`));
   lines.push(hr());
 
-  const mop = analytics.mop || {};
-  Object.entries(mop).forEach(([method, amount]) => {
-    lines.push(justify(method.toUpperCase(), (amount as number).toFixed(2)));
+  model.payments.forEach(({ methodId, amount }) => {
+    lines.push(justify(methodId.toUpperCase(), formatMoney(amount)));
   });
-  lines.push(justify("TOTAL PAID", (analytics.totalPaid || 0).toFixed(2)));
-  lines.push(justify("CHANGE", (analytics.change || 0).toFixed(2)));
+  lines.push(justify(model.isRefund ? "TOTAL REFUNDED" : "TOTAL PAID", formatMoney(model.totalPaid)));
+  lines.push(justify("CHANGE", formatMoney(model.change)));
+
+  if (model.freeItems.length > 0) {
+    lines.push(hr());
+    lines.push("FREE ITEMS:");
+    model.freeItems.forEach(f => lines.push(`${f.qty}x ${f.name}`));
+  }
 
   lines.push("");
   if (settings.footerText) lines.push(center(settings.footerText));
