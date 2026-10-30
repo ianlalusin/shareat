@@ -111,10 +111,9 @@ export function formatReceiptText(
   lines.push(justify("TOTAL", `PHP ${formatMoney(model.grandTotal)}`));
   lines.push(hr());
 
-  model.payments.forEach(({ methodId, amount }) => {
-    lines.push(justify(methodId.toUpperCase(), formatMoney(amount)));
+  model.tenders.forEach(({ methodId, amount }) => {
+    lines.push(justify(`${methodId.toUpperCase()} ${model.isRefund ? "REFUNDED" : "PAID"}`, formatMoney(amount)));
   });
-  lines.push(justify(model.isRefund ? "TOTAL REFUNDED" : "TOTAL PAID", formatMoney(model.totalPaid)));
   lines.push(justify("CHANGE", formatMoney(model.change)));
 
   if (model.freeItems.length > 0) {

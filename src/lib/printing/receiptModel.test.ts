@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { buildReceiptModel } from "./receiptModel";
+import { buildReceiptModel, tenderedByMethod } from "./receiptModel";
 import { formatReceiptText } from "./receiptFormatter";
 import { buildNativeReceiptJob } from "./receiptJob";
 import { ReceiptView } from "@/components/receipt/receipt-view";
@@ -80,7 +80,7 @@ describe("shared receipt model (F16)", () => {
     const native = formatReceiptText(refund, 80);
     expect(native).toContain("REFUND RECEIPT");
     expect(nativeItemRowSum(native)).toBe(-120);
-    expect(native).toMatch(/TOTAL REFUNDED\s+-120\.00/);
+    expect(native).toMatch(/CASH REFUNDED\s+-120\.00/);
     expect(buildReceiptModel(refund).rows[0].amount).toBe(-120);
     const html = renderToStaticMarkup(createElement(ReceiptView, { data: refund }));
     expect(html).toContain("REFUND RECEIPT");
@@ -110,5 +110,40 @@ describe("selected paper width (F15)", () => {
     const html = renderToStaticMarkup(createElement(ReceiptView, { data: modifierReceipt, paperWidth: "58mm" }));
     expect(html).toContain("receipt-58");
     expect(html).not.toContain("receipt-80");
+  });
+});
+
+describe("payment lines: one '<method> Paid' line per method, no Total Paid", () => {
+  it("puts the change back on cash so the line shows what was handed over", () => {
+    // Checkout stores mop net of change: 716 bill, 1,000 cash, 284 change.
+    expect(tenderedByMethod({ Cash: 716 }, 1000, 284)).toEqual([{ methodId: "Cash", amount: 1000 }]);
+  });
+
+  it("split tender: change goes on the cash line only", () => {
+    expect(tenderedByMethod({ GCash: 300, Cash: 416 }, 800, 84)).toEqual([
+      { methodId: "GCash", amount: 300 },
+      { methodId: "Cash", amount: 500 },
+    ]);
+  });
+
+  it("leaves older receipts that already stored the handed-over amount alone", () => {
+    expect(tenderedByMethod({ cash: 600 }, 600, 5)).toEqual([{ methodId: "cash", amount: 600 }]);
+  });
+
+  it("prints 'Cash Paid' and CHANGE without a separate method or Total Paid line", () => {
+    const r = receipt(
+      [line({ id: "a", itemName: "Pork and Beef", qtyOrdered: 2, unitPrice: 358 })],
+      { subtotal: 716, discountsTotal: 0, grandTotal: 716, totalPaid: 1000, change: 284, mop: { Cash: 716 } },
+    );
+    const native = formatReceiptText(r, 80);
+    expect(native).toMatch(/CASH PAID\s+1,000\.00/);
+    expect(native).toMatch(/CHANGE\s+284\.00/);
+    expect(native).not.toMatch(/TOTAL PAID/);
+    expect(native).not.toMatch(/^CASH\s+716\.00/m);
+
+    const html = renderToStaticMarkup(createElement(ReceiptView, { data: r }));
+    expect(html).toContain("Cash Paid");
+    expect(html).not.toContain("Total Paid");
+    expect(html).not.toContain(">CASH<");
   });
 });

@@ -54,7 +54,7 @@ export function ReceiptView({ data, paymentMethods = [], paperWidth: paperWidthP
         return id;
     };
 
-    const { subtotal, discountsEffect, chargesEffect, grandTotal, taxAmount, totalPaid, change, vatableSales, vatExemptSales } = model;
+    const { subtotal, discountsEffect, chargesEffect, grandTotal, taxAmount, change, vatableSales, vatExemptSales } = model;
 
     const receiptStyles: React.CSSProperties = {
         fontFamily: settings?.fontFamily || undefined,
@@ -178,10 +178,9 @@ export function ReceiptView({ data, paymentMethods = [], paperWidth: paperWidthP
             
              <hr className="border-dashed border-black my-2" />
              <section className="space-y-px mb-2 receipt-section">
-                {model.payments.map((p, i) => (
-                    <ReceiptRow key={i} label={getPaymentMethodName(p.methodId).toUpperCase()} value={p.amount} isCurrency />
+                {model.tenders.map((p, i) => (
+                    <ReceiptRow key={i} label={`${getPaymentMethodName(p.methodId)} ${isRefundReceipt ? "Refunded" : "Paid"}`} value={p.amount} isCurrency />
                 ))}
-                 <ReceiptRow label={isRefundReceipt ? "Total Refunded" : "Total Paid"} value={totalPaid} isCurrency />
                  <ReceiptRow label="CHANGE" value={change} isBold={true} isCurrency />
              </section>
 

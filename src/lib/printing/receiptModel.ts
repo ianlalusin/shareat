@@ -41,7 +41,8 @@ export interface ReceiptModel {
   grandTotal: number;
   totalPaid: number;
   change: number;
-  payments: { methodId: string; amount: number }[];
+  /** What each method actually handed over ("Cash Paid 1,000"), change included. */
+  tenders: { methodId: string; amount: number }[];
   freeItems: { name: string; qty: number }[];
 }
 
@@ -109,9 +110,31 @@ export function buildReceiptModel(data: ReceiptData): ReceiptModel {
     grandTotal: isRefund ? -Math.abs(grandTotalRaw) : grandTotalRaw,
     totalPaid: isRefund ? -Math.abs(totalPaidRaw) : totalPaidRaw,
     change: num(a.change),
-    payments: Object.entries(a.mop || {}).map(([methodId, amount]) => ({ methodId, amount: num(amount) })),
+    tenders: tenderedByMethod(a.mop, totalPaidRaw, num(a.change)),
     freeItems: Array.from(freeMap.entries()).map(([name, qty]) => ({ name, qty })),
   };
+}
+
+/**
+ * analytics.mop records what each method put toward the bill: checkout takes
+ * the change out of the cash entry. The receipt shows what was handed over,
+ * so the change goes back onto the cash entry. Older receipts that already
+ * stored the handed-over amount (mop sums to totalPaid) are left as they are.
+ */
+export function tenderedByMethod(
+  mop: Record<string, unknown> | undefined,
+  totalPaid: number,
+  change: number,
+): { methodId: string; amount: number }[] {
+  const tenders = Object.entries(mop || {}).map(([methodId, amount]) => ({ methodId, amount: num(amount) }));
+  const mopSum = tenders.reduce((s, t) => s + t.amount, 0);
+  const changeTakenOut = change > 0 && Math.abs(round2(mopSum + change) - round2(totalPaid)) < 0.015;
+  if (changeTakenOut) {
+    // "Cash", "Cash on Delivery" — but not "GCash".
+    const cash = tenders.find((t) => /(^|[^a-z])cash/i.test(t.methodId)) ?? tenders[0];
+    if (cash) cash.amount = round2(cash.amount + change);
+  }
+  return tenders;
 }
 
 /** Money as printed: 1,234.50 / -1,234.50. */
