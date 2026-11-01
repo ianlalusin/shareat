@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, writeBatch, getDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
@@ -25,7 +25,7 @@ type ChangeRequest = {
   tableNumber: string;
   type: 'guest' | 'package';
   requestedAt: any;
-  requestedBy: string;
+  requestedByUid?: string;
   details: string;
   currentValue: string | number;
   requestedValue: string | number;
@@ -43,12 +43,14 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
   const { confirm, Dialog } = useConfirmDialog();
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [staffNames, setStaffNames] = useState<Record<string, string>>({});
+  const requestedNameUids = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const sessionsRef = collection(db, "stores", storeId, "sessions");
     const q = query(sessionsRef, where("status", "==", "active"));
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const userIds = new Set<string>();
       snapshot.forEach(doc => {
         const data = doc.data();
@@ -57,14 +59,21 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
       });
 
       // Names come from the server (names only, this store's staff) — the
-      // client no longer reads whole staff docs (audit B06).
-      let userProfiles: Record<string, string> = {};
-      if (userIds.size > 0) {
-        try {
-          userProfiles = await fetchStaffNames(storeId, Array.from(userIds));
-        } catch (err) {
-          console.warn("[ApprovalQueue] staff name lookup failed:", err);
-        }
+      // client no longer reads whole staff docs (audit B06). The lookup is a
+      // network call, so it must never gate the list: the requests render at
+      // once and the names fill in when (if) the lookup answers. Blocking on it
+      // left the Android cashier with an empty queue whenever the call stalled.
+      const toLookUp = Array.from(userIds).filter(uid => !requestedNameUids.current.has(uid));
+      if (toLookUp.length > 0) {
+        toLookUp.forEach(uid => requestedNameUids.current.add(uid));
+        const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), 10000));
+        Promise.race([fetchStaffNames(storeId, toLookUp), timeout])
+          .then(names => setStaffNames(prev => ({ ...prev, ...names })))
+          .catch(err => {
+            console.warn("[ApprovalQueue] staff name lookup failed:", err);
+            // Let the next snapshot retry these uids.
+            toLookUp.forEach(uid => requestedNameUids.current.delete(uid));
+          });
       }
 
       const pendingRequests: ChangeRequest[] = [];
@@ -80,7 +89,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             tableNumber: session.tableNumber,
             type: 'guest',
             requestedAt: session.guestCountChange.requestedAt?.toDate(),
-            requestedBy: userProfiles[session.guestCountChange.requestedByUid] || '...',
+            requestedByUid: session.guestCountChange.requestedByUid,
             details: `Change guest count`,
             currentValue: session.guestCountFinal,
             requestedValue: session.guestCountChange.requestedCount,
@@ -129,7 +138,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
             tableNumber: session.tableNumber,
             type: 'package',
             requestedAt: session.packageChange.requestedAt?.toDate(),
-            requestedBy: userProfiles[session.packageChange.requestedByUid] || '...',
+            requestedByUid: session.packageChange.requestedByUid,
             details: `Change package`,
             currentValue: session.packageSnapshot.name,
             requestedValue: session.packageChange.requestedPackageSnapshot.name,
@@ -337,7 +346,7 @@ export function ApprovalQueue({ storeId }: { storeId: string }) {
                             <div>
                                 <h4 className="font-semibold">Table {req.tableNumber}</h4>
                                 <p className="text-sm text-muted-foreground">
-                                    {req.details} - Requested by {req.requestedBy}
+                                    {req.details} - Requested by {(req.requestedByUid && staffNames[req.requestedByUid]) || '...'}
                                 </p>
                             </div>
                              <div className="flex items-center gap-2">
