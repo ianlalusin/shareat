@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthContext } from "@/context/auth-context";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -10,8 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, ScrollText, KeyRound as KeyIcon, UserPlus, Coins as CoinIcon, MapPin, LogIn, ShieldAlert } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { Dialog as UiDialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Search, KeyRound, Copy, Printer, Sparkles, Users, Coins, ScrollText, KeyRound as KeyIcon, UserPlus, Coins as CoinIcon, MapPin, LogIn, ShieldAlert, ScanLine } from "lucide-react";
+import { format } from "date-fns";
+import { QrScanner } from "@/components/qr-wallet/QrScanner";
+import { classifyCustomerQuery, parseCardQrPayload } from "@/lib/loyalty/session-link";
 import { isNativeBluetoothAvailable, getLastPrinterAddress, printViaNativeBluetooth } from "@/lib/printing/printHub";
 import { formatSharelebratorPasswordText } from "@/lib/printing/receiptFormatter";
 import { printPasswordSlipInPopup } from "@/lib/printing/passwordSlip";
@@ -49,15 +52,17 @@ function toLocalDigits(value: string): string {
 }
 
 /**
- * "2 hours" / "90 minutes" — the presence window comes from the server
- * (PRESENCE_WINDOW_MS) so this copy cannot drift from the rule it describes.
+ * Parse a response body as JSON. A host or gateway error page comes back as
+ * HTML, and `res.json()` on that throws "Unexpected token '<'" at the cashier.
+ * Say what actually happened instead.
  */
-function formatWindow(minutes: number): string {
-  if (minutes >= 60 && minutes % 60 === 0) {
-    const hours = minutes / 60;
-    return `${hours} hour${hours === 1 ? "" : "s"}`;
+async function readJson(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`The server sent an unexpected reply (HTTP ${res.status}). Check the connection and try again.`);
   }
-  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 export function CustomersAdmin({ storeId }: { storeId?: string }) {
@@ -71,18 +76,9 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [notFound, setNotFound] = useState(false);
-  /**
-   * Set when the account exists but nothing puts it inside this store's
-   * presence window. Carries the window and this store's own last-visit stamp
-   * so the card can name the real blocker — recency — instead of implying the
-   * record lives at another branch. It does not: `customers` is global.
-   */
-  const [outOfScope, setOutOfScope] = useState<{
-    storeName: string;
-    lastVisitHereMs: number | null;
-  } | null>(null);
-  /** Presence window in minutes, served alongside the scoped payload. */
-  const [windowMinutes, setWindowMinutes] = useState(120);
+  const [scanning, setScanning] = useState(false);
+  /** Phone of the lookup in flight / last shown; drops stale replies and repeat triggers. */
+  const lookupRef = useRef<string | null>(null);
   const [scope, setScope] = useState<"store" | "global">("store");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -140,10 +136,9 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
       const res = await fetch(`/api/loyalty/store-customers${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const json = await res.json();
+      const json = await readJson(res);
       if (!res.ok) throw new Error(json.error || "Failed to load customers.");
       setScope(json.scope === "global" ? "global" : "store");
-      if (Number(json.windowMinutes) > 0) setWindowMinutes(Number(json.windowMinutes));
       setAllAccounts(json.customers || []);
       setLogs(json.logs || []);
       setStats(json.stats || null);
@@ -238,20 +233,53 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
   const canReset =
     appUser?.role === "admin" || appUser?.role === "manager" || appUser?.isPlatformAdmin;
 
-  const windowLabel = formatWindow(windowMinutes);
-
   function handlePickAccount(phone: string) {
     setPhoneInput(phone);
     // Pass phone directly so we don't race the React state update.
     searchByPhone(phone);
   }
 
+  /**
+   * Search box. A lookup only runs once the number is complete, so a result is
+   * always an exact match and never a guess from a partial number or a name.
+   * Until then the card shows nothing.
+   */
+  function handleQueryChange(value: string) {
+    setPhoneInput(value);
+    const q = classifyCustomerQuery(value);
+    if (q.kind === "phone") {
+      if (lookupRef.current !== q.phone) void searchByPhone(q.phone);
+      return;
+    }
+    lookupRef.current = null; // also drops any reply still in flight
+    setLoading(false);
+    setNotFound(false);
+    setCustomer(null);
+    setLedger([]);
+    setTempPassword(null);
+  }
+
+  function handleScan(payload: string) {
+    setScanning(false);
+    const phone = parseCardQrPayload(payload);
+    if (!phone) {
+      toast({
+        title: "Not a Sharelebrator card",
+        description: "That QR is not a loyalty card. Try again or type the phone number.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setPhoneInput(phone);
+    void searchByPhone(phone);
+  }
+
   async function searchByPhone(raw: string) {
     const trimmed = raw.trim();
     if (!trimmed || !user) return;
+    lookupRef.current = trimmed;
     setLoading(true);
     setNotFound(false);
-    setOutOfScope(null);
     setCustomer(null);
     setLedger([]);
     setTempPassword(null);
@@ -262,35 +290,23 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
       const res = await fetch(`/api/loyalty/lookup?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const json = await res.json();
+      const json = await readJson(res);
+      if (lookupRef.current !== trimmed) return; // a newer search replaced this one
       if (!res.ok) throw new Error(json.error || "Lookup failed.");
       if (!json.found) {
         setNotFound(true);
-        // The account exists, it is just outside this store's presence window.
-        // Say that rather than "not found", which reads as a typo and leaves
-        // the cashier retyping while the customer waits.
-        if (json.outOfScope === true) {
-          if (Number(json.windowMinutes) > 0) setWindowMinutes(Number(json.windowMinutes));
-          setOutOfScope({
-            storeName: json.storeName || "this store",
-            lastVisitHereMs: Number(json.lastVisitHereMs) || null,
-          });
-        } else {
-          setOutOfScope(null);
-        }
       } else {
         setCustomer(json.customer);
         setLedger(json.ledger || []);
       }
     } catch (err: any) {
+      if (lookupRef.current !== trimmed) return;
+      // Let the same number be tried again.
+      lookupRef.current = null;
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
-      setLoading(false);
+      if (lookupRef.current === trimmed || lookupRef.current === null) setLoading(false);
     }
-  }
-
-  async function handleSearch() {
-    return searchByPhone(phoneInput);
   }
 
   async function handleResetPassword() {
@@ -398,33 +414,8 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
         <CardContent className="p-6 h-full">
           {!customer ? (
             <div className="flex flex-col items-center justify-center gap-2 min-h-[160px] px-6 text-sm text-center text-muted-foreground">
-              {outOfScope ? (
-                <>
-                  <ShieldAlert className="h-5 w-5 text-amber-500" />
-                  <p className="font-medium text-foreground">
-                    No activity at {outOfScope.storeName} in the last {windowLabel}.
-                  </p>
-                  <p className="text-xs max-w-xs">
-                    The account exists. A record opens here while the customer is linked
-                    to an open session, or was active at this branch within the last{" "}
-                    {windowLabel} — this one is neither.
-                  </p>
-                  {outOfScope.lastVisitHereMs ? (
-                    <p className="text-xs max-w-xs">
-                      Last recorded visit here:{" "}
-                      {format(new Date(outOfScope.lastVisitHereMs), "MMM d, h:mm a")} (
-                      {formatDistanceToNow(new Date(outOfScope.lastVisitHereMs), {
-                        addSuffix: true,
-                      })}
-                      ).
-                    </p>
-                  ) : null}
-                  <p className="text-xs max-w-xs">
-                    Link them to their table or have them log in here to bring the record
-                    into scope — or ask an admin, who can view points and reset passwords
-                    for any branch.
-                  </p>
-                </>
+              {loading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
               ) : notFound ? (
                 <p>No account found for that number.</p>
               ) : (
@@ -601,7 +592,7 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <CardTitle className="text-base flex items-center gap-2">
                 <Users className="h-4 w-4 text-primary" />
-                {scope === "store" ? "Customers Here Now" : "All Accounts"}
+                {scope === "store" ? "Find a Card" : "All Accounts"}
               </CardTitle>
               <div className="flex items-center gap-4">
                 <div className="text-right">
@@ -618,27 +609,66 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
                 </div>
               </div>
             </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name or phone..."
-                value={phoneInput}
-                onChange={(e) => setPhoneInput(e.target.value)}
-                className="pl-8"
-              />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={scope === "store" ? "Full phone number, e.g. 0917 123 4567" : "Search by name or phone..."}
+                  inputMode={scope === "store" ? "tel" : undefined}
+                  value={phoneInput}
+                  onChange={(e) => handleQueryChange(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setScanning(true)}
+                title="Scan the QR on the customer's loyalty card"
+              >
+                <ScanLine className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Scan QR</span>
+              </Button>
             </div>
             {scope === "store" && (
               <p className="text-[11px] leading-snug text-muted-foreground">
-                Customers linked to an open session here, or active at this branch in
-                the last {windowLabel}. Older records are visible to admins only.
+                Type the customer&apos;s complete phone number or scan the QR on their
+                loyalty card. Nothing is listed until the number is complete.
               </p>
             )}
             {loadError && (
-              <p className="text-[11px] leading-snug text-destructive">{loadError}</p>
+              <p className="text-[11px] leading-snug text-destructive">
+                Totals and activity log could not load: {loadError}
+              </p>
             )}
           </CardHeader>
           <CardContent className="p-0">
-            {accountsLoading ? (
+            {scope === "store" ? (
+              loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : customer ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 border-t px-6 py-4 text-left hover:bg-muted/50"
+                  onClick={() => handlePickAccount(customer.phone)}
+                >
+                  <span>
+                    <span className="block text-sm font-medium">{customer.name || "—"}</span>
+                    <span className="block text-xs font-mono text-muted-foreground">{customer.phone}</span>
+                  </span>
+                  <span className="text-right">
+                    <span className="block text-sm font-mono font-bold">{customer.pointsBalance.toLocaleString()}</span>
+                    <span className="block text-[11px] text-muted-foreground">points</span>
+                  </span>
+                </button>
+              ) : notFound ? (
+                <p className="px-6 py-8 text-sm text-center text-muted-foreground">
+                  No account found for that number.
+                </p>
+              ) : null
+            ) : accountsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
@@ -648,11 +678,7 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
               </p>
             ) : filteredAccounts.length === 0 ? (
               <p className="px-6 py-8 text-sm text-center text-muted-foreground">
-                {scope === "store"
-                  ? accountQuery
-                    ? `No customers match here. If they have been away over ${windowLabel}, ask an admin.`
-                    : "No customers active at this store right now."
-                  : "No accounts match."}
+                No accounts match.
               </p>
             ) : (
               <>
@@ -847,6 +873,16 @@ export function CustomersAdmin({ storeId }: { storeId?: string }) {
       {/* Legacy (old Google Sheet) loyalty customers — same gate as the reset
           controls, so cashiers never see the claim flow. */}
       {canReset && <LegacyPointsPanel />}
+
+      <UiDialog open={scanning} onOpenChange={setScanning}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan loyalty card</DialogTitle>
+            <DialogDescription>Point the camera at the QR on the customer&apos;s Sharelebrator card.</DialogDescription>
+          </DialogHeader>
+          {scanning && <QrScanner onResult={handleScan} onCancel={() => setScanning(false)} />}
+        </DialogContent>
+      </UiDialog>
     </div>
   );
 }
