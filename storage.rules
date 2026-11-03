@@ -11,17 +11,29 @@ service firebase.storage {
     // time the call fails and every rule depending on it falls through to
     // deny — which silently blocked the Items/ and loyaltyRewardImages/
     // uploads below.
-    function getUserRole(uid) {
-      return firestore.get(/databases/(default)/documents/staff/$(uid)).data.role;
+    //
+    // Audit B22: every staff helper below also requires the token's sign-in
+    // (auth_time, epoch seconds) to be after staff/{uid}.tokensValidAfter, the
+    // server-owned boundary the admin reset-password route writes right after
+    // revokeRefreshTokens(). Storage rules cannot see Firebase's revocation
+    // list, so without this a pre-reset token kept uploading for up to an hour.
+    // The legitimate user signs in again after the reset and gets a newer
+    // auth_time. Missing field = never reset = no fence (-1 default, see
+    // tokenNotRevoked() in firestore.rules). The role-only helpers now also
+    // require status == 'active', like their firestore.rules counterparts.
+    function tokenNotRevoked(d) {
+      return request.auth.token.auth_time > d.get('tokensValidAfter', -1);
     }
-    
+
     function isManagerOrAdmin(uid) {
-      let role = getUserRole(uid);
-      return role == 'admin' || role == 'manager';
+      let d = staffDataFor(uid);
+      return d.status == 'active' && tokenNotRevoked(d)
+        && (d.role == 'admin' || d.role == 'manager');
     }
 
     function isAdmin(uid) {
-      return getUserRole(uid) == 'admin';
+      let d = staffDataFor(uid);
+      return d.status == 'active' && tokenNotRevoked(d) && d.role == 'admin';
     }
 
     // Store-scoped variants. The role-only helper above is fine for global
@@ -36,14 +48,14 @@ service firebase.storage {
 
     function hasStoreAccess(uid, storeId) {
       let d = staffDataFor(uid);
-      return d.status == 'active'
+      return d.status == 'active' && tokenNotRevoked(d)
         && (d.role == 'admin'
             || (d.assignedStoreIds is list && d.assignedStoreIds.hasAny([storeId])));
     }
 
     function isStoreManagerOrAdmin(uid, storeId) {
       let d = staffDataFor(uid);
-      return d.status == 'active'
+      return d.status == 'active' && tokenNotRevoked(d)
         && (d.role == 'admin'
             || (d.role == 'manager'
                 && d.assignedStoreIds is list
@@ -72,10 +84,14 @@ service firebase.storage {
       allow read, write: if false;
     }
 
-    // Allow a user to write/update their own avatar.
+    // Allow a user to write/update their own avatar. Revocation-fenced (B22)
+    // when the user has a staff doc, so a pre-reset token cannot keep writing
+    // here; accounts with no staff doc have no boundary and are unchanged.
     match /users/{userId}/avatar.jpg {
       allow get;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId
+        && (!firestore.exists(/databases/(default)/documents/staff/$(userId))
+            || tokenNotRevoked(staffDataFor(userId)));
     }
     
     // Allow only managers or admins to upload product images.
