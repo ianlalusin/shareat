@@ -60,8 +60,8 @@ const CONFIG_COLLECTIONS = [
 /** Written by cashier/server/kitchen during a normal shift — must stay open. */
 const OPEN_COLLECTIONS = [
   "sessions",
-  "receipts",
-  "counters",
+  // receipts and counters left this list in audit P1 (server commands only);
+  // see SERVER_ONLY_COLLECTIONS and tests/rules/audit-p1-financial-commands.test.ts.
   "tables",
   "rtKdsTickets",
   "activeSessions",
@@ -87,6 +87,12 @@ const OPEN_COLLECTIONS = [
 
 /** Server-only (Admin SDK writes these; clients never may). */
 const SERVER_ONLY_COLLECTIONS = [
+  // Canonical money docs, server commands only since audit P1.
+  "receipts",
+  "counters",
+  "paymentConversions",
+  "posCommandResults",
+  "posEffects",
   "analytics",
   "analyticsMonths",
   "analyticsYears",
@@ -210,8 +216,8 @@ describe("§1 operational collections stay open to the shift roles", () => {
     }
   }
 
-  it("allows a cashier to write nested receipts/{id}/revisions/{v}", async () => {
-    await assertSucceeds(
+  it("denies a cashier writing nested receipts/{id}/revisions/{v} (audit P1)", async () => {
+    await assertFails(
       setDoc(doc(db("cashier"), "stores", STORE_A, "receipts", "r1", "revisions", "v1"), { n: 1 })
     );
   });
@@ -240,8 +246,8 @@ describe("§1 operational collections stay open to the shift roles", () => {
     );
   });
 
-  it("allows a cashier to write the receipt-number counter", async () => {
-    await assertSucceeds(
+  it("denies a cashier writing the receipt-number counter (audit P1)", async () => {
+    await assertFails(
       setDoc(doc(db("cashier"), "stores", STORE_A, "counters", "receipts"), { seq: 5 })
     );
   });
