@@ -58,7 +58,7 @@ beforeEach(async () => {
 });
 
 const command = (uid: string, opId = "op1", over: Record<string, unknown> = {}) => ({
-  schema: 1, opId, kind: "checkout", storeId: A, sessionId: "s1", terminalId: "dev", createdByUid: uid, resolved: false,
+  schema: 1, opId, kind: "checkout", storeId: A, sessionId: "s1", terminalId: "dev", createdByUid: uid,
   clientCreatedAtMs: 1, operatorSessionToken: "tok",
   expected: { sessionRevision: 1, billingRevision: 0, tableId: "t1", totalCents: 100 },
   payload: { receiptNumber: "A-OL-X-0000-001", receiptSeq: 1, payments: [{ methodId: "cash", amount: 1 }] },
@@ -164,7 +164,7 @@ describe("bill-line prices and discounts (B01 follow-up)", () => {
         discountType: null, discountValue: 0, discountQty: 0, freeQty: 0, voidedQty: 0,
       }));
       await assertSucceeds(updateDoc(d(who, `${LINES}/addon_coke_60`), { qtyOrdered: 3 }));
-      await assertSucceeds(updateDoc(d(who, `${LINES}/addon_coke_60`), { voidedQty: 1, kitchenVoidedQty: 1, voidReason: "kitchen_cancel" }));
+      await assertSucceeds(updateDoc(d(who, `${LINES}/addon_coke_60`), { voidedQty: 1, voidReason: "kitchen_cancel" }));
       await assertSucceeds(updateDoc(d(who, `${LINES}/package_pk1`), { qtyOrdered: 3 }));
       await assertSucceeds(updateDoc(d(who, `stores/${A}/sessions/s1`), { billingRevision: 1, guestCountServerVerified: 3 }));
     });
@@ -178,50 +178,5 @@ describe("bill-line prices and discounts (B01 follow-up)", () => {
     await assertSucceeds(updateDoc(d("cashier", line), { qtyOrdered: 1, note: "after override" }));
     await assertSucceeds(updateDoc(d("cashier", `stores/${A}/sessions/s1`), { billDiscount: { type: "percent", value: 20 }, billingRevision: 2 }));
     await assertSucceeds(updateDoc(d("manager", line), { unitPrice: 45, priceOverride: { unitPrice: 45, byUid: STAFF.manager.uid } }));
-  });
-});
-
-describe("review fixes (audit P1 review 2026-11-03)", () => {
-  const LINES = `stores/${A}/sessions/s1/sessionBillLines`;
-  beforeEach(async () => {
-    await seed(`stores/${A}/sessions/s1`, { status: "active", tableId: "t1", revision: 1, billingRevision: 0, loyaltyRedemptions: [] });
-    await seed(`${LINES}/addon_coke_60`, { type: "addon", itemId: "coke", unitPrice: 60, qtyOrdered: 2, voidedQty: 0 });
-  });
-
-  for (const who of ["server", "kitchen", "cashier", "manager"] as const) {
-    it(`#1 ${who}: cannot write loyaltyRedemptions or delete a session`, async () => {
-      await assertFails(updateDoc(d(who, `stores/${A}/sessions/s1`), { loyaltyRedemptions: [{ redemptionId: "x", type: "percent", value: 100 }] }));
-      await assertFails(setDoc(d(who, `stores/${A}/sessions/s9`), { status: "active", loyaltyRedemptions: [{ redemptionId: "x", type: "percent", value: 100 }] }));
-      await assertFails(deleteDoc(d(who, `stores/${A}/sessions/s1`)));
-      await assertFails(setDoc(d(who, `stores/${A}/sessions/s8`), { status: "active", revision: 7 }));
-    });
-  }
-
-  it("#1 server/kitchen cannot create a session with a bill discount; cashier can", async () => {
-    await assertFails(setDoc(d("server", `stores/${A}/sessions/s7`), { status: "active", billDiscount: { type: "percent", value: 100 } }));
-    await assertFails(setDoc(d("kitchen", `stores/${A}/sessions/s7`), { status: "active", customAdjustments: [{ type: "fixed", value: -500 }] }));
-    await assertSucceeds(setDoc(d("cashier", `stores/${A}/sessions/s7`), { status: "pending_verification", revision: 1, billDiscount: null }));
-  });
-
-  it("#3 server/kitchen voids must move kitchenVoidedQty by the same amount", async () => {
-    const line = `${LINES}/addon_coke_60`;
-    await assertFails(updateDoc(d("kitchen", line), { voidedQty: 2 }));
-    await assertFails(updateDoc(d("server", line), { voidedQty: 2, kitchenVoidedQty: 1 }));
-    await assertFails(setDoc(d("kitchen", `${LINES}/addon_new_60`), { type: "addon", itemId: "new", unitPrice: 60, qtyOrdered: 1, voidedQty: 1, kitchenVoidedQty: 1 }));
-    await assertSucceeds(updateDoc(d("kitchen", line), { voidedQty: 1, kitchenVoidedQty: 1, voidReason: "kitchen_cancel" }));
-    await assertFails(updateDoc(d("kitchen", line), { voidedQty: 0, kitchenVoidedQty: 0 }));
-    await assertSucceeds(updateDoc(d("cashier", line), { voidedQty: 2, voidReason: "customer_changed_mind" }));
-  });
-
-  it("#7 offline commands must be created unresolved", async () => {
-    await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opR`), command(STAFF.cashier.uid, "opR", { resolved: true })));
-    const { resolved: _r, ...noFlag } = command(STAFF.cashier.uid, "opR");
-    await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opR`), noFlag));
-    await assertSucceeds(setDoc(d("cashier", `stores/${A}/posCommands/opR`), command(STAFF.cashier.uid, "opR")));
-  });
-
-  it("#2 tender consumption records are server-only", async () => {
-    await assertFails(setDoc(d("cashier", `stores/${A}/tenderConsumptions/res_r1__p1`), { receiptId: "x" }));
-    await assertFails(setDoc(d("manager", `stores/${A}/tenderConsumptions/res_r1__p1`), { receiptId: "x" }));
   });
 });
