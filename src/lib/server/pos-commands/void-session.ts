@@ -2,7 +2,7 @@ import { FieldValue, type Firestore, type Transaction } from "firebase-admin/fir
 import { PosCommandError } from "@/lib/server/pos-commands/errors";
 import { queueEffectsInTx, type PosEffectSpec } from "@/lib/server/pos-commands/effects";
 import { isSafeId } from "@/lib/server/pos-commands/checkout";
-import type { Operator } from "@/lib/server/pos-commands/operator";
+import { OFFLINE_CLOCK_SKEW_MS, type Operator } from "@/lib/server/pos-commands/operator";
 
 /**
  * Void an open (unpaid) session — server command replacing the client
@@ -45,8 +45,13 @@ export async function voidSessionInTx(
   const activeRef = db.doc(`${base}/activeSessions/${sessionId}`);
 
   const [resultSnap, sessionSnap, activeSnap] = (await Promise.all([resultRef, sessionRef, activeRef].map((r) => tx.get(r)))) as any[];
-  if (resultSnap.exists && resultSnap.data()?.status === "accepted") {
-    return { status: "accepted", replay: true, tableReleased: !!resultSnap.data()?.tableReleased, effectIds: [] };
+  if (resultSnap.exists) {
+    const r = resultSnap.data();
+    // An opId is bound to one command (audit P1 review #10).
+    if (r?.kind !== "voidSession" || r?.sessionId !== sessionId) {
+      throw new PosCommandError("command_conflict", "This command id was already used for a different action.", 409);
+    }
+    if (r?.status === "accepted") return { status: "accepted", replay: true, tableReleased: !!r?.tableReleased, effectIds: [] };
   }
   const session = sessionSnap.exists ? sessionSnap.data() : null;
   if (!session) throw new PosCommandError("session_not_found", "This bill no longer exists.", 404);
@@ -60,6 +65,19 @@ export async function voidSessionInTx(
   if (input.offline && Number(session.revision ?? 1) !== input.offline.sessionRevision) {
     throw new PosCommandError("session_changed", "This bill changed on another till while offline.", 409);
   }
+  if (input.offline) {
+    const at = input.offline.clientCreatedAtMs;
+    const started = Number(session.startedAtClientMs ?? 0);
+    if (at > nowMs + OFFLINE_CLOCK_SKEW_MS || (started > 0 && at < started - OFFLINE_CLOCK_SKEW_MS)) {
+      throw new PosCommandError("command_time_invalid", "The offline void time is outside this bill's open period.", 409);
+    }
+  }
+  // Rewards to hand back: only redemptions the server recorded as applied to
+  // THIS bill (audit P1 review #5) — the session array is client-visible.
+  const claimed: string[] = Array.isArray(session.loyaltyRedemptions)
+    ? [...new Set<string>(session.loyaltyRedemptions.map((r: any) => r?.redemptionId).filter((x: unknown): x is string => isSafeId(x)))]
+    : [];
+  const redemptionSnaps = claimed.length ? ((await tx.getAll(...claimed.map((id) => db.doc(`loyaltyRedemptions/${id}`)))) as any[]) : [];
   const ticketsSnap = (await tx.get(db.collection(`${base}/sessions/${sessionId}/kitchentickets`) as any)) as any;
   const tableId: string | null = session.tableId && session.tableId !== "alacarte" ? String(session.tableId) : null;
   const tableRef = tableId ? db.doc(`${base}/tables/${tableId}`) : null;
@@ -131,9 +149,10 @@ export async function voidSessionInTx(
 
   const projection = (activeSnap.exists ? activeSnap.data() : {}) as any;
   const pin = projection.customerPin ? String(projection.customerPin) : null;
-  const redemptionIds: string[] = Array.isArray(session.loyaltyRedemptions)
-    ? session.loyaltyRedemptions.map((r: any) => r?.redemptionId).filter((x: unknown) => typeof x === "string" && x)
-    : [];
+  const redemptionIds: string[] = claimed.filter((_, i) => {
+    const r = redemptionSnaps[i]?.exists ? redemptionSnaps[i].data() : null;
+    return !!r && r.appliedStoreId === storeId && r.appliedSessionId === sessionId && !r.appliedReceiptId;
+  });
   const effects: PosEffectSpec[] = [];
   if (pin) effects.push({ effect: "pinFinalize", payload: { sessionId, pin, reason: "session_voided", actorUid: operator.uid } });
   if (redemptionIds.length) effects.push({ effect: "loyaltyReverse", payload: { sessionId, redemptionIds, actorUid: operator.uid } });

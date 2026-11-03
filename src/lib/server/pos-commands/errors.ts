@@ -30,6 +30,10 @@ export const TERMINAL_CONFLICT_CODES = new Set([
   "operator_session_required",
   "command_invalid",
   "line_price_invalid",
+  "line_void_invalid",
+  "loyalty_invalid",
+  "command_time_invalid",
+  "command_conflict",
 ]);
 
 export function isTerminalConflict(e: unknown): boolean {

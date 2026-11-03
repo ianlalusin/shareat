@@ -44,6 +44,7 @@ export async function voidSessionOffline(args: {
     schema: 1,
     opId,
     kind: "voidSession",
+    resolved: false,
     storeId,
     sessionId,
     terminalId: getBrowserDeviceId(),

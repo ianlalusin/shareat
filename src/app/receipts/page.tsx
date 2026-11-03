@@ -32,6 +32,7 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { RejectedOfflineSalesCard } from "@/components/receipts/RejectedOfflineSalesCard";
 import { saveReceiptCorrectionCommand, voidReceiptCommand } from "@/lib/pos-commands/receipts";
 import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { reverseReceiptLoyalty } from "@/lib/loyalty/reverse-receipt-client";
@@ -646,6 +647,9 @@ export default function ReceiptsPage() {
                         )}
                     </div>
                 </PageHeader>
+                {activeStore && (appUser?.role === "admin" || appUser?.role === "manager") && (
+                    <RejectedOfflineSalesCard storeId={activeStore.id} />
+                )}
                 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
                     <div className="relative flex-1 w-full sm:w-auto">

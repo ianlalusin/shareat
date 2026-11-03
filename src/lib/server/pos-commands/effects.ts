@@ -106,10 +106,18 @@ async function sourceIsFinal(
 
 export type EffectRunSummary = { done: number; pending: number; failed: number; skipped: number };
 
+/** How long a runner owns an effect before another process may take it over. */
+export const EFFECT_LEASE_MS = 2 * 60 * 1000;
+
 /**
  * Runs the given pending effects once. Never throws: failures are recorded on
  * the effect doc (`attempts`, `lastError`) and the effect stays pending until
  * MAX_EFFECT_ATTEMPTS, then becomes `failed` for a person to look at.
+ *
+ * Each effect is CLAIMED in a transaction first (leaseId + leaseUntilMs), so
+ * the inline run after a command and the cron sweep can never run the same
+ * effect at the same time (audit P1 review #11); only the lease holder may
+ * mark it done. A crashed holder's lease expires after EFFECT_LEASE_MS.
  */
 export async function processEffects(
   db: Firestore,
@@ -123,15 +131,29 @@ export async function processEffects(
     const ref = db.doc(`stores/${storeId}/posEffects/${id}`);
     const snap = await ref.get();
     if (!snap.exists) { out.skipped++; continue; }
-    const e = snap.data() as any;
-    if (e.status !== "pending") { out.skipped++; continue; }
-    if (!(await sourceIsFinal(db, storeId, e.source, e.effect, e.payload ?? {}))) { out.pending++; continue; }
+    const e0 = snap.data() as any;
+    if (e0.status !== "pending") { out.skipped++; continue; }
+    if (!(await sourceIsFinal(db, storeId, e0.source, e0.effect, e0.payload ?? {}))) { out.pending++; continue; }
+
+    const leaseId = `${nowMs}_${Math.random().toString(36).slice(2, 10)}`;
+    const claimed = await db.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      const d = cur.exists ? (cur.data() as any) : null;
+      if (!d || d.status !== "pending") return null;
+      if (d.leaseId && Number(d.leaseUntilMs || 0) > nowMs) return null; // someone else is running it
+      tx.update(ref, { leaseId, leaseUntilMs: nowMs + EFFECT_LEASE_MS });
+      return d;
+    });
+    if (!claimed) { out.skipped++; continue; }
+    const e = claimed;
+
     try {
       await runner({ db, storeId, effect: e.effect, payload: e.payload ?? {}, source: e.source, effectDocId: id });
       await db.runTransaction(async (tx) => {
         const cur = await tx.get(ref);
-        if (!cur.exists || (cur.data() as any).status !== "pending") return;
-        tx.update(ref, { status: "done", doneAtMs: nowMs, attempts: Number((cur.data() as any).attempts || 0) + 1, lastError: null });
+        const d = cur.exists ? (cur.data() as any) : null;
+        if (!d || d.status !== "pending" || d.leaseId !== leaseId) return;
+        tx.update(ref, { status: "done", doneAtMs: nowMs, attempts: Number(d.attempts || 0) + 1, lastError: null, leaseId: null, leaseUntilMs: null });
       });
       out.done++;
     } catch (err: any) {
@@ -140,8 +162,12 @@ export async function processEffects(
       await db
         .runTransaction(async (tx) => {
           const cur = await tx.get(ref);
-          if (!cur.exists || (cur.data() as any).status !== "pending") return;
-          tx.update(ref, { status, attempts, lastError: String(err?.message || err).slice(0, 500), lastAttemptAtMs: nowMs });
+          const d = cur.exists ? (cur.data() as any) : null;
+          if (!d || d.status !== "pending" || d.leaseId !== leaseId) return;
+          tx.update(ref, {
+            status, attempts, lastError: String(err?.message || err).slice(0, 500), lastAttemptAtMs: nowMs,
+            leaseId: null, leaseUntilMs: null,
+          });
         })
         .catch(() => {});
       if (status === "failed") out.failed++;

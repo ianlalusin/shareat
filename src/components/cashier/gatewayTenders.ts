@@ -43,10 +43,18 @@ function isGatewayMethod(m: ModeOfPayment | undefined): boolean {
 export function planGatewayChecks(payments: CheckoutPayment[], paymentMethods: ModeOfPayment[]): GatewayCheck[] {
   const checks: GatewayCheck[] = [];
   const seenIntents = new Set<string>();
+  const seenDeposits = new Set<string>();
   for (const p of payments) {
     const amount = Number(p.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new Error("Invalid payment: every tender amount must be a positive number.");
+    }
+    // One reservation deposit can back at most one tender row (audit P1 review #2).
+    if (p.fromReservationPaymentId) {
+      if (seenDeposits.has(p.fromReservationPaymentId)) {
+        throw new Error("The same reservation deposit is listed twice. Remove the duplicate.");
+      }
+      seenDeposits.add(p.fromReservationPaymentId);
     }
     const method = paymentMethods.find((m) => m.id === p.methodId);
     if (!isGatewayMethod(method)) continue;

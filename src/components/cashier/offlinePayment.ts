@@ -131,6 +131,7 @@ export async function completePaymentOffline(
     receiptNumber,
     receiptSeq: seq,
     payments,
+    lines: billLines,
   });
 
   // What the till shows / prints while settlement is pending (same fields the
@@ -215,11 +216,15 @@ export function buildOfflineCheckoutCommand(a: {
   receiptNumber: string;
   receiptSeq: number;
   payments: CheckoutPayment[];
+  /** Lines as charged, kept so a manager can accept a rejected sale as recorded. */
+  lines?: unknown[];
 }): Record<string, unknown> {
   return stripUndefined({
     schema: 1,
     opId: a.opId,
     kind: "checkout",
+    // Server sweep index: false until the server resolves the command.
+    resolved: false,
     storeId: a.storeId,
     sessionId: a.sessionId,
     terminalId: a.terminalId,
@@ -242,6 +247,7 @@ export function buildOfflineCheckoutCommand(a: {
         intentDocId: p.intentDocId ?? null,
         fromReservationPaymentId: p.fromReservationPaymentId ?? null,
       })),
+      ...(a.lines ? { lines: JSON.parse(JSON.stringify(a.lines)) } : {}),
     },
   });
 }

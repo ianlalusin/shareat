@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { FieldValue, type Firestore, type Transaction } from "firebase-admin/firestore";
 import { calculateBillTotals } from "@/lib/tax";
 import { servedQtyFields } from "@/lib/kitchen/served-qty";
@@ -17,7 +18,15 @@ import {
 } from "@/lib/checkout/receipt-math";
 import { PosCommandError } from "@/lib/server/pos-commands/errors";
 import { queueEffectsInTx, type PosEffectSpec } from "@/lib/server/pos-commands/effects";
-import { PRICE_OVERRIDE_ROLES, catalogKeyFor, overrideUids, validateLinePrices } from "@/lib/checkout/line-pricing";
+import {
+  PRICE_OVERRIDE_ROLES,
+  catalogKeyFor,
+  catalogName,
+  kitchenVoidProblems,
+  overrideUids,
+  validateLinePrices,
+} from "@/lib/checkout/line-pricing";
+import { OFFLINE_CLOCK_SKEW_MS } from "@/lib/server/pos-commands/operator";
 import type { Operator } from "@/lib/server/pos-commands/operator";
 import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 
@@ -116,6 +125,25 @@ export function parseCheckoutInput(body: any): CheckoutInput {
 
 type Snap = { exists: boolean; id: string; data: () => any };
 
+/**
+ * Binds an opId to one command (audit P1 review #10): a retry must carry the
+ * same session, tenders, total and bill revision, otherwise the stored outcome
+ * of a different command would be replayed as "accepted".
+ */
+export function checkoutFingerprint(input: CheckoutInput): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      k: "checkout",
+      s: input.sessionId,
+      p: input.payments.map((p) => [p.methodId, p.amount, p.reference ?? null, p.intentDocId ?? null, p.fromReservationPaymentId ?? null]),
+      t: input.expectedTotalCents,
+      b: input.billingRevision,
+      o: input.offline ? [input.offline.receiptNumber, input.offline.clientCreatedAtMs] : null,
+    }))
+    .digest("hex")
+    .slice(0, 32);
+}
+
 /** Reads + validation + writes, inside the caller's transaction. */
 export async function checkoutInTx(
   db: Firestore,
@@ -148,7 +176,14 @@ export async function checkoutInTx(
     tableReleased: !!r.tableReleased,
     effectIds: [],
   });
-  if (resultSnap.exists && resultSnap.data()?.status === "accepted") return replayFrom(resultSnap.data());
+  const fingerprint = checkoutFingerprint(input);
+  if (resultSnap.exists) {
+    const r = resultSnap.data();
+    if (r?.kind !== "checkout" || r?.sessionId !== sessionId || (r?.fingerprint && r.fingerprint !== fingerprint)) {
+      throw new PosCommandError("command_conflict", "This payment id was already used for a different payment.", 409);
+    }
+    if (r?.status === "accepted") return replayFrom(r);
+  }
   if (receiptSnap.exists && receiptSnap.data()?.commandId === opId) return replayFrom({ ...receiptSnap.data(), receiptId: sessionId });
 
   const session = sessionSnap.exists ? sessionSnap.data() : null;
@@ -162,6 +197,16 @@ export async function checkoutInTx(
   }
   if (Number(session.billingRevision ?? 0) !== input.billingRevision) {
     throw new PosCommandError("bill_changed", "Bill changed during payment. Review the bill and try again.", 409);
+  }
+  // Offline sale time is client-chosen: it must fall inside this session's life
+  // (not before it started, not after the server received it). There is no
+  // closed / posted business day in this codebase to check against.
+  if (input.offline) {
+    const at = input.offline.clientCreatedAtMs;
+    const started = Number(session.startedAtClientMs ?? 0);
+    if (at > nowMs + OFFLINE_CLOCK_SKEW_MS || (started > 0 && at < started - OFFLINE_CLOCK_SKEW_MS)) {
+      throw new PosCommandError("command_time_invalid", "The offline sale time is outside this bill's open period.", 409);
+    }
   }
 
   const linesSnap = await tx.get(db.collection(`${base}/sessions/${sessionId}/sessionBillLines`).orderBy("createdAt", "asc") as any) as any;
@@ -177,23 +222,35 @@ export async function checkoutInTx(
     .map((l) => catalogKeyFor(l))
     .filter((k): k is { kind: "inventory"; itemId: string } => k?.kind === "inventory" && isSafeId(k.itemId))
     .map((k) => k.itemId))];
-  const inventoryPrices = new Map<string, number | null>();
-  const priceOf = (d: any): number | null => {
+  const inventory = new Map<string, { price: number | null; name: string | null }>();
+  const entryOf = (d: any) => {
     const v = Number(d?.sellingPrice);
-    return d && d.sellingPrice != null && Number.isFinite(v) ? v : null;
+    const name = String(d?.displayName ?? d?.name ?? d?.productName ?? "").trim();
+    return { price: d && d.sellingPrice != null && Number.isFinite(v) ? v : null, name: name || null };
   };
   if (inventoryIds.length) {
     const snaps = (await tx.getAll(...inventoryIds.map((id) => db.doc(`${base}/inventory/${id}`)))) as unknown as Snap[];
     for (let i = 0; i < inventoryIds.length; i++) {
-      if (snaps[i].exists) inventoryPrices.set(inventoryIds[i], priceOf(snaps[i].data()));
+      if (snaps[i].exists) inventory.set(inventoryIds[i], entryOf(snaps[i].data()));
     }
     // Customer-app orders bill by global product id; resolve via productId.
     for (const id of inventoryIds) {
-      if (inventoryPrices.has(id)) continue;
+      if (inventory.has(id)) continue;
       const q = (await tx.get(db.collection(`${base}/inventory`).where("productId", "==", id).limit(1) as any)) as any;
-      inventoryPrices.set(id, q.docs.length ? priceOf(q.docs[0].data()) : null);
+      inventory.set(id, q.docs.length ? entryOf(q.docs[0].data()) : { price: null, name: null });
     }
   }
+  // Loyalty rewards: the session array is a client-visible copy; the server
+  // redemption records are the authority for what was redeemed on THIS bill
+  // and for its value (audit P1 review #1).
+  const sessionRedemptions: any[] = Array.isArray(session.loyaltyRedemptions) ? session.loyaltyRedemptions : [];
+  const redemptionIds = sessionRedemptions.map((r) => r?.redemptionId);
+  if (redemptionIds.some((id) => !isSafeId(id)) || new Set(redemptionIds).size !== redemptionIds.length) {
+    throw new PosCommandError("loyalty_invalid", "A loyalty reward on this bill is not valid. Remove and re-apply it.", 409);
+  }
+  const redemptionSnaps = redemptionIds.length
+    ? ((await tx.getAll(...redemptionIds.map((id) => db.doc(`loyaltyRedemptions/${id}`)))) as unknown as Snap[])
+    : [];
   const uids = overrideUids(billLines);
   const overrideOk = new Set<string>();
   if (uids.length) {
@@ -223,15 +280,37 @@ export async function checkoutInTx(
     throw new PosCommandError("gateway_invalid", e?.message || "Invalid scan-to-pay tender.", 409);
   }
   const intentReads: Array<{ check: any; ref: any; snap: Snap }> = [];
-  let reservationRef: any = null;
-  let reservationSnap: Snap | null = null;
   for (const check of gatewayChecks) {
     if (check.kind === "bridge") {
       const ref = db.doc(`${base}/paymentIntents/${check.intentDocId}`);
       intentReads.push({ check, ref, snap: (await tx.get(ref)) as unknown as Snap });
-    } else if (!reservationRef && session.reservationId && isSafeId(String(session.reservationId))) {
-      reservationRef = db.doc(`${base}/reservations/${String(session.reservationId)}`);
-      reservationSnap = (await tx.get(reservationRef)) as unknown as Snap;
+    } else {
+      // Reservation rows are written by store staff, so a "paid QR deposit"
+      // there proves nothing (audit P1 review #2). Scan-to-pay money must come
+      // through a verified bridge doc.
+      throw new PosCommandError(
+        "gateway_invalid",
+        "A scan-to-pay reservation deposit can't be verified. Record it as the method it was actually paid with, or take a new QR payment.",
+        409,
+      );
+    }
+  }
+  // Reservation deposit tenders (non-gateway): verified against the
+  // reservation and consumed exactly once via a server-only consumption record.
+  const depositTenders = payments.filter((p) => p.fromReservationPaymentId);
+  const reservationId = session.reservationId != null ? String(session.reservationId) : "";
+  let reservationRef: any = null;
+  let reservationSnap: Snap | null = null;
+  const depositConsumption: Array<{ ref: any; snap: Snap; tender: CheckoutTender }> = [];
+  if (depositTenders.length) {
+    if (!isSafeId(reservationId)) {
+      throw new PosCommandError("tender_invalid", "This bill has no reservation to take a deposit from.", 409);
+    }
+    reservationRef = db.doc(`${base}/reservations/${reservationId}`);
+    reservationSnap = (await tx.get(reservationRef)) as unknown as Snap;
+    for (const t of depositTenders) {
+      const ref = db.doc(`${base}/tenderConsumptions/res_${reservationId}__${t.fromReservationPaymentId}`);
+      depositConsumption.push({ ref, snap: (await tx.get(ref)) as unknown as Snap, tender: t });
     }
   }
 
@@ -239,7 +318,7 @@ export async function checkoutInTx(
   const priceProblems = validateLinePrices({
     lines: billLines,
     packages: Array.isArray(configSnap.data()?.packages) ? configSnap.data().packages : [],
-    inventoryPrice: (id) => inventoryPrices.get(id) ?? null,
+    inventoryPrice: (id) => inventory.get(id)?.price ?? null,
     overrideAllowed: (uid) => overrideOk.has(uid),
   });
   if (priceProblems.length) {
@@ -254,7 +333,28 @@ export async function checkoutInTx(
   const storeData = { id: storeId, ...(storeSnap.exists ? storeSnap.data() : {}) } as Store;
   const billDiscount = session.billDiscount ?? null;
   const customAdjustments = Array.isArray(session.customAdjustments) ? session.customAdjustments : [];
-  const loyaltyRedemptions = Array.isArray(session.loyaltyRedemptions) ? session.loyaltyRedemptions : [];
+  const loyaltyRedemptions = redemptionSnaps.map((snap, i) => {
+    const r = snap.exists ? snap.data() : null;
+    if (
+      !r || r.status !== "applied" || r.appliedStoreId !== storeId || r.appliedSessionId !== sessionId ||
+      (r.appliedReceiptId && r.appliedReceiptId !== sessionId) ||
+      !(r.type === "percent" || r.type === "fixed") || !(Number(r.value) > 0)
+    ) {
+      throw new PosCommandError("loyalty_invalid", "A loyalty reward on this bill is not valid. Remove and re-apply it.", 409);
+    }
+    return { ...sessionRedemptions[i], redemptionId: redemptionIds[i], type: r.type, value: Number(r.value), rewardName: r.rewardName ?? sessionRedemptions[i]?.rewardName ?? null };
+  });
+  const voidProblems = kitchenVoidProblems(billLines, ticketsSnap.docs.map((t: any) => ({ ...t.data(), id: t.id })));
+  if (voidProblems.length) {
+    const p = voidProblems[0];
+    throw new PosCommandError("line_void_invalid", `"${p.itemName}" has more kitchen voids than cancelled tickets (${p.reason}). A cashier must confirm the void.`, 409);
+  }
+  const packages = Array.isArray(configSnap.data()?.packages) ? configSnap.data().packages : [];
+  // Receipt lines carry the catalog's name for catalog-priced items.
+  const receiptLines = billLines.map((l) => {
+    const name = catalogName(catalogKeyFor(l), packages, (id) => inventory.get(id)?.name ?? null);
+    return name && name !== l.itemName ? ({ ...l, itemName: name, orderedItemName: l.itemName ?? null } as SessionBillLine) : l;
+  });
   const totals = calculateBillTotals(
     billLines, storeData, billDiscount, customAdjustments,
     loyaltyRedemptions.map((r: any) => ({ type: r.type, value: r.value })),
@@ -289,10 +389,16 @@ export async function checkoutInTx(
       throw new PosCommandError("gateway_consumed", "Scan-to-pay payment was already used.", 409);
     }
   }
-  for (const check of gatewayChecks) {
-    if (check.kind !== "reservation") continue;
-    const problem = verifyReservationTender(check, reservationSnap?.exists ? reservationSnap.data() : null, { sessionId });
-    if (problem) throw new PosCommandError("gateway_invalid", problem, 409);
+  for (const { snap, tender } of depositConsumption) {
+    const problem = verifyReservationTender(
+      { kind: "reservation", payment: tender as CheckoutPayment, reservationPaymentId: String(tender.fromReservationPaymentId) },
+      reservationSnap?.exists ? reservationSnap.data() : null,
+      { sessionId },
+    );
+    if (problem) throw new PosCommandError("tender_invalid", problem, 409);
+    if (snap.exists && snap.data()?.receiptId !== sessionId) {
+      throw new PosCommandError("tender_invalid", "This reservation deposit was already used on another receipt.", 409);
+    }
   }
 
   let summary;
@@ -379,7 +485,7 @@ export async function checkoutInTx(
     receiptNumber = formatReceiptNumber(receiptNoFormat, receiptSeq);
   }
 
-  const sales = computeSalesAnalytics(billLines, storeData);
+  const sales = computeSalesAnalytics(receiptLines, storeData);
   const createdAtClientMs = input.offline?.clientCreatedAtMs ?? nowMs;
   const receipt = dropUndefined({
     id: sessionId,
@@ -400,7 +506,7 @@ export async function checkoutInTx(
     receiptNumber,
     receiptNoFormatUsed: receiptNoFormat,
     createdAtClientMs,
-    lines: billLines,
+    lines: receiptLines,
     billDiscount,
     customAdjustments,
     loyaltyRedemptions,
@@ -457,6 +563,12 @@ export async function checkoutInTx(
   for (const { ref } of intentReads) {
     tx.update(ref, { consumedByReceiptId: sessionId, consumedBySessionId: sessionId, consumedByCommandId: opId, consumedAtMs: nowMs });
   }
+  for (const { ref, tender } of depositConsumption) {
+    tx.set(ref, {
+      reservationId, reservationPaymentId: tender.fromReservationPaymentId, receiptId: sessionId,
+      sessionId, commandId: opId, amount: tender.amount, consumedAtMs: nowMs,
+    });
+  }
   if (reservationRef && reservationSnap?.exists) {
     tx.update(reservationRef, { paymentsAppliedToSessionId: sessionId, updatedAt: serverTs });
   }
@@ -487,6 +599,7 @@ export async function checkoutInTx(
     opId,
     kind: "checkout",
     status: "accepted",
+    fingerprint,
     storeId,
     sessionId,
     receiptId: sessionId,

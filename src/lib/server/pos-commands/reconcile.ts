@@ -3,7 +3,9 @@ import { PosCommandError, isTerminalConflict } from "@/lib/server/pos-commands/e
 import { resolveOperator, type Operator } from "@/lib/server/pos-commands/operator";
 import { checkoutInTx, isSafeId, type CheckoutTender, parseCheckoutInput } from "@/lib/server/pos-commands/checkout";
 import { voidSessionInTx } from "@/lib/server/pos-commands/void-session";
-import { processEffects, listPendingEffectIds, type EffectRunner } from "@/lib/server/pos-commands/effects";
+import { processEffects, listPendingEffectIds, queueEffectsInTx, type EffectRunner } from "@/lib/server/pos-commands/effects";
+import { FieldValue } from "firebase-admin/firestore";
+import { computeSalesAnalytics, dropUndefined, summarizeTenders } from "@/lib/checkout/receipt-math";
 
 /**
  * Offline command reconciliation (audit B16 / B17).
@@ -29,7 +31,9 @@ export type OfflineCommand = {
   clientCreatedAtMs: number;
   operatorSessionToken: string | null;
   expected: { sessionRevision: number; billingRevision: number; tableId: string | null; totalCents: number };
-  payload: { payments?: CheckoutTender[]; receiptNumber?: string; receiptSeq?: number; reason?: string };
+  payload: { payments?: CheckoutTender[]; receiptNumber?: string; receiptSeq?: number; reason?: string; lines?: any[] };
+  /** false at creation; set true by the server once the command is resolved (sweep index). */
+  resolved?: boolean;
   provisional?: Record<string, unknown> | null;
 };
 
@@ -37,7 +41,7 @@ export type ReconcileCaller =
   | { type: "staff"; uid: string; role: string; isPlatformAdmin: boolean }
   | { type: "cron" };
 
-export type ReconcileAction = "apply" | "retry" | "dismiss";
+export type ReconcileAction = "apply" | "retry" | "dismiss" | "accept-recorded";
 
 export type ReconcileResult =
   | { status: "accepted"; replay: boolean; receiptId?: string; receiptNumber?: string; tableReleased: boolean }
@@ -70,6 +74,7 @@ export function parseOfflineCommand(raw: any, storeId: string, opId: string): Of
       bad("Invalid offline receipt number.");
     }
     if (!int(p.receiptSeq) || p.receiptSeq > 100000) bad("Invalid offline receipt sequence.");
+    if (p.lines != null && (!Array.isArray(p.lines) || p.lines.length > 300)) bad("Invalid recorded lines.");
     // Reuses the online tender validation (finite whole-centavo amounts).
     parseCheckoutInput({
       storeId, sessionId: raw.sessionId, opId, payments: p.payments,
@@ -139,7 +144,7 @@ export async function reconcileCommand(
     }
     await db.runTransaction(async (tx) => {
       const cur = (await tx.get(cmdRef)) as any;
-      if (!cur.exists) tx.set(cmdRef, { ...command, persistedBy: "reconcile", persistedAtMs: now });
+      if (!cur.exists) tx.set(cmdRef, { ...command, resolved: false, persistedBy: "reconcile", persistedAtMs: now });
     });
     cmdSnap = await cmdRef.get();
     command = parseOfflineCommand(cmdSnap.data(), storeId, opId);
@@ -148,13 +153,34 @@ export async function reconcileCommand(
     throw new PosCommandError("forbidden", "Not your offline command.", 403);
   }
 
+  /** Takes the command out of the cron sweep's unresolved index. */
+  const markResolved = () =>
+    db.runTransaction(async (tx) => {
+      const cur = (await tx.get(cmdRef)) as any;
+      if (cur.exists && cur.data()?.resolved !== true) tx.update(cmdRef, { resolved: true, resolvedAtMs: now });
+    }).catch(() => {});
+
   // 2. Previous outcome.
   const prev = (await resultRef.get()) as any;
   const prevData = prev.exists ? prev.data() : null;
   if (prevData?.status === "accepted") {
+    await markResolved();
     return { status: "accepted", replay: true, receiptId: prevData.receiptId, receiptNumber: prevData.receiptNumber, tableReleased: !!prevData.tableReleased };
   }
-  if (prevData?.status === "dismissed") return { status: "dismissed", note: String(prevData.note || "") };
+  if (prevData?.status === "dismissed") {
+    await markResolved();
+    return { status: "dismissed", note: String(prevData.note || "") };
+  }
+  if (action === "accept-recorded") {
+    if (!elevated) throw new PosCommandError("forbidden", "Only a manager can accept an offline sale as recorded.", 403);
+    const note = typeof args.note === "string" ? args.note.trim().slice(0, 500) : "";
+    if (!note) bad("A resolution note is required.");
+    if (prevData?.status !== "rejected") throw new PosCommandError("command_invalid", "Only a rejected offline sale can be accepted as recorded.", 409);
+    const r = await acceptAsRecorded(db, command, { uid: (caller as any).uid, note }, now);
+    if (deps.runner && r.effectIds.length) await processEffects(db, storeId, r.effectIds, deps.runner, now);
+    await markResolved();
+    return { status: "accepted", replay: r.replay, receiptId: r.receiptId, receiptNumber: r.receiptNumber, tableReleased: false };
+  }
   if (action === "dismiss") {
     if (!elevated) throw new PosCommandError("forbidden", "Only a manager can dismiss an offline command.", 403);
     const note = typeof args.note === "string" ? args.note.trim().slice(0, 500) : "";
@@ -168,6 +194,7 @@ export async function reconcileCommand(
         dismissedByUid: (caller as any).uid, processedAtMs: now,
       });
     });
+    await markResolved();
     return { status: "dismissed", note };
   }
   if (prevData?.status === "rejected" && action !== "retry") {
@@ -186,6 +213,8 @@ export async function reconcileCommand(
         processedAtMs: now, mode: "offline",
       });
     });
+    // Rejected is terminal until a manager acts, so it leaves the sweep index.
+    await markResolved();
     return { status: "rejected", code: e.code, message: e.message };
   };
 
@@ -237,6 +266,7 @@ export async function reconcileCommand(
       accepted = { status: "accepted", replay: out.replay, tableReleased: out.tableReleased };
     }
     if (deps.runner && effectIds.length) await processEffects(db, storeId, effectIds, deps.runner, now);
+    await markResolved();
     return accepted;
   } catch (e) {
     if (isTerminalConflict(e)) return reject(e as PosCommandError);
@@ -246,7 +276,6 @@ export async function reconcileCommand(
 
 /** Grace period before the cron takes over a command its till may still submit. */
 export const SWEEP_GRACE_MS = 2 * 60 * 1000;
-export const SWEEP_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** Cron sweep for one store: unreconciled commands, then pending effects. */
 export async function sweepStore(
@@ -257,16 +286,16 @@ export async function sweepStore(
 ): Promise<{ accepted: number; rejected: number; errors: number; effects: { done: number; pending: number; failed: number } }> {
   const now = deps.now ?? Date.now();
   const out = { accepted: 0, rejected: 0, errors: 0, effects: { done: 0, pending: 0, failed: 0 } };
+  // Only unresolved commands (audit P1 review #7): resolved ones never occupy
+  // the page, and client clock skew is irrelevant (grace uses server time).
   const cmds = await db
     .collection(`stores/${storeId}/posCommands`)
-    .where("clientCreatedAtMs", ">=", now - SWEEP_WINDOW_MS)
+    .where("resolved", "==", false)
     .limit(300)
     .get();
   for (const d of cmds.docs as any[]) {
-    const data = d.data();
-    if (Number(data?.clientCreatedAtMs || 0) > now - SWEEP_GRACE_MS) continue;
-    const res = (await db.doc(`stores/${storeId}/posCommandResults/${d.id}`).get()) as any;
-    if (res.exists) continue;
+    const writtenMs = typeof d.updateTime?.toMillis === "function" ? d.updateTime.toMillis() : 0;
+    if (writtenMs > now - SWEEP_GRACE_MS) continue;
     try {
       const r = await reconcileCommand(db, { storeId, opId: d.id, caller: { type: "cron" } }, { now, runner, ...(deps.key !== undefined ? { key: deps.key } : {}) });
       if (r.status === "accepted") out.accepted++;
@@ -282,4 +311,76 @@ export async function sweepStore(
     out.effects = { done: r.done, pending: r.pending, failed: r.failed };
   }
   return out;
+}
+
+/**
+ * Manager-approved acceptance of a REJECTED offline sale (audit P1 review #6):
+ * money was taken at the till, the bill could not be settled as recorded
+ * (revision moved, session settled elsewhere or deleted). Writes a receipt
+ * `offline_{opId}` from the command's own recorded lines, tenders and total,
+ * with the approving manager and note on it. It does not touch the session or
+ * table. Commands with scan-to-pay or reservation-deposit tenders are refused
+ * here (those must be proven by the normal path).
+ */
+export async function acceptAsRecorded(
+  db: Firestore,
+  command: OfflineCommand,
+  approver: { uid: string; note: string },
+  now: number,
+): Promise<{ receiptId: string; receiptNumber: string; replay: boolean; effectIds: string[] }> {
+  const { storeId, opId } = command;
+  const payments = command.payload.payments ?? [];
+  if (command.kind !== "checkout") throw new PosCommandError("command_invalid", "Only offline sales can be accepted as recorded.", 409);
+  if (payments.some((p) => p.intentDocId || p.fromReservationPaymentId)) {
+    throw new PosCommandError("gateway_invalid", "Scan-to-pay or deposit tenders can't be accepted without verification.", 409);
+  }
+  const receiptId = `offline_${opId}`;
+  const receiptRef = db.doc(`stores/${storeId}/receipts/${receiptId}`);
+  const resultRef = db.doc(`stores/${storeId}/posCommandResults/${opId}`);
+  return db.runTransaction(async (tx) => {
+    const [rSnap, configSnap, storeSnap] = (await Promise.all([
+      tx.get(receiptRef), tx.get(db.doc(`stores/${storeId}/storeConfig/current`)), tx.get(db.doc(`stores/${storeId}`)),
+    ])) as any[];
+    const receiptNumber = String(command.payload.receiptNumber);
+    if (rSnap.exists) return { receiptId, receiptNumber, replay: true, effectIds: [] };
+    const methods = (Array.isArray(configSnap.data()?.modesOfPayment) ? configSnap.data().modesOfPayment : []) as any[];
+    const totalCents = command.expected.totalCents;
+    let summary;
+    try {
+      summary = summarizeTenders({ payments, paymentMethods: methods, amountDueCents: totalCents });
+    } catch (e: any) {
+      throw new PosCommandError("tender_invalid", e?.message || "Invalid tenders.", 409);
+    }
+    const lines = Array.isArray(command.payload.lines) && command.payload.lines.length
+      ? command.payload.lines
+      : [{ id: "recorded", type: "addon", itemName: "Offline sale (as recorded)", qtyOrdered: 1, unitPrice: totalCents / 100 }];
+    const sales = computeSalesAnalytics(lines as any, (storeSnap.exists ? storeSnap.data() : {}) as any);
+    const total = totalCents / 100;
+    tx.set(receiptRef, dropUndefined({
+      id: receiptId, receiptId, storeId, sessionId: command.sessionId,
+      createdByUid: command.createdByUid, createdByUsername: "offline (manager-accepted)",
+      commandId: opId, offlineOrigin: true, offlineCommandId: opId, terminalId: command.terminalId,
+      acceptedAsRecorded: { byUid: approver.uid, note: approver.note, atMs: now },
+      sessionMode: "alacarte", tableId: null, tableNumber: null, customerName: null,
+      total, totalPaid: summary.totalPaid, change: summary.change, status: "final",
+      receiptSeq: command.payload.receiptSeq ?? 0, receiptNumber, receiptNoFormatUsed: "OL",
+      createdAtClientMs: command.clientCreatedAtMs, lines,
+      billDiscount: null, customAdjustments: [], loyaltyRedemptions: [],
+      analytics: {
+        v: 2, subtotal: total, discountsTotal: 0, chargesTotal: 0, taxAmount: 0,
+        grandTotal: total, totalPaid: summary.totalPaid, change: summary.change, mop: summary.mopMap,
+        salesByItem: sales.salesByItem, salesByCategory: sales.salesByCategory,
+      },
+      analyticsApplied: false, analyticsApplyId: opId,
+      createdAt: FieldValue.serverTimestamp(),
+    }));
+    const effectIds = queueEffectsInTx(db, tx, storeId, { type: "receipt", receiptId, commandId: opId },
+      [{ effect: "analytics", payload: { op: "payment", receiptId } }], now);
+    tx.set(resultRef, {
+      opId, kind: "checkout", storeId, sessionId: command.sessionId, status: "accepted",
+      receiptId, receiptNumber, totalCents, tableReleased: false, mode: "offline-accepted-as-recorded",
+      acceptedByUid: approver.uid, note: approver.note, processedAtMs: now,
+    });
+    return { receiptId, receiptNumber, replay: false, effectIds };
+  });
 }

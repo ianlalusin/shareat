@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 
 /**
  * Apply / retry / dismiss an offline POS command (audit B16).
- * Body: { storeId, opId, action?: "apply" | "retry" | "dismiss", note?, command? }.
+ * Body: { storeId, opId, action?: "apply" | "retry" | "dismiss" | "accept-recorded", note?, command? }.
  * `command` is the till's localStorage copy, used only when the Firestore copy
  * never arrived. The operator is taken from the token stored IN the command
  * (offline rule, docs/audit/pos-financial-commands.md §5), not from this request.
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const storeId = String(body?.storeId || "");
     const opId = String(body?.opId || "");
     const action = (body?.action || "apply") as ReconcileAction;
-    if (!["apply", "retry", "dismiss"].includes(action)) throw new PosCommandError("command_invalid", "Invalid action.");
+    if (!["apply", "retry", "dismiss", "accept-recorded"].includes(action)) throw new PosCommandError("command_invalid", "Invalid action.");
     const match = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
     if (!match) throw new PosCommandError("unauthenticated", "Missing bearer token.", 401);
     let decoded: DecodedIdToken;

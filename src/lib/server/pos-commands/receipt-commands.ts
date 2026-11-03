@@ -32,12 +32,20 @@ const reasonOf = (v: unknown) => {
   return r;
 };
 
+/**
+ * Cash still held for this sale: cash tendered minus cash already returned by
+ * refund receipts (audit P1 review #9), so a void after a partial refund never
+ * records the refunded cash a second time.
+ */
 function cashPaidOf(receipt: any): number {
   let cash = 0;
   for (const [k, v] of Object.entries((receipt?.analytics?.mop ?? {}) as Record<string, number>)) {
     if (k.toLowerCase().includes("cash")) cash += Number(v || 0);
   }
-  return roundMoney(cash);
+  for (const [k, v] of Object.entries((receipt?.refundedMop ?? {}) as Record<string, number>)) {
+    if (k.toLowerCase().includes("cash")) cash -= Number(v || 0);
+  }
+  return Math.max(0, roundMoney(cash));
 }
 
 // ---------------------------------------------------------------- void

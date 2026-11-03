@@ -69,7 +69,46 @@ export function catalogPrice(
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
-export type LinePriceProblem = { lineId: string; itemName: string; reason: string };
+/**
+ * The catalog's own name for the line (package name / inventory display name),
+ * so the receipt never shows a client-chosen name next to a catalog price
+ * ("Premium Wagyu" billed at the price of a cheap item id).
+ */
+export function catalogName(
+  key: LineCatalogKey | null,
+  packages: Array<CatalogPackage & { packageName?: string; name?: string }>,
+  inventoryName: (itemId: string) => string | null,
+): string | null {
+  if (!key) return null;
+  if (key.kind === "inventory") return inventoryName(key.itemId);
+  const pkg = packages.find((p) => (p.packageId ?? p.id) === key.packageId);
+  const n = pkg?.packageName ?? pkg?.name;
+  if (typeof n !== "string" || !n.trim()) return null;
+  return key.kind === "bundleExtra" ? `Extra Pax — ${n}` : n;
+}
+
+/** Kitchen-voided quantity must be backed by cancelled kitchen tickets for the line. */
+export function kitchenVoidProblems(
+  lines: SessionBillLine[],
+  tickets: Array<Record<string, any>>,
+): LinePriceProblem[] {
+  const out: LinePriceProblem[] = [];
+  for (const line of lines) {
+    const kv = Number((line as any).kitchenVoidedQty || 0);
+    if (!(kv > 0)) continue;
+    const lineId = String((line as any).id ?? "");
+    const allowed = tickets
+      .filter((t) => t?.billLineId === lineId && t?.status === "cancelled")
+      // Full ticket quantity: the kitchen cancel flow voids the whole ticket qty.
+      .reduce((s, t) => s + Math.max(0, Number(t.qty ?? t.qtyOrdered ?? 1)), 0);
+    if (kv > allowed + 1e-9) {
+      out.push({ lineId, itemName: String(line.itemName ?? lineId), reason: `kitchen voided ${kv} but cancelled kitchen tickets cover only ${allowed}` });
+    }
+  }
+  return out;
+}
+
+export type LinePriceProblem ={ lineId: string; itemName: string; reason: string };
 
 /**
  * Returns one problem per line whose price cannot be proven. `overrideAllowed`
