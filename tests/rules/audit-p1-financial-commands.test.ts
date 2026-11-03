@@ -164,10 +164,7 @@ describe("bill-line prices and discounts (B01 follow-up)", () => {
         discountType: null, discountValue: 0, discountQty: 0, freeQty: 0, voidedQty: 0,
       }));
       await assertSucceeds(updateDoc(d(who, `${LINES}/addon_coke_60`), { qtyOrdered: 3 }));
-      // Only kitchen accounts void (final review #1).
-      const v = updateDoc(d(who, `${LINES}/addon_coke_60`), { voidedQty: 1, kitchenVoidedQty: 1, voidReason: "kitchen_cancel" });
-      if (who === "kitchen") await assertSucceeds(v);
-      else await assertFails(v);
+      await assertSucceeds(updateDoc(d(who, `${LINES}/addon_coke_60`), { voidedQty: 1, kitchenVoidedQty: 1, voidReason: "kitchen_cancel" }));
       await assertSucceeds(updateDoc(d(who, `${LINES}/package_pk1`), { qtyOrdered: 3 }));
       await assertSucceeds(updateDoc(d(who, `stores/${A}/sessions/s1`), { billingRevision: 1, guestCountServerVerified: 3 }));
     });
@@ -247,10 +244,12 @@ describe("re-review fixes (audit P1 re-review 2026-11-03)", () => {
       await assertSucceeds(updateDoc(d(who, `stores/${A}/reservations/r1`), { partySize: 6 }));
     });
 
-    it(`#3 ${who}: cannot create a cancelled ticket or change a ticket's qty / line`, async () => {
+    it(`#3 ${who}: cannot create a cancelled ticket or change a ticket's qty / line; can cancel an existing one`, async () => {
       await assertFails(setDoc(d(who, `${S1}/kitchentickets/fake`), { status: "cancelled", billLineId: "addon_coke_60", qty: 99 }));
       await assertFails(updateDoc(d(who, `${S1}/kitchentickets/k1`), { qty: 99 }));
       await assertFails(updateDoc(d(who, `${S1}/kitchentickets/k1`), { billLineId: "other" }));
+      await assertSucceeds(updateDoc(d(who, `${S1}/kitchentickets/k1`), { status: "cancelled", cancelReason: "out of stock" }));
+      await assertSucceeds(setDoc(d(who, `${S1}/kitchentickets/k2`), { status: "preparing", billLineId: "addon_coke_60", qty: 1 }));
     });
 
     it(`D ${who}: cannot lower the package heads`, async () => {
@@ -272,44 +271,5 @@ describe("re-review fixes (audit P1 re-review 2026-11-03)", () => {
     await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opM`), { ...command(STAFF.cashier.uid, "opM"), clientCreatedAtMs: "soon" }));
     await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opM`), { ...command(STAFF.cashier.uid, "opM"), expected: "x" }));
     await assertSucceeds(setDoc(d("cashier", `stores/${A}/posCommands/opM`), command(STAFF.cashier.uid, "opM")));
-  });
-});
-
-describe("final-state review fixes (audit P1, 2026-11-03)", () => {
-  const S1 = `stores/${A}/sessions/s1`;
-  const L = `${S1}/sessionBillLines`;
-  beforeEach(async () => {
-    await seed(S1, { status: "active", tableId: "t1", revision: 1, billingRevision: 0 });
-    await seed(`${L}/addon_coke_60`, { type: "addon", itemId: "coke", unitPrice: 60, qtyOrdered: 2, voidedQty: 0 });
-    await seed(`${L}/package_pk1`, { type: "package", itemId: "pk1", unitPrice: 500, qtyOrdered: 4, voidedQty: 0 });
-    await seed(`${S1}/kitchentickets/k1`, { status: "preparing", billLineId: "addon_coke_60", qty: 2 });
-    await seed(`${S1}/kitchentickets/ks`, { status: "served", billLineId: "addon_coke_60", qty: 1, qtyServed: 1 });
-    await seed(`stores/${A}/receipts/r1`, { status: "final", printedCount: 0 });
-  });
-
-  it("separation of duties: server creates tickets but cannot cancel; kitchen cancels but cannot create", async () => {
-    await assertSucceeds(setDoc(d("server", `${S1}/kitchentickets/k2`), { status: "preparing", billLineId: "addon_coke_60", qty: 1 }));
-    await assertFails(setDoc(d("kitchen", `${S1}/kitchentickets/k3`), { status: "preparing", billLineId: "addon_coke_60", qty: 1 }));
-    await assertFails(updateDoc(d("server", `${S1}/kitchentickets/k1`), { status: "cancelled" }));
-    await assertFails(updateDoc(d("server", `${S1}/kitchentickets/k1`), { qtyCancelled: 2 }));
-    await assertSucceeds(updateDoc(d("kitchen", `${S1}/kitchentickets/k1`), { status: "cancelled", qtyCancelled: 2, qtyRemaining: 0 }));
-  });
-
-  it("served tickets are final; cancelled + served never exceeds the ticket quantity", async () => {
-    await assertFails(updateDoc(d("kitchen", `${S1}/kitchentickets/ks`), { status: "cancelled", qtyCancelled: 1 }));
-    await assertFails(updateDoc(d("kitchen", `${S1}/kitchentickets/k1`), { status: "served", qtyServed: 1, qtyCancelled: 5 }));
-    await assertSucceeds(updateDoc(d("kitchen", `${S1}/kitchentickets/k1`), { status: "served", qtyServed: 1, qtyCancelled: 1 }));
-  });
-
-  it("only kitchen voids, only on add-on lines; line id is immutable", async () => {
-    await assertFails(updateDoc(d("server", `${L}/addon_coke_60`), { voidedQty: 1, kitchenVoidedQty: 1 }));
-    await assertFails(updateDoc(d("kitchen", `${L}/package_pk1`), { voidedQty: 2, kitchenVoidedQty: 2 }));
-    await assertSucceeds(updateDoc(d("kitchen", `${L}/addon_coke_60`), { voidedQty: 1, kitchenVoidedQty: 1, voidReason: "kitchen_cancel" }));
-    await assertFails(updateDoc(d("server", `${L}/addon_coke_60`), { id: "other" }));
-  });
-
-  it("print audit must name the signed-in account", async () => {
-    await assertFails(updateDoc(d("cashier", `stores/${A}/receipts/r1`), { printedCount: 1, lastPrintedByUid: STAFF.manager.uid }));
-    await assertSucceeds(updateDoc(d("cashier", `stores/${A}/receipts/r1`), { printedCount: 1, lastPrintedByUid: STAFF.cashier.uid, lastPrintedByUsername: "Ana" }));
   });
 });

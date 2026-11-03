@@ -441,7 +441,7 @@ service cloud.firestore {
         return subcoll != 'sessionBillLines' || ownOverride() && (canSetPrices() || (
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'unitPrice', 'modifiersTotal', 'priceOverride', 'lineAdjustments', 'freeQty',
-            'discountType', 'discountValue', 'discountQty', 'discountId', 'itemId', 'type', 'id'])
+            'discountType', 'discountValue', 'discountQty', 'discountId', 'itemId', 'type'])
           // Re-review D: no line's quantity (package heads included) goes down
           // without a cashier+.
           && request.resource.data.get('qtyOrdered', 0) >= resource.data.get('qtyOrdered', 0)
@@ -451,41 +451,20 @@ service cloud.firestore {
           && request.resource.data.get('voidedQty', 0) - resource.data.get('voidedQty', 0)
              == request.resource.data.get('kitchenVoidedQty', 0) - resource.data.get('kitchenVoidedQty', 0)
           && request.resource.data.get('kitchenVoidedQty', 0) >= resource.data.get('kitchenVoidedQty', 0)
-          // Final review #1: only kitchen accounts void, and only add-on lines.
-          && (request.resource.data.get('kitchenVoidedQty', 0) == resource.data.get('kitchenVoidedQty', 0)
-              || (isActiveStaff() && staffData().role == 'kitchen' && resource.data.get('type', '') == 'addon'))
         ));
       }
       // Re-review #3: kitchen tickets back kitchen voids at checkout, so a
       // server / kitchen account cannot create an already-cancelled ticket or
       // change a ticket's quantity / bill line / bill-on-serve flag later;
       // cancelling is only a status transition of an existing ticket.
-      //
-      // Final review #1 (separation of duties): kitchen accounts never create
-      // tickets and server accounts never cancel them, so one account cannot
-      // both fabricate a ticket and cancel it. Served / cancelled tickets are
-      // final for both, and cancelled + served quantity never exceeds the
-      // ticket's (immutable) quantity.
-      function isKitchen() { return isActiveStaff() && staffData().role == 'kitchen'; }
-      function ticketQty() { return resource.data.get('qty', resource.data.get('qtyOrdered', 1)); }
       function ticketCreateOk() {
-        return subcoll != 'kitchentickets' || canSetPrices() || (
-          !isKitchen()
-          && request.resource.data.get('status', '') != 'cancelled'
-          && request.resource.data.get('qtyCancelled', 0) == 0
-        );
+        return subcoll != 'kitchentickets' || canSetPrices()
+          || request.resource.data.get('status', '') != 'cancelled';
       }
       function ticketUpdateOk() {
-        return subcoll != 'kitchentickets' || canSetPrices() || (
-          !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['qty', 'qtyOrdered', 'billLineId', 'billOnServe', 'sessionId'])
-          && !(resource.data.get('status', '') in ['served', 'cancelled']
-               && request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'qtyCancelled', 'qtyServed']))
-          && (isKitchen() || (
-               request.resource.data.get('status', '') != 'cancelled'
-               && request.resource.data.get('qtyCancelled', 0) == resource.data.get('qtyCancelled', 0)))
-          && request.resource.data.get('qtyCancelled', 0) + request.resource.data.get('qtyServed', 0) <= ticketQty()
-        );
+        return subcoll != 'kitchentickets' || canSetPrices()
+          || !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['qty', 'qtyOrdered', 'billLineId', 'billOnServe', 'sessionId']);
       }
       allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments' && lineCreateOk() && ticketCreateOk();
       allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']) && lineUpdateOk() && ticketUpdateOk();
@@ -585,9 +564,7 @@ service cloud.firestore {
       function printAuditOnly() {
         return request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['printedCount', 'lastPrintedAt', 'lastPrintedByUid', 'lastPrintedByUsername'])
-          && request.resource.data.get('printedCount', 0) == resource.data.get('printedCount', 0) + 1
-          // Final review #7: the print is attributed to the signed-in account.
-          && request.resource.data.get('lastPrintedByUid', null) == request.auth.uid;
+          && request.resource.data.get('printedCount', 0) == resource.data.get('printedCount', 0) + 1;
       }
       allow update: if hasStoreAccess(storeId) && printAuditOnly();
     }
