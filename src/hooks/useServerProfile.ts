@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { postServerProfileOp } from "@/lib/server-profiles/api";
 import {
   classifyRemoteError,
   resolveStoredProfile,
+  storesToClearOnContextChange,
   type RemoteCheck,
   type StoredProfileSession,
 } from "@/lib/server-profiles/profile-session";
@@ -44,11 +45,17 @@ function removeStored(storeId: string) {
  *
  * Audit F02: the stored identity is only trusted with a server-signed session
  * token bound to this Firebase uid + store + profile, with an expiry. On
- * rehydrate the token is checked locally (account/store/expiry) and then by
- * the server (signature, profile still exists, passcode not reset). A bare or
- * edited localStorage entry, another account's session, or an expired one is
- * cleared and the passcode gate shows. If the server is unreachable (offline
- * shift) a locally-valid session is kept, so it stays one passcode per shift.
+ * rehydrate an ES256 grant is verified on the device (pinned public key) and
+ * then by the server (profile still exists, passcode not reset). A bare or
+ * edited localStorage entry, a fabricated signature, another account's
+ * session, or an expired one is cleared and the passcode gate shows. If the
+ * server is unreachable (offline shift) only a locally VERIFIED grant is kept,
+ * so it stays one passcode per shift; a legacy HMAC token waits for the server.
+ * When the device comes back online the server check runs again, and a
+ * profile revoked meanwhile (passcode reset, deleted) is dropped.
+ *
+ * Account or store change clears the stored entry it belonged to
+ * (storesToClearOnContextChange) and the in-memory profile at once.
  *
  * `uid`: undefined while Firebase auth is still resolving (hook stays
  * not-ready), null when signed out.
@@ -61,10 +68,33 @@ export function useServerProfile(storeId: string | null | undefined, uid?: strin
   // reports not-ready (no flash of the sign-in gate for signed-in users).
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const currentKey = uid === undefined ? null : `${storeId ?? ""}|${uid ?? ""}`;
+  // Last resolved (store, account) pair, to detect a context change.
+  const prevContextRef = useRef<{ storeId: string | null; uid: string | null } | null>(null);
+  // Bumped on the browser "online" event to re-run the server check.
+  const [recheckTick, setRecheckTick] = useState(0);
+
+  useEffect(() => {
+    const onOnline = () => setRecheckTick((n) => n + 1);
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
 
   useEffect(() => {
     if (uid === undefined) return; // auth still resolving
     const key = `${storeId ?? ""}|${uid ?? ""}`;
+    const next = { storeId: storeId ?? null, uid };
+    const prev = prevContextRef.current;
+    // Same context again = the reconnect re-check, not a fresh load.
+    const isRecheck = !!prev && prev.storeId === next.storeId && prev.uid === next.uid;
+    if (!isRecheck) {
+      for (const s of storesToClearOnContextChange(prev, next)) removeStored(s);
+      // Never show the previous account's/store's operator while resolving.
+      if (prev) {
+        setCurrentProfile(null);
+        setExpiresAt(null);
+      }
+      prevContextRef.current = next;
+    }
     if (!storeId) {
       setCurrentProfile(null);
       setExpiresAt(null);
@@ -86,9 +116,21 @@ export function useServerProfile(storeId: string | null | undefined, uid?: strin
       verifyRemote: (s) => verifyRemote(storeId, s),
     }).then((res) => {
       if (cancelled) return;
+      let rawNow: string | null = null;
+      try {
+        rawNow = window.localStorage.getItem(keyFor(storeId));
+      } catch {}
+      // signIn/signOut ran while the check was in flight: their state wins.
+      if (rawNow !== raw) {
+        setLoadedKey(key);
+        return;
+      }
       if (res.profile) {
         setCurrentProfile({ profileId: res.profile.profileId, name: res.profile.name });
         setExpiresAt(res.profile.expiresAt);
+      } else if (isRecheck && !res.clear) {
+        // Still offline/unreachable, or a tab-only operator with nothing
+        // stored: keep the current state, the next reconnect tries again.
       } else {
         if (res.clear) removeStored(storeId);
         setCurrentProfile(null);
@@ -99,7 +141,7 @@ export function useServerProfile(storeId: string | null | undefined, uid?: strin
     return () => {
       cancelled = true;
     };
-  }, [storeId, uid]);
+  }, [storeId, uid, recheckTick]);
 
   // Session expiry during a running shift: drop the profile, show the gate.
   useEffect(() => {

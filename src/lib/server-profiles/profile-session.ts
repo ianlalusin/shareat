@@ -1,15 +1,24 @@
+import type { GrantPublicKey } from "./grant-public-key";
+import { isGrantToken, verifyGrantLocally } from "./profile-grant";
+
 /**
  * Client-side handling of the signed local-profile session (audit F02).
  *
  * Pure functions only (no React, no Firebase) so they can be unit-tested.
- * The browser cannot check the HMAC signature — only the server holds the key —
- * so rehydration does two things:
- *   1. a local check of the token's (unverified) claims: same Firebase uid,
- *      same store, same profile, not expired. Anything else is cleared.
- *   2. a server check (op "check-session") that verifies the signature, that
- *      the profile still exists and that its passcode was not reset since.
- *      If the server cannot be reached (offline shift), the locally-checked
- *      profile is kept so an offline cashier is not locked out mid-shift.
+ *
+ * Two token kinds can be stored:
+ *   - ES256 grant (three parts): verified ON THE DEVICE with the pinned public
+ *     key (alg, kid, signature, issuer, lifetime, uid, store, profile, expiry).
+ *     Only such a grant may restore a profile offline or when the server check
+ *     times out. Online, the server is still asked (op "check-session") so a
+ *     deleted profile or a passcode reset logs the operator out.
+ *   - Legacy HMAC session (two parts): the device cannot check its signature,
+ *     so it restores ONLY after the server confirms it. Offline or timed out,
+ *     the profile is not restored (the stored entry is kept for a retry on
+ *     reconnect). Its claims are still pre-checked to clear obvious mismatches.
+ *
+ * Audit NOV-PROFILE (2026-11-03): previously both kinds were restored offline
+ * from unverified claims, so `body.fake-signature` impersonated any operator.
  */
 
 export interface StoredProfileSession {
@@ -39,10 +48,15 @@ function decodeBase64Url(s: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-/** Reads the token's claims WITHOUT verifying the signature (server's job). */
+/**
+ * Reads a LEGACY two-part token's claims WITHOUT verifying the signature. Used
+ * only to drop obvious mismatches early; never enough to restore a profile.
+ */
 export function readTokenClaims(token: string): { uid: string; sid: string; pid: string; exp: number } | null {
   try {
-    const [body, mac] = token.split(".");
+    const parts = token.split(".");
+    if (parts.length !== 2) return null;
+    const [body, mac] = parts;
     if (!body || !mac) return null;
     const p = JSON.parse(decodeBase64Url(body));
     if (!p || p.v !== 1 || typeof p.uid !== "string" || typeof p.sid !== "string" || typeof p.pid !== "string" || typeof p.exp !== "number") {
@@ -71,6 +85,7 @@ export function parseStoredProfile(raw: string | null): StoredProfileSession | n
   return null;
 }
 
+/** Unverified claims pre-check for a legacy token. */
 export function checkClaims(
   stored: StoredProfileSession | null,
   ctx: { uid: string; storeId: string; now: number }
@@ -99,20 +114,74 @@ export async function resolveStoredProfile(args: {
   now: number;
   online: boolean;
   verifyRemote: (s: StoredProfileSession) => Promise<RemoteCheck>;
+  /** Test hook; defaults to the keys pinned in grant-public-key.ts. */
+  publicKeys?: readonly GrantPublicKey[];
 }): Promise<ResolveResult> {
   if (!args.raw) return { profile: null, clear: false, reason: "none" };
   if (!args.uid) return { profile: null, clear: false, reason: "signed-out" };
   const stored = parseStoredProfile(args.raw);
+  if (!stored) return { profile: null, clear: true, reason: "malformed" };
+
+  // ES256 grant: verify locally first; a failure is final.
+  if (isGrantToken(stored.token)) {
+    const local = await verifyGrantLocally(
+      stored.token,
+      { uid: args.uid, storeId: args.storeId, profileId: stored.profileId },
+      { now: args.now, publicKeys: args.publicKeys }
+    );
+    if (!local.ok) {
+      // A device without WebCrypto cannot judge the grant: keep it for the server.
+      if (local.reason === "no-crypto") return resolveOnlineOnly(args, stored, stored.expiresAt);
+      return { profile: null, clear: true, reason: local.reason };
+    }
+    // Name and expiry come from the signed claims, not the editable entry.
+    const verified: StoredProfileSession = {
+      ...stored,
+      name: local.claims.nm || stored.name,
+      expiresAt: local.claims.exp,
+    };
+    if (!args.online) return { profile: verified, source: "local-offline" };
+    const remote = await args.verifyRemote(stored);
+    if (remote.kind === "invalid") return { profile: null, clear: true, reason: remote.reason || "rejected" };
+    if (remote.kind === "unreachable") return { profile: verified, source: "local-offline" };
+    return { profile: { ...verified, name: remote.name || verified.name }, source: "server" };
+  }
+
+  // Legacy HMAC session: claims pre-check, then the server must confirm.
   const claims = checkClaims(stored, { uid: args.uid, storeId: args.storeId, now: args.now });
-  if (!claims.ok || !stored) return { profile: null, clear: true, reason: claims.ok ? "missing" : claims.reason };
+  if (!claims.ok) return { profile: null, clear: true, reason: claims.reason };
+  return resolveOnlineOnly(args, stored, claims.exp);
+}
 
-  if (!args.online) return { profile: { ...stored, expiresAt: claims.exp }, source: "local-offline" };
-
+async function resolveOnlineOnly(
+  args: { online: boolean; verifyRemote: (s: StoredProfileSession) => Promise<RemoteCheck> },
+  stored: StoredProfileSession,
+  exp: number
+): Promise<ResolveResult> {
+  if (!args.online) return { profile: null, clear: false, reason: "needs-online-check" };
   const remote = await args.verifyRemote(stored);
   if (remote.kind === "invalid") return { profile: null, clear: true, reason: remote.reason || "rejected" };
-  if (remote.kind === "unreachable") return { profile: { ...stored, expiresAt: claims.exp }, source: "local-offline" };
-  return {
-    profile: { ...stored, name: remote.name || stored.name, expiresAt: claims.exp },
-    source: "server",
-  };
+  if (remote.kind === "unreachable") return { profile: null, clear: false, reason: "needs-online-check" };
+  return { profile: { ...stored, name: remote.name || stored.name, expiresAt: exp }, source: "server" };
+}
+
+/**
+ * Which stores' stored profile entries to remove when the (store, Firebase
+ * account) context changes. Account change (A -> B, or A -> signed out) drops
+ * the entry of the store in use; a store switch drops the previous store's
+ * entry, so going back needs the passcode again. `uid === undefined` means
+ * auth is still resolving and is never treated as a change.
+ */
+export function storesToClearOnContextChange(
+  prev: { storeId: string | null; uid: string | null } | null,
+  next: { storeId: string | null; uid: string | null }
+): string[] {
+  if (!prev) return [];
+  const out = new Set<string>();
+  if (prev.uid && prev.uid !== next.uid) {
+    if (prev.storeId) out.add(prev.storeId);
+    if (next.storeId) out.add(next.storeId);
+  }
+  if (prev.storeId && prev.storeId !== next.storeId) out.add(prev.storeId);
+  return [...out];
 }

@@ -53,6 +53,9 @@ export async function POST(req: Request) {
     const op = String(body?.op || "");
     const storeId = String(body?.storeId || "").trim();
     if (!storeId) return bad("storeId is required.", 400);
+    // Clients that verify ES256 grants locally say so; old APKs (which would
+    // read a three-part grant as malformed) keep getting HMAC tokens (F02).
+    const grantFormat = body?.grantFormat === "es256" ? "es256" : "hmac";
 
     switch (op) {
       // ---------------------------------------------------------------------
@@ -83,7 +86,10 @@ export async function POST(req: Request) {
             return NextResponse.json({
               ok: true,
               profile: { id: profileId, name: outcome.name },
-              session: issueProfileSession({ uid: decoded.uid, storeId, profileId }),
+              session: issueProfileSession(
+                { uid: decoded.uid, storeId, profileId, name: outcome.name },
+                { format: grantFormat }
+              ),
             });
         }
       }
@@ -98,8 +104,9 @@ export async function POST(req: Request) {
 
         const check = verifyProfileSession(body?.token, { uid: decoded.uid, storeId, profileId });
         if (!check.ok) {
-          // no-key is a server config problem, not a bad client: 503 lets the
-          // device keep its locally-checked profile instead of logging out.
+          // no-key (legacy HMAC token, no secret) is a server config problem,
+          // not a bad client: 503 keeps the stored entry for a later retry.
+          // ES256 grants never need the HMAC key.
           const status = check.reason === "no-key" ? 503 : 401;
           return NextResponse.json(
             { ok: false, error: "Local user session is not valid.", reason: check.reason },
@@ -172,7 +179,7 @@ export async function POST(req: Request) {
         return NextResponse.json({
           ok: true,
           profile: { id: ref.id, name },
-          session: issueProfileSession({ uid: decoded.uid, storeId, profileId: ref.id }),
+          session: issueProfileSession({ uid: decoded.uid, storeId, profileId: ref.id, name }, { format: grantFormat }),
         });
       }
 

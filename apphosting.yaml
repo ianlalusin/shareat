@@ -56,6 +56,18 @@ env:
     secret: CUSTOMER_JOIN_TOKEN_SECRET
     availability:
       - RUNTIME
+  # Audit F02 / NOV-PROFILE (2026-11-03): ES256 private key (PKCS8 PEM, P-256)
+  # that signs local-profile grants; devices verify them offline with the public
+  # key pinned in src/lib/server-profiles/grant-public-key.ts, which must match.
+  # The secret does NOT exist yet. It must be created AND granted to the backend
+  # before this file is rolled out (a missing secret fails the rollout):
+  #   firebase apphosting:secrets:set SERVER_PROFILE_GRANT_PRIVATE_KEY --project shareat-hub-v2 --data-file <key.pem>
+  #   firebase apphosting:secrets:grantaccess SERVER_PROFILE_GRANT_PRIVATE_KEY --project shareat-hub-v2 --backend <pos-backend>
+  # Unset/unusable key: the server falls back to HMAC tokens (online-only restore).
+  - variable: SERVER_PROFILE_GRANT_PRIVATE_KEY
+    secret: SERVER_PROFILE_GRANT_PRIVATE_KEY
+    availability:
+      - RUNTIME
   # OpenWeatherMap key used by /api/cron/log-weather to fetch each store's
   # forecast. The env var name is what the code reads; `secret` is the
   # Secret Manager secret name (must exist + be granted before rollout).
