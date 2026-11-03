@@ -37,10 +37,25 @@ export async function finalizePinLogic(params: {
   reason: FinalizeReason;
 }): Promise<{ ok: boolean; pin: string | null; reason: FinalizeReason; archivedDayId: string }> {
   const { decoded, storeId, sessionId, reason } = params;
-  const pin = params.pin || "";
-
   const adminDb = getAdminDb();
   const { uid: actorUid } = await requireStaffStoreAccess(adminDb, decoded, storeId, ["admin", "manager", "cashier"]);
+  return finalizePinCore({ storeId, sessionId, pin: params.pin, reason, actorUid });
+}
+
+/**
+ * The archive/disable work itself, for callers that already authorized the
+ * actor (the financial-command effects outbox, audit B17).
+ */
+export async function finalizePinCore(params: {
+  storeId: string;
+  sessionId: string;
+  pin?: string | null;
+  reason: FinalizeReason;
+  actorUid: string;
+}): Promise<{ ok: boolean; pin: string | null; reason: FinalizeReason; archivedDayId: string }> {
+  const { storeId, sessionId, reason, actorUid } = params;
+  const pin = params.pin || "";
+  const adminDb = getAdminDb();
   const activeSessionRef = adminDb.doc(`stores/${storeId}/activeSessions/${sessionId}`);
 
   const result = await adminDb.runTransaction(async (tx) => {

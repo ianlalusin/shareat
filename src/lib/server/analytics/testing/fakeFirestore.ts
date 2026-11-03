@@ -171,11 +171,50 @@ export class FakeFirestore {
     }, null);
   }
 
+  /**
+   * Optimistic transactions like the real SDK: every doc read inside `fn` is
+   * re-checked at commit; if another transaction wrote it meanwhile the
+   * attempt is discarded and `fn` re-runs (up to 5 attempts). Queries passed
+   * to tx.get are supported (their result docs are tracked). tx.create fails
+   * when the doc exists.
+   */
   async runTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      const reads = new Map<string, number | null>();
+      const track = (path: string) => {
+        if (!reads.has(path)) reads.set(path, this.docs.get(path)?.updateTime.ms ?? null);
+      };
+      const { result, ops } = await this.runAttempt(fn, track);
+      const conflicted = [...reads.entries()].some(([p, v]) => (this.docs.get(p)?.updateTime.ms ?? null) !== v);
+      if (conflicted) {
+        if (attempt >= 4) throw new Error("Transaction contention: too many retries.");
+        continue;
+      }
+      ops.forEach((op) => op());
+      return result;
+    }
+  }
+
+  private async runAttempt<T>(fn: (tx: any) => Promise<T>, track: (path: string) => void) {
     const ops: Array<() => void> = [];
     const tx = {
-      get: async (ref: any) => this.snap(ref.path),
-      getAll: async (...refs: any[]) => refs.map((r) => this.snap(r.path)),
+      get: async (ref: any) => {
+        if (typeof ref?.path === "string") {
+          track(ref.path);
+          return this.snap(ref.path);
+        }
+        const res = await ref.get();
+        res.docs.forEach((d: any) => track(d.ref.path));
+        return res;
+      },
+      getAll: async (...refs: any[]) => refs.map((r) => { track(r.path); return this.snap(r.path); }),
+      create: (ref: any, data: any) => {
+        ops.push(() => {
+          if (this.docs.has(ref.path)) throw new Error(`ALREADY_EXISTS: ${ref.path}`);
+          this.write(ref.path, () => resolveValue(undefined, data));
+        });
+        return tx;
+      },
       set: (ref: any, data: any, opts?: { merge?: boolean }) => {
         ops.push(() => this.write(ref.path, (cur) => (opts?.merge ? deepMerge(cur, data) : resolveValue(undefined, data))));
         return tx;
@@ -204,8 +243,7 @@ export class FakeFirestore {
       },
     };
     const result = await fn(tx);
-    ops.forEach((op) => op());
-    return result;
+    return { result, ops };
   }
 
   /** Every doc except those under `excludePrefix`, for whole-state comparison. */
