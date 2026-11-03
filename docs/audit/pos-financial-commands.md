@@ -212,6 +212,13 @@ Final commit (deploy ONLY after every device runs the new APK):
   `status: available` on a seated table (managers keep the projection rebuild
   via the storeConfig catch-all — existing residual).
 
+The tightening is split across TWO final commits (both deploy-after-APK):
+the money-docs commit and the bill-line / session-discount commit added in the
+follow-up. Deploy them together, last.
+
+`/api/analytics/payment-conversion` names its actor from the same operator
+session header (body `actorName` ignored).
+
 ## 8. Rollout order
 
 1. Server (App Hosting): commands, reconcile, cron route. Old APKs unaffected.
@@ -230,9 +237,32 @@ Final commit (deploy ONLY after every device runs the new APK):
    fallback only for admin/manager). Confirm this is acceptable for shops whose
    server has no `SERVER_PROFILE_SESSION_SECRET`/`CRON_SECRET` (then `no-key`
    fallback applies to everyone).
-3. Bill-line prices remain client-written order data; checkout recomputes totals
-   from them but does not re-price lines against the catalog (approvals/overrides
-   exist). A separate order-integrity package would be needed for that.
+3. Bill-line prices (follow-up, `src/lib/checkout/line-pricing.ts`). Checkout
+   proves each billable line's `unitPrice` against the store's price list:
+   package lines -> `storeConfig/current.packages[].pricePerHead` (`bundlePrice`
+   for bundles), `bundleextra_*` -> `bundleExtraHeadPrice`, add-ons ->
+   `inventory/{itemId}.sellingPrice` (customer-app lines carry the product id
+   and resolve through `inventory.productId`). Negative / non-finite modifier
+   totals are refused. A different price needs `priceOverride {unitPrice, byUid}`
+   whose uid is an active cashier/manager/admin of the store (the line editor
+   writes it). Rules (final commit): server/kitchen accounts cannot write
+   `unitPrice`, `modifiersTotal`, `priceOverride`, discounts (`lineAdjustments`,
+   legacy `discount*`), `freeQty`, `itemId` or `type` on an existing line, may
+   not lower an add-on line's quantity, cannot create a line carrying an
+   override / discount / free qty, and cannot change the session's
+   `billDiscount` / `customAdjustments`. A `priceOverride` may only be written
+   in the writer's own uid.
+   **Decision points (safe defaults chosen, owner to confirm):**
+   - Servers and kitchen may NOT set custom prices; only cashier/manager/admin.
+   - A catalog price changed by a manager mid-shift makes open bills that were
+     priced at the old price fail checkout until a cashier confirms the price
+     (edit line). Bills edited on an OLD APK (no override marker) need the same
+     re-confirmation once the new server is live.
+   - Items no longer in the inventory price list need a cashier override.
+   Residuals: modifier prices are not re-validated against option-group config
+   (only sign-checked); kitchen may still void quantity (`voidedQty`, its
+   cancel flow) and servers may still set the package line quantity (guest-count
+   verification) — both are audited flows, not price fields.
 4. Bridge docs: P4 (audit/pos-payment-attempt-recovery) adds `billingRevision`
    (the bill revision the amount was last confirmed against). Checkout rejects a
    bridge whose `billingRevision` differs from the command's. A bridge WITHOUT
