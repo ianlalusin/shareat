@@ -120,12 +120,16 @@ describe("resolveStoredProfile (client rehydrate)", () => {
     expect(r).toMatchObject({ source: "server" });
   });
 
-  it("keeps a locally-valid session when offline or the server is unreachable", async () => {
+  // Changed deliberately (audit NOV-PROFILE, 2026-11-03): a legacy HMAC token
+  // cannot be verified on the device, so offline/unreachable it is NOT
+  // restored any more; the entry is kept for a retry once online. Offline
+  // restore of a locally verified ES256 grant is covered in profile-grant.test.ts.
+  it("does not restore a legacy HMAC session offline or when the server is unreachable", async () => {
     const s = issueProfileSession(subject, { now: NOW, key })!;
     const off = await resolveStoredProfile({ ...base, online: false, raw: stored(s.token), verifyRemote: vi.fn() });
-    expect(off).toMatchObject({ source: "local-offline" });
+    expect(off).toEqual({ profile: null, clear: false, reason: "needs-online-check" });
     const down = await resolveStoredProfile({ ...base, raw: stored(s.token), verifyRemote: async () => ({ kind: "unreachable" }) });
-    expect(down).toMatchObject({ source: "local-offline" });
+    expect(down).toEqual({ profile: null, clear: false, reason: "needs-online-check" });
   });
 
   it("does not clear storage while signed out (no uid)", async () => {

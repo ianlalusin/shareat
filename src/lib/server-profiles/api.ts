@@ -16,7 +16,9 @@ export async function postServerProfileOp(payload: Record<string, unknown>): Pro
   const res = await fetch("/api/server-profiles", {
     method: "POST",
     headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    // grantFormat: this client verifies ES256 profile grants locally (audit
+    // F02). Old APKs omit it and the server keeps issuing HMAC tokens to them.
+    body: JSON.stringify({ ...payload, grantFormat: "es256" }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json?.ok) {
