@@ -23,6 +23,18 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
+async function revocationBoundarySeconds(uid: string, existing: unknown): Promise<number> {
+  let firebaseSec = 0;
+  try {
+    const after = Date.parse((await getAdminAuth().getUser(uid)).tokensValidAfterTime ?? "");
+    if (Number.isFinite(after)) firebaseSec = Math.floor(after / 1000);
+  } catch {
+    // Fall back to the server clock below.
+  }
+  const prior = typeof existing === "number" && Number.isFinite(existing) ? existing : 0;
+  return Math.max(Math.floor(Date.now() / 1000), firebaseSec, prior);
+}
+
 export async function POST(req: Request) {
   try {
     const authz = req.headers.get("authorization") || "";
@@ -88,7 +100,19 @@ export async function POST(req: Request) {
     // password alone does not invalidate issued refresh tokens.
     await getAdminAuth().revokeRefreshTokens(uid);
 
+    // Audit B22: revocation only stops refresh tokens and checkRevoked API
+    // calls. Firestore/Storage rules cannot see it, so an ID token issued before
+    // this reset kept working against direct reads/writes for up to an hour.
+    // tokensValidAfter (epoch SECONDS, the unit of the token's auth_time) is the
+    // boundary the rules' tokenNotRevoked() compares against. Taken after the
+    // revoke, and never below Firebase's own tokensValidAfterTime, so server
+    // clock skew cannot leave a pre-reset token inside the fence. Never lowered:
+    // an earlier reset's later boundary stays. auth_time is set at sign-in, so
+    // the user must sign in again (with the temporary password) to pass it.
+    const tokensValidAfter = await revocationBoundarySeconds(uid, target?.tokensValidAfter);
+
     await db.doc(`staff/${uid}`).update({
+      tokensValidAfter,
       mustChangePassword: true,
       passwordResetAt: FieldValue.serverTimestamp(),
       passwordResetByUid: staff.uid,
