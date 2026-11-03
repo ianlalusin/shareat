@@ -98,7 +98,18 @@ function GroupTile({ group, onSelect }: { group: AddonGroup; onSelect: (group: A
 // The old VariantPicker is replaced by FamilyOrderModal which handles
 // variant pick + modifier pick + qty + Add Item in one combined modal.
 
+// What the cashier has typed/picked. Lives in AddonsPOSModal, not POSContent: rotating the
+// tablet flips Dialog <-> Drawer, which remounts POSContent and would wipe it.
+type Draft = {
+  search: string; setSearch: (v: string) => void;
+  activeCategory: string; setActiveCategory: (v: string) => void;
+  selectedAddon: EnrichedStoreAddon | null; setSelectedAddon: (v: EnrichedStoreAddon | null) => void;
+  quantity: number; setQuantity: React.Dispatch<React.SetStateAction<number>>;
+  note: string; setNote: (v: string) => void;
+};
+
 function POSContent({
+  draft,
   storeId,
   session,
   sessionIsLocked,
@@ -107,6 +118,7 @@ function POSContent({
   serverProfile,
   isMobile = false,
 }: {
+  draft: Draft;
   storeId: string;
   session: PendingSession;
   sessionIsLocked?: boolean;
@@ -129,12 +141,7 @@ function POSContent({
     enableStoreAddons();
   }, [enableStoreAddons]);
 
-  const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
-
-  const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
-  const [quantity, setQuantity] = useState(1);
-  const [note, setNote] = useState("");
+  const { search, setSearch, activeCategory, setActiveCategory, selectedAddon, setSelectedAddon, quantity, setQuantity, note, setNote } = draft;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Combined family flow (replaces the old VariantPicker → AddonsPOSModal flow).
@@ -582,22 +589,24 @@ function POSContent({
           </Button>
         </div>
 
+        {/* Short screen (keyboard open): categories become one swipe-sideways line and the
+            grid becomes one swipe-sideways row, so the keyboard can stay open. */}
+        <div className="flex flex-wrap gap-2 shrink-0 [@media(max-height:500px)]:flex-nowrap [@media(max-height:500px)]:overflow-x-auto [@media(max-height:500px)]:[&>*]:shrink-0">
+          {categories.map((cat) => (
+            <Badge
+              key={cat}
+              variant={activeCategory === cat ? "default" : "secondary"}
+              className="cursor-pointer whitespace-nowrap"
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat}
+            </Badge>
+          ))}
+        </div>
+
         {/* Plain overflow div, not Radix ScrollArea: touch-drag scrolls it reliably in the
             Android WebView, and it is the only part that scrolls so the footer stays put. */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-2 [-webkit-overflow-scrolling:touch]" data-testid="addons-scroll">
-          <div className="flex flex-wrap gap-2 pb-3">
-            {categories.map((cat) => (
-              <Badge
-                key={cat}
-                variant={activeCategory === cat ? "default" : "secondary"}
-                className="cursor-pointer"
-                onClick={() => setActiveCategory(cat)}
-              >
-                {cat}
-              </Badge>
-            ))}
-          </div>
-
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-2 [-webkit-overflow-scrolling:touch] [@media(max-height:500px)]:overflow-x-auto [@media(max-height:500px)]:overflow-y-hidden" data-testid="addons-scroll">
           {isLoading ? (
             <div className="flex items-center justify-center h-40 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading add-ons...
@@ -605,7 +614,7 @@ function POSContent({
           ) : groupedAddons.length === 0 ? (
             <div className="flex items-center justify-center h-40 text-muted-foreground">No add-ons found.</div>
           ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 [@media(max-height:500px)]:w-max [@media(max-height:500px)]:grid-flow-col [@media(max-height:500px)]:grid-cols-none [@media(max-height:500px)]:grid-rows-1 [@media(max-height:500px)]:auto-cols-[8rem]">
               {groupedAddons.map((group) =>
                 group.isGroup ? (
                   <GroupTile key={group.key} group={group} onSelect={handleSelectGroup} />
@@ -684,8 +693,22 @@ function POSContent({
 export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIsLocked, onAddLine, serverProfile }: AddonsPOSModalProps) {
   const isMobile = useIsMobile();
 
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [selectedAddon, setSelectedAddon] = useState<EnrichedStoreAddon | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [note, setNote] = useState("");
+  const draft: Draft = { search, setSearch, activeCategory, setActiveCategory, selectedAddon, setSelectedAddon, quantity, setQuantity, note, setNote };
+
+  // Fresh form each time the pop-up is opened.
+  useEffect(() => {
+    if (open) return;
+    setSearch(""); setActiveCategory("All"); setSelectedAddon(null); setQuantity(1); setNote("");
+  }, [open]);
+
   const content = (
     <POSContent
+      draft={draft}
       storeId={storeId}
       session={session}
       sessionIsLocked={sessionIsLocked}
@@ -712,7 +735,7 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[88dvh] flex flex-col overflow-hidden">
+      <DialogContent className="w-[96vw] max-w-5xl max-h-[92dvh] flex flex-col overflow-hidden [@media(max-height:500px)]:max-h-[98dvh] [@media(max-height:500px)]:gap-2 [@media(max-height:500px)]:p-3">
         <DialogHeader className="shrink-0">
           <DialogTitle>Add-ons</DialogTitle>
           <DialogDescription className="[@media(max-height:500px)]:hidden">Select add-on items to add to the order.</DialogDescription>
