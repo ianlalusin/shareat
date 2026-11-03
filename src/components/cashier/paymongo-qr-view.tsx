@@ -13,6 +13,7 @@ import {
   expiryVerdict,
   serverClockOffsetMs,
   shouldListenForPayment,
+  tenderRequestIdFor,
   type StatusCheckResult,
 } from "@/components/cashier/paymongo-qr-logic";
 
@@ -109,7 +110,10 @@ export function PaymongoQrView({
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ storeId, sessionId, amount, methodId, localUserId }),
+          body: JSON.stringify({
+            storeId, sessionId, amount, methodId, localUserId,
+            tenderRequestId: tenderRequestIdFor(storeId, sessionId, methodId, amount),
+          }),
           signal: controller?.signal,
         });
         if (!res.ok) {
