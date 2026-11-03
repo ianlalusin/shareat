@@ -33,11 +33,11 @@ function seedSession(sessionId = "s1", tableId: string | null = "t1", extra: Rec
     status: "active", tableId: tableId ?? "alacarte", tableNumber: "1", sessionMode: tableId ? "package_dinein" : "alacarte",
     billingRevision: 3, revision: 1, startedAtClientMs: NOW - 3600_000, ...extra,
   });
-  db.seed(`stores/${S}/sessions/${sessionId}/sessionBillLines/l1`, {
-    type: "package", itemName: "Unli", qtyOrdered: 2, unitPrice: 500, createdAt: 1,
+  db.seed(`stores/${S}/sessions/${sessionId}/sessionBillLines/package_pk1`, {
+    type: "package", itemId: "pk1", itemName: "Unli", qtyOrdered: 2, unitPrice: 500, createdAt: 1,
   });
-  db.seed(`stores/${S}/sessions/${sessionId}/sessionBillLines/l2`, {
-    type: "addon", itemName: "Coke", qtyOrdered: 1, unitPrice: 60.5, createdAt: 2,
+  db.seed(`stores/${S}/sessions/${sessionId}/sessionBillLines/addon_coke_60.5`, {
+    type: "addon", itemId: "coke", itemName: "Coke", qtyOrdered: 1, unitPrice: 60.5, createdAt: 2,
   });
   db.seed(`stores/${S}/activeSessions/${sessionId}`, { status: "active", customerPin: "123456", tableId });
   db.seed(`stores/${S}/sessions/${sessionId}/kitchentickets/k1`, { status: "preparing", kitchenLocationId: "hot", qtyOrdered: 1, createdAtClientMs: NOW - 60_000 });
@@ -56,7 +56,11 @@ beforeEach(() => {
       { id: "gcash", name: "GCash", type: "ewallet", isActive: true },
       { id: "qr", name: "QR Ph", type: "ewallet", isActive: true, gateway: "paymongo_qrph" },
     ],
+    packages: [{ packageId: "pk1", packageName: "Unli", pricePerHead: 500 }],
   });
+  db.seed(`stores/${S}/inventory/coke`, { displayName: "Coke", sellingPrice: 60.5 });
+  db.seed(`stores/${S}/inventory/inv_wings`, { displayName: "Wings", productId: "prod_wings", sellingPrice: 200 });
+  db.seed(`staff/u_server`, { role: "server", status: "active", assignedStoreIds: [S], name: "srv" });
   db.seed(`stores/${S}/receiptSettings/main`, { receiptNoFormat: "SHT-######" });
   db.seed(`stores/${S}/counters/receipts`, { seq: 41 });
   db.seed(`staff/u_cashier`, { role: "cashier", status: "active", assignedStoreIds: [S], name: "tablet" });
@@ -389,7 +393,7 @@ describe("receipt commands (B01)", () => {
   });
 
   it("correction snapshots the SERVER copy and recomputes the total", async () => {
-    const lines = db.data(`stores/${S}/receipts/s1`).lines.map((l: any) => (l.id === "l2" ? { ...l, qtyOrdered: 0 } : l));
+    const lines = db.data(`stores/${S}/receipts/s1`).lines.map((l: any) => (l.id === "addon_coke_60.5" ? { ...l, qtyOrdered: 0 } : l));
     const ensure = vi.fn(async () => {});
     const out = await runReceiptEdit(D(), {
       storeId: S, receiptId: "s1", expectedEditVersion: 0, reason: "remove coke", lines,
@@ -408,11 +412,65 @@ describe("receipt commands (B01)", () => {
   });
 
   it("refund keeps fractional quantities (e29b7e71) and is idempotent on requestId", async () => {
-    const a = await runRefund(D(), { storeId: S, parentReceiptId: "s1", refundId: "rf1", refundQtys: { l1: 0.5 }, reason: "half" }, CASHIER, NOW);
+    const a = await runRefund(D(), { storeId: S, parentReceiptId: "s1", refundId: "rf1", refundQtys: { package_pk1: 0.5 }, reason: "half" }, CASHIER, NOW);
     expect(a.created).toBe(true);
-    expect(db.data(`stores/${S}/receipts/s1`).refundedQtys).toEqual({ l1: 0.5 });
-    const b = await runRefund(D(), { storeId: S, parentReceiptId: "s1", refundId: "rf1", refundQtys: { l1: 0.5 }, reason: "half" }, CASHIER, NOW);
+    expect(db.data(`stores/${S}/receipts/s1`).refundedQtys).toEqual({ package_pk1: 0.5 });
+    const b = await runRefund(D(), { storeId: S, parentReceiptId: "s1", refundId: "rf1", refundQtys: { package_pk1: 0.5 }, reason: "half" }, CASHIER, NOW);
     expect(b.created).toBe(false);
     expect(db.data(`stores/${S}/receipts/rf1`)).toMatchObject({ isRefund: true, createdByUsername: "Ana" });
+  });
+});
+
+describe("bill-line prices are not trusted (B01 follow-up)", () => {
+  const LINE = `stores/${S}/sessions/s1/sessionBillLines/addon_coke_60.5`;
+
+  it("a server/kitchen-forged lower price is rejected at checkout", async () => {
+    db.seed(LINE, { ...db.data(LINE), unitPrice: 1 });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 100001 }), CASHIER, NOW), "line_price_invalid");
+    expect(db.data(`stores/${S}/receipts/s1`)).toBeUndefined();
+  });
+
+  it("a forged package price and a negative modifier total are rejected", async () => {
+    const PKG = `stores/${S}/sessions/s1/sessionBillLines/package_pk1`;
+    db.seed(PKG, { ...db.data(PKG), unitPrice: 10 });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 8050 }), CASHIER, NOW), "line_price_invalid");
+    db.seed(PKG, { ...db.data(PKG), unitPrice: 500 });
+    db.seed(LINE, { ...db.data(LINE), modifiersTotal: -60.5 });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 100000 }), CASHIER, NOW), "line_price_invalid");
+  });
+
+  it("an override 'signed' with a server account's uid is rejected", async () => {
+    db.seed(LINE, { ...db.data(LINE), unitPrice: 1, priceOverride: { unitPrice: 1, byUid: "u_server" } });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 100001 }), CASHIER, NOW), "line_price_invalid");
+  });
+
+  it("a legitimate cashier price override still settles", async () => {
+    db.seed(LINE, { ...db.data(LINE), unitPrice: 50, priceOverride: { unitPrice: 50, byUid: "u_cashier", atMs: NOW } });
+    const out = await runCheckout(D(), input({ expectedTotalCents: 105000 }), CASHIER, NOW);
+    expect(out).toMatchObject({ status: "accepted", totalCents: 105000 });
+  });
+
+  it("an override for a different price than the line carries does not count", async () => {
+    db.seed(LINE, { ...db.data(LINE), unitPrice: 1, priceOverride: { unitPrice: 50, byUid: "u_cashier" } });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 100001 }), CASHIER, NOW), "line_price_invalid");
+  });
+
+  it("customer-app lines priced by product id resolve through inventory.productId; fully voided lines are skipped", async () => {
+    db.seed(`stores/${S}/sessions/s1/sessionBillLines/addon_prod_wings_200`, {
+      type: "addon", itemId: "prod_wings", itemName: "Wings", qtyOrdered: 1, unitPrice: 200, createdAt: 3,
+    });
+    db.seed(`stores/${S}/sessions/s1/sessionBillLines/addon_ghost_5`, {
+      type: "addon", itemId: "ghost", itemName: "Ghost", qtyOrdered: 1, voidedQty: 1, unitPrice: 5, createdAt: 4,
+    });
+    const out = await runCheckout(D(), input({ expectedTotalCents: 126050, payments: [{ methodId: "cash", amount: 1300 }] }), CASHIER, NOW);
+    expect(out.status).toBe("accepted");
+  });
+
+  it("offline reconcile applies the same price check (rejected, recoverable)", async () => {
+    db.seed(LINE, { ...db.data(LINE), unitPrice: 1 });
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ expected: { sessionRevision: 1, billingRevision: 3, tableId: "t1", totalCents: 100001 } }));
+    await expect(reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY })).resolves.toMatchObject({
+      status: "rejected", code: "line_price_invalid",
+    });
   });
 });

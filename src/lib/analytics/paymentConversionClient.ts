@@ -1,6 +1,7 @@
 'use client';
 
 import { auth } from '@/lib/firebase/client';
+import { OPERATOR_HEADER, getOperatorSessionToken } from '@/lib/pos-commands/client';
 
 // Client callers for the server-side payment-conversion endpoint. Unlike the
 // receipt delta paths there is NO client fallback: a conversion commits nothing
@@ -10,9 +11,14 @@ import { auth } from '@/lib/firebase/client';
 async function postConversion(body: Record<string, unknown>): Promise<any> {
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error('Please sign in again to record a conversion.');
+  // The server names the actor from the signed local-profile session (audit
+  // P1); actorName in the body is no longer trusted.
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const op = typeof body.storeId === 'string' ? getOperatorSessionToken(body.storeId) : null;
+  if (op) headers[OPERATOR_HEADER] = op;
   const res = await fetch('/api/analytics/payment-conversion', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers,
     body: JSON.stringify(body),
   });
   const j = await res.json().catch(() => null);

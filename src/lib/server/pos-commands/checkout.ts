@@ -17,6 +17,7 @@ import {
 } from "@/lib/checkout/receipt-math";
 import { PosCommandError } from "@/lib/server/pos-commands/errors";
 import { queueEffectsInTx, type PosEffectSpec } from "@/lib/server/pos-commands/effects";
+import { PRICE_OVERRIDE_ROLES, catalogKeyFor, overrideUids, validateLinePrices } from "@/lib/checkout/line-pricing";
 import type { Operator } from "@/lib/server/pos-commands/operator";
 import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 
@@ -170,7 +171,45 @@ export async function checkoutInTx(
   const tableRef = tableId ? db.doc(`${base}/tables/${tableId}`) : null;
   const tableSnap = tableRef ? ((await tx.get(tableRef)) as unknown as Snap) : null;
 
-  const paymentMethods: ModeOfPayment[] = (Array.isArray(configSnap.data()?.modesOfPayment) ? configSnap.data().modesOfPayment : [])
+  // Pricing sources for every billable line (audit P1 follow-up: client-written
+  // bill lines are not trusted). Reads only; validated below.
+  const inventoryIds = [...new Set(billLines
+    .map((l) => catalogKeyFor(l))
+    .filter((k): k is { kind: "inventory"; itemId: string } => k?.kind === "inventory" && isSafeId(k.itemId))
+    .map((k) => k.itemId))];
+  const inventoryPrices = new Map<string, number | null>();
+  const priceOf = (d: any): number | null => {
+    const v = Number(d?.sellingPrice);
+    return d && d.sellingPrice != null && Number.isFinite(v) ? v : null;
+  };
+  if (inventoryIds.length) {
+    const snaps = (await tx.getAll(...inventoryIds.map((id) => db.doc(`${base}/inventory/${id}`)))) as unknown as Snap[];
+    for (let i = 0; i < inventoryIds.length; i++) {
+      if (snaps[i].exists) inventoryPrices.set(inventoryIds[i], priceOf(snaps[i].data()));
+    }
+    // Customer-app orders bill by global product id; resolve via productId.
+    for (const id of inventoryIds) {
+      if (inventoryPrices.has(id)) continue;
+      const q = (await tx.get(db.collection(`${base}/inventory`).where("productId", "==", id).limit(1) as any)) as any;
+      inventoryPrices.set(id, q.docs.length ? priceOf(q.docs[0].data()) : null);
+    }
+  }
+  const uids = overrideUids(billLines);
+  const overrideOk = new Set<string>();
+  if (uids.length) {
+    const staffSnaps = (await tx.getAll(...uids.map((u) => db.doc(`staff/${u}`)))) as unknown as Snap[];
+    staffSnaps.forEach((s, i) => {
+      const st = s.exists ? s.data() : null;
+      const stores: string[] = Array.isArray(st?.assignedStoreIds) ? st.assignedStoreIds.map(String) : [];
+      if (
+        st && st.status === "active" &&
+        (PRICE_OVERRIDE_ROLES as readonly string[]).includes(String(st.role)) &&
+        (st.role === "admin" || stores.includes(storeId))
+      ) overrideOk.add(uids[i]);
+    });
+  }
+
+  const paymentMethods: ModeOfPayment[] =(Array.isArray(configSnap.data()?.modesOfPayment) ? configSnap.data().modesOfPayment : [])
     .filter((m: any) => m && m.isActive !== false && !m.isArchived);
   for (const p of payments) {
     if (!paymentMethods.some((m) => m.id === p.methodId)) {
@@ -197,6 +236,21 @@ export async function checkoutInTx(
   }
 
   // ---------- VALIDATION ----------
+  const priceProblems = validateLinePrices({
+    lines: billLines,
+    packages: Array.isArray(configSnap.data()?.packages) ? configSnap.data().packages : [],
+    inventoryPrice: (id) => inventoryPrices.get(id) ?? null,
+    overrideAllowed: (uid) => overrideOk.has(uid),
+  });
+  if (priceProblems.length) {
+    const p = priceProblems[0];
+    throw new PosCommandError(
+      "line_price_invalid",
+      `"${p.itemName}" can't be charged as entered (${p.reason}). A cashier or manager must confirm the price on the bill.` +
+        (priceProblems.length > 1 ? ` (${priceProblems.length - 1} more line(s) also need checking.)` : ""),
+      409,
+    );
+  }
   const storeData = { id: storeId, ...(storeSnap.exists ? storeSnap.data() : {}) } as Store;
   const billDiscount = session.billDiscount ?? null;
   const customAdjustments = Array.isArray(session.customAdjustments) ? session.customAdjustments : [];

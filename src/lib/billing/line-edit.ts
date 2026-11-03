@@ -118,6 +118,18 @@ export function buildLineEditCommand(args: {
     voidedQty: data.applyVoid ? data.voidQty : 0,
     note: (data.note ?? "").trim() || null,
   };
+  // Audit P1 follow-up: a price that differs from the line's current price is a
+  // price override. The server checkout only accepts a non-catalog price with
+  // this marker, and firestore.rules only let cashier / manager / admin
+  // accounts write it, in their own uid.
+  if (Number(data.unitPrice) !== Number(line.unitPrice)) {
+    (after as any).priceOverride = {
+      unitPrice: data.unitPrice,
+      byUid: actor.uid,
+      atMs: opIds.createdAtClientMs,
+      ...(actor.name ? { byName: actor.name } : {}),
+    };
+  }
   if (isPackage && data.qtyOrdered > line.qtyOrdered) {
     (after as any).qtyOverrideActive = true;
     (after as any).qtyOverrideAt = new Date();

@@ -199,3 +199,14 @@ describe("F10 receipt correction keeps existing loyalty redemptions", () => {
     expect(receiptCorrectionTotals({}, [line()], NON_VAT, null, []).grandTotal).toBe(100);
   });
 });
+
+describe("line edit price override marker (audit P1 follow-up)", () => {
+  const actor = { uid: "u_cashier", name: "Ana" };
+  it("a changed price carries priceOverride in the editor's own uid; an unchanged price does not", () => {
+    const opIds = newLineEditOpIds(5);
+    const changed = buildLineEditCommand({ line: line(), data: baseForm({ unitPrice: 80, applyDiscount: false }), discounts: [], charges: [], actor, opIds });
+    expect((changed.after as any).priceOverride).toEqual({ unitPrice: 80, byUid: "u_cashier", atMs: 5, byName: "Ana" });
+    const same = buildLineEditCommand({ line: line(), data: baseForm({ applyDiscount: false }), discounts: [], charges: [], actor, opIds });
+    expect((same.after as any).priceOverride).toBeUndefined();
+  });
+});
