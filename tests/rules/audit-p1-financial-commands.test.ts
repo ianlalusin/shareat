@@ -225,3 +225,51 @@ describe("review fixes (audit P1 review 2026-11-03)", () => {
     await assertFails(setDoc(d("manager", `stores/${A}/tenderConsumptions/res_r1__p1`), { receiptId: "x" }));
   });
 });
+
+describe("re-review fixes (audit P1 re-review 2026-11-03)", () => {
+  const S1 = `stores/${A}/sessions/s1`;
+  beforeEach(async () => {
+    await seed(S1, { status: "active", tableId: "t1", revision: 1, billingRevision: 0 });
+    await seed(`${S1}/sessionBillLines/package_pk1`, { type: "package", itemId: "pk1", unitPrice: 500, qtyOrdered: 4 });
+    await seed(`${S1}/kitchentickets/k1`, { status: "preparing", billLineId: "addon_coke_60", qty: 1 });
+    await seed(`stores/${A}/reservations/r1`, { name: "Cruz", payments: [] });
+  });
+
+  for (const who of ["server", "kitchen"] as const) {
+    it(`#2 ${who}: cannot record reservation deposits, clear the applied marker, or link a reservation to a bill`, async () => {
+      await assertFails(updateDoc(d(who, `stores/${A}/reservations/r1`), { payments: [{ id: "p9", methodId: "gcash", amount: 500 }] }));
+      await assertFails(updateDoc(d(who, `stores/${A}/reservations/r1`), { paymentsAppliedToSessionId: null }));
+      await assertFails(setDoc(d(who, `stores/${A}/reservations/r2`), { payments: [{ id: "p1", amount: 500 }] }));
+      await assertFails(updateDoc(d(who, S1), { reservationId: "r1" }));
+      await assertSucceeds(updateDoc(d(who, `stores/${A}/reservations/r1`), { partySize: 6 }));
+    });
+
+    it(`#3 ${who}: cannot create a cancelled ticket or change a ticket's qty / line; can cancel an existing one`, async () => {
+      await assertFails(setDoc(d(who, `${S1}/kitchentickets/fake`), { status: "cancelled", billLineId: "addon_coke_60", qty: 99 }));
+      await assertFails(updateDoc(d(who, `${S1}/kitchentickets/k1`), { qty: 99 }));
+      await assertFails(updateDoc(d(who, `${S1}/kitchentickets/k1`), { billLineId: "other" }));
+      await assertSucceeds(updateDoc(d(who, `${S1}/kitchentickets/k1`), { status: "cancelled", cancelReason: "out of stock" }));
+      await assertSucceeds(setDoc(d(who, `${S1}/kitchentickets/k2`), { status: "preparing", billLineId: "addon_coke_60", qty: 1 }));
+    });
+
+    it(`D ${who}: cannot lower the package heads`, async () => {
+      await assertFails(updateDoc(d(who, `${S1}/sessionBillLines/package_pk1`), { qtyOrdered: 0 }));
+      await assertFails(updateDoc(d(who, `${S1}/sessionBillLines/package_pk1`), { qtyOrdered: 3 }));
+      await assertSucceeds(updateDoc(d(who, `${S1}/sessionBillLines/package_pk1`), { qtyOrdered: 5 }));
+    });
+
+    it(`A ${who}: cannot record an offline command`, async () => {
+      await assertFails(setDoc(d(who, `stores/${A}/posCommands/opS`), command(STAFF[who].uid, "opS")));
+    });
+  }
+
+  it("cashier: may record deposits, link reservations, lower heads; malformed commands refused", async () => {
+    await assertSucceeds(updateDoc(d("cashier", `stores/${A}/reservations/r1`), { payments: [{ id: "p1", methodId: "gcash", amount: 500 }] }));
+    await assertSucceeds(updateDoc(d("cashier", S1), { reservationId: "r1" }));
+    await assertSucceeds(updateDoc(d("cashier", `${S1}/sessionBillLines/package_pk1`), { qtyOrdered: 3 }));
+    await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opM`), { ...command(STAFF.cashier.uid, "opM"), extra: true }));
+    await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opM`), { ...command(STAFF.cashier.uid, "opM"), clientCreatedAtMs: "soon" }));
+    await assertFails(setDoc(d("cashier", `stores/${A}/posCommands/opM`), { ...command(STAFF.cashier.uid, "opM"), expected: "x" }));
+    await assertSucceeds(setDoc(d("cashier", `stores/${A}/posCommands/opM`), command(STAFF.cashier.uid, "opM")));
+  });
+});
