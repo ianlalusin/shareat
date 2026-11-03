@@ -90,6 +90,7 @@ let pm: {
   intents: Map<string, any>;
   methods: Map<string, any>;
   idem: Map<string, any>;
+  idemBodies: Map<string, string>;
   seq: number;
   calls: string[];
   faults: Fault[];
@@ -141,6 +142,10 @@ async function fakeFetch(url: string, init: any = {}) {
   const idemKey = key ? `${method} ${path} ${key}` : null;
   let json: any;
   if (idemKey && pm.idem.has(idemKey)) {
+    // Documented: differing parameters under a reused key are rejected.
+    if (pm.idemBodies.get(idemKey) !== init.body) {
+      return { ok: false, status: 400, json: async () => ({ errors: [{ detail: "idempotency key reused with different parameters" }] }) };
+    }
     json = pm.idem.get(idemKey);
   } else if (op === "create_intent") {
     const a = body.data.attributes;
@@ -161,7 +166,10 @@ async function fakeFetch(url: string, init: any = {}) {
     if (!pi) return { ok: false, status: 404, json: async () => ({ errors: [{ detail: "not found" }] }) };
     json = intentJson(pi);
   }
-  if (idemKey && !pm.idem.has(idemKey)) pm.idem.set(idemKey, json);
+  if (idemKey && !pm.idem.has(idemKey)) {
+    pm.idem.set(idemKey, json);
+    pm.idemBodies.set(idemKey, init.body);
+  }
   if (takeFault(op, "after")) net(); // provider did the work; the response is lost
   return ok(structuredClone(json));
 }
@@ -196,7 +204,7 @@ beforeEach(() => {
   vi.useRealTimers();
   autoId = 0;
   failWrite = null;
-  pm = { intents: new Map(), methods: new Map(), idem: new Map(), seq: 0, calls: [], faults: [] };
+  pm = { intents: new Map(), methods: new Map(), idem: new Map(), idemBodies: new Map(), seq: 0, calls: [], faults: [] };
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
   process.env.PAYMONGO_SECRET_KEY = "sk_test_fake";
   process.env.PAYMONGO_WEBHOOK_SECRET_POS = "whsec_test";
@@ -344,6 +352,67 @@ describe("B24: injected failures recover without orphaning an intent", () => {
   });
 });
 
+describe("B24 review: an intent already being paid never gets a second QR", () => {
+  /** First tap: intent created, method step fails; customer somehow pays → PayMongo says succeeded/processing. */
+  async function qrLessBridge(status: "succeeded" | "processing") {
+    pm.faults = [{ op: "create_method", when: "before" }];
+    expect((await create()).status).toBe(502);
+    pm.intents.get("pi_1").status = status;
+    const res = await create();
+    expect(res.status).toBe(409);
+    return (await res.json()).intentDocId as string;
+  }
+
+  it.each(["succeeded", "processing"] as const)("next tap after a %s intent is refused, not a new generation", async (status) => {
+    const intentDocId = await qrLessBridge(status);
+    for (let i = 0; i < 2; i++) {
+      const again = await create();
+      expect(again.status).toBe(409);
+      expect((await again.json()).intentDocId).toBe(intentDocId);
+    }
+    expect(intentCount()).toBe(1);
+    expect(pm.calls.filter((c) => c === "create_intent")).toHaveLength(1);
+  });
+
+  it("a QR-less bridge whose intent now carries a QR is re-checked and handed out", async () => {
+    const intentDocId = await qrLessBridge("processing");
+    const pi = pm.intents.get("pi_1");
+    pi.status = "awaiting_next_action";
+    pi.code = { data: "qr-recovered", image_url: null, expires_at: Math.floor(Date.now() / 1000) + 1800 };
+    const res = await create();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ intentDocId, qrData: "qr-recovered", paymongoIntentId: "pi_1" });
+    expect(intentCount()).toBe(1);
+  });
+
+  it("a QR-less bridge is refused (409) when PayMongo cannot be reached", async () => {
+    await qrLessBridge("processing");
+    pm.faults = [{ op: "get_intent", when: "before" }];
+    expect((await create()).status).toBe(409);
+    expect(intentCount()).toBe(1);
+  });
+
+  it("a QR-less bridge whose intent was cancelled lets a fresh attempt start", async () => {
+    const intentDocId = await qrLessBridge("processing");
+    pm.intents.get("pi_1").status = "cancelled";
+    const res = await create();
+    expect(res.status).toBe(200);
+    expect(docs[`stores/${STORE}/paymentIntents/${intentDocId}`].status).toBe("canceled");
+    expect(intentCount()).toBe(2);
+  });
+});
+
+describe("B24 review: idempotency key survives a deleted attempt doc", () => {
+  it("a recreated attempt (generation counter restarted) does not reuse the old key", async () => {
+    expect((await create()).status).toBe(200);
+    delete docs[ATTEMPT];
+    for (const p of Object.keys(docs)) if (p.startsWith(`stores/${STORE}/paymentIntents/`)) delete docs[p];
+    const res = await create();
+    expect(res.status).toBe(200); // same key + new intentDocId would be rejected (400 → 502)
+    expect(docs[ATTEMPT].nonce).toEqual(expect.any(String));
+  });
+});
+
 describe("B24: webhook validates and never loses a paid event", () => {
   it("early webhook (intent created, bridge not yet committed) is redelivered, then settles once", async () => {
     pm.faults = [{ op: "create_method", when: "before" }];
@@ -385,6 +454,30 @@ describe("B24: webhook validates and never loses a paid event", () => {
   it("an index whose bridge is missing asks for redelivery instead of acknowledging", async () => {
     docs["paymongoIntentIndex/pi_ghost"] = { storeId: STORE, intentDocId: "nope", sessionId: SESSION };
     expect((await hook(paidEvent("pi_ghost"))).status).toBe(503);
+  });
+
+  it("status poll settles conditionally: a bridge changed meanwhile is not overwritten", async () => {
+    const r = await (await create()).json();
+    const bridgePath = `stores/${STORE}/paymentIntents/${r.intentDocId}`;
+    pm.intents.get("pi_1").status = "succeeded";
+    // The bridge is cancelled between the route's first read and its write.
+    const realFetch = fakeFetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: any) => {
+      docs[bridgePath] = { ...docs[bridgePath], status: "canceled" };
+      return realFetch(url, init);
+    }));
+    const res = await statusPOST(req("http://x/api/pos/paymongo/status", { storeId: STORE, sessionId: SESSION, intentDocId: r.intentDocId }));
+    expect((await res.json()).status).toBe("canceled");
+    expect(docs[bridgePath].status).toBe("canceled");
+  });
+
+  it("status poll settles a matching intent once", async () => {
+    const r = await (await create()).json();
+    pm.intents.get("pi_1").status = "succeeded";
+    pm.intents.get("pi_1").payments = [{ id: "pay_poll" }];
+    const res = await statusPOST(req("http://x/api/pos/paymongo/status", { storeId: STORE, sessionId: SESSION, intentDocId: r.intentDocId }));
+    expect((await res.json()).status).toBe("paid");
+    expect(docs[`stores/${STORE}/paymentIntents/${r.intentDocId}`]).toMatchObject({ status: "paid", paymongoPaymentId: "pay_poll", qrData: expect.any(String) });
   });
 
   it("status poll does not settle when the provider amount differs from the bridge", async () => {

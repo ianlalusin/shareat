@@ -8,11 +8,12 @@ import {
   createOrResumeQrViaApi,
   defaultGetJson,
   defaultPostJson,
+  getPaymentIntentViaApi,
   IntentCorrelationError,
   isDefinitiveProviderRejection,
   type QrCreateResult,
 } from "@/lib/payments/paymongo/qrph.server";
-import { buildInitialIntentDoc } from "@/lib/payments/paymongo/bridge.server";
+import { buildInitialIntentDoc, TEN_MINUTES_MS } from "@/lib/payments/paymongo/bridge.server";
 import {
   isSafeDocId,
   checkPosPaymentAccess,
@@ -81,17 +82,48 @@ type AttemptDoc = {
   billingRevision?: number;
   /** Revision sent in this generation's provider metadata (identical across resumes). */
   generationBillingRevision?: number;
+  /** Random per generation; part of the idempotency key. */
+  nonce?: string;
 };
 
-/** Deterministic per attempt generation; ≤255 chars as PayMongo requires. */
-function idempotencyKeyFor(storeId: string, attemptId: string, generation: number) {
-  const h = createHash("sha256").update(`${storeId}\n${attemptId}\n${generation}`).digest("hex").slice(0, 48);
+/**
+ * A bridge saved without a QR because PayMongo already reported the intent as
+ * paid/processing. It is still awaiting settlement, so a new tap must re-check
+ * that intent, never mint a second payable QR for the same tender.
+ */
+function awaitingWithoutQr(doc: PosPaymentIntentDoc | undefined, sessionId: string, amountCentavos: number, methodId: string) {
+  return (
+    !!doc &&
+    doc.status === "awaiting_payment" &&
+    !doc.qrData && !doc.imageUrl &&
+    doc.sessionId === sessionId &&
+    doc.amountCentavos === amountCentavos &&
+    doc.methodId === methodId
+  );
+}
+
+function inProgressResponse(intentDocId: string, paymongoIntentId: string) {
+  return NextResponse.json({
+    error: "This QR payment is already being completed at PayMongo. Check its status before taking another payment.",
+    intentDocId,
+    paymongoIntentId,
+  }, { status: 409 });
+}
+
+/**
+ * Deterministic per attempt generation; ≤255 chars as PayMongo requires. The
+ * random per-generation nonce keeps keys unique even if the attempt doc is
+ * deleted and its generation counter restarts within PayMongo's 24 h window.
+ */
+function idempotencyKeyFor(storeId: string, attemptId: string, generation: number, nonce: string) {
+  const h = createHash("sha256").update(`${storeId}\n${attemptId}\n${generation}\n${nonce}`).digest("hex").slice(0, 48);
   return `shareat-pos-qr-${h}`;
 }
 
 /** Can this unfinished attempt be resumed in place (same key / saved intent)? */
 function resumable(a: AttemptDoc, nowMs: number) {
   if (!a.idempotencyKey || !Number.isInteger(a.generation) || Number(a.generation) < 1) return false; // pre-B24 doc
+  if (typeof a.nonce !== "string" || !a.nonce) return false;
   if (a.state === "ready") return false;
   if (a.state === "failed" && a.failureKind !== "ambiguous") return false;
   if (a.paymongoIntentId) return true;
@@ -184,21 +216,26 @@ export async function POST(req: NextRequest) {
   const leaseId = randomUUID();
   const operationId = tenderRequestId ?? null;
 
-  type Work = { intentDocId: string; generation: number; paymongoIntentId: string | null; attachNo: number; operationId: string | null; metaBillingRevision: number };
-  type Claim = { kind: "reuse"; doc: PosPaymentIntentDoc } | { kind: "wait"; intentDocId: string } | { kind: "work"; work: Work };
+  type Work = { intentDocId: string; generation: number; paymongoIntentId: string | null; attachNo: number; operationId: string | null; metaBillingRevision: number; nonce: string };
+  type Claim =
+    | { kind: "reuse"; doc: PosPaymentIntentDoc }
+    | { kind: "wait"; intentDocId: string }
+    | { kind: "recheck"; doc: PosPaymentIntentDoc }
+    | { kind: "work"; work: Work };
 
   /** A brand-new generation: new bridge id, new idempotency key, no provider id. */
   const newGeneration = (tx: any, attempt: AttemptDoc | null, nowMs: number): Claim => {
     const generation = Number(attempt?.generation ?? 0) + 1;
+    const nonce = randomUUID();
     const intentDocId = intentsCol.doc().id;
     const next: AttemptDoc = {
       state: "creating", intentDocId, startedAtMs: nowMs, sessionId, methodId, amountCentavos,
-      generation, generationStartedAtMs: nowMs, idempotencyKey: idempotencyKeyFor(storeId, attemptId, generation),
+      generation, generationStartedAtMs: nowMs, nonce, idempotencyKey: idempotencyKeyFor(storeId, attemptId, generation, nonce),
       paymongoIntentId: null, attachNo: 0, leaseId, leaseAtMs: nowMs, operationId, billingRevision, generationBillingRevision: billingRevision,
     };
     // Full overwrite: drops the previous generation's ready/failed fields.
     tx.set(attemptRef, { ...next, createdByUid: uid });
-    return { kind: "work", work: { intentDocId, generation, paymongoIntentId: null, attachNo: 0, operationId, metaBillingRevision: billingRevision } };
+    return { kind: "work", work: { intentDocId, generation, paymongoIntentId: null, attachNo: 0, operationId, metaBillingRevision: billingRevision, nonce } };
   };
 
   const claimOnce = (forceNewGeneration: boolean): Promise<Claim> => adminDb.runTransaction(async (tx) => {
@@ -220,6 +257,8 @@ export async function POST(req: NextRequest) {
         }
         return { kind: "reuse", doc: bridge! };
       }
+      // Already being paid at PayMongo (no QR saved): re-check, never re-mint.
+      if (awaitingWithoutQr(bridge, sessionId, amountCentavos, methodId)) return { kind: "recheck", doc: bridge! };
       if (!bridge && !forceNewGeneration) {
         const leaseAt = Number(attempt.leaseAtMs ?? attempt.startedAtMs);
         if (attempt.state === "creating" && nowMs - leaseAt < CREATING_LEASE_MS) {
@@ -241,6 +280,7 @@ export async function POST(req: NextRequest) {
               // a replayed idempotency key whose parameters differ.
               operationId: attempt.operationId ?? null,
               metaBillingRevision: Number(attempt.generationBillingRevision ?? attempt.billingRevision ?? billingRevision),
+              nonce: attempt.nonce!,
             },
           };
         }
@@ -257,7 +297,62 @@ export async function POST(req: NextRequest) {
     return true;
   });
 
-  const claim: Claim = await claimOnce(false);
+  /**
+   * A QR-less bridge awaiting settlement: ask PayMongo about THAT intent.
+   * Returns the response to send, or null when the intent was cancelled and a
+   * fresh attempt may start.
+   */
+  const recheckQrLess = async (bridge: PosPaymentIntentDoc): Promise<NextResponse | null> => {
+    let remote;
+    try {
+      remote = await getPaymentIntentViaApi({ getJson: defaultGetJson }, bridge.paymongoIntentId);
+    } catch (e) {
+      console.error("[paymongo/create-qr] re-check of a settling intent failed; refusing a new QR:", e);
+      return inProgressResponse(bridge.id, bridge.paymongoIntentId);
+    }
+    if (remote.amountCentavos !== amountCentavos || remote.currency !== "PHP") {
+      return inProgressResponse(bridge.id, bridge.paymongoIntentId);
+    }
+    const bRef = intentsCol.doc(bridge.id);
+    if (remote.status === "awaiting_next_action" && remote.qr) {
+      const qr = remote.qr;
+      const updated = await adminDb.runTransaction(async (tx) => {
+        const snap = await tx.get(bRef);
+        const cur = snap.exists ? (snap.data() as PosPaymentIntentDoc) : undefined;
+        if (!awaitingWithoutQr(cur, sessionId, amountCentavos, methodId) || cur!.paymongoIntentId !== bridge.paymongoIntentId) return null;
+        const patch = {
+          qrData: qr.qrData,
+          imageUrl: qr.imageUrl,
+          expiresAtMs: qr.expiresAtFromApiMs ?? Date.now() + TEN_MINUTES_MS,
+        };
+        tx.set(bRef, patch, { merge: true });
+        return { ...cur!, ...patch };
+      });
+      if (updated && reusable(updated, sessionId, amountCentavos, methodId, Date.now())) return qrResponse(updated, true);
+      return inProgressResponse(bridge.id, bridge.paymongoIntentId);
+    }
+    if (remote.status === "cancelled") {
+      // Can never be paid: retire the bridge so the next claim starts afresh.
+      const retired = await adminDb.runTransaction(async (tx) => {
+        const snap = await tx.get(bRef);
+        const cur = snap.exists ? (snap.data() as PosPaymentIntentDoc) : undefined;
+        if (!awaitingWithoutQr(cur, sessionId, amountCentavos, methodId)) return false;
+        tx.set(bRef, { status: "canceled" }, { merge: true });
+        return true;
+      });
+      return retired ? null : inProgressResponse(bridge.id, bridge.paymongoIntentId);
+    }
+    // succeeded / processing / anything else: the webhook or a status poll settles it.
+    return inProgressResponse(bridge.id, bridge.paymongoIntentId);
+  };
+
+  let claim: Claim = await claimOnce(false);
+  if (claim.kind === "recheck") {
+    const out = await recheckQrLess(claim.doc);
+    if (out) return out;
+    claim = await claimOnce(false);
+    if (claim.kind === "recheck") return inProgressResponse(claim.doc.id, claim.doc.paymongoIntentId);
+  }
 
   if (claim.kind === "reuse") return qrResponse(claim.doc, true);
   if (claim.kind === "wait") {
@@ -298,7 +393,7 @@ export async function POST(req: NextRequest) {
           billing: { name: `Shareat ${storeId}`, email: "pos@shareat.net" },
           // Recomputed, never read back from the attempt doc, so a tampered
           // attempt cannot replay another attempt's provider key.
-          intentIdempotencyKey: idempotencyKeyFor(storeId, attemptId, work.generation),
+          intentIdempotencyKey: idempotencyKeyFor(storeId, attemptId, work.generation, work.nonce),
           knownIntentId: work.paymongoIntentId,
           attachNo: work.attachNo,
           // Persist the provider id BEFORE anything else happens to it.
@@ -384,12 +479,6 @@ export async function POST(req: NextRequest) {
     if (reusable(other, sessionId, amountCentavos, methodId, Date.now())) return qrResponse(other!, true);
     return NextResponse.json({ error: "Payment is already being started for this amount. Try again in a moment." }, { status: 409 });
   }
-  if (result.kind === "in_progress") {
-    return NextResponse.json({
-      error: "This QR payment is already being completed at PayMongo. Check its status before taking another payment.",
-      intentDocId: doc.id,
-      paymongoIntentId,
-    }, { status: 409 });
-  }
+  if (result.kind === "in_progress") return inProgressResponse(doc.id, paymongoIntentId);
   return qrResponse(doc, false);
 }
