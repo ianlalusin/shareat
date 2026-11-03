@@ -233,5 +233,26 @@ Final commit (deploy ONLY after every device runs the new APK):
 3. Bill-line prices remain client-written order data; checkout recomputes totals
    from them but does not re-price lines against the catalog (approvals/overrides
    exist). A separate order-integrity package would be needed for that.
-4. Bridge docs have no currency / bill revision today; checks are enforced when
-   the fields exist (P4 may add them).
+4. Bridge docs: P4 (audit/pos-payment-attempt-recovery) adds `billingRevision`
+   (the bill revision the amount was last confirmed against). Checkout rejects a
+   bridge whose `billingRevision` differs from the command's. A bridge WITHOUT
+   the field (created before P4) is accepted as legacy: its amount, session,
+   store, method and reference are still verified and it is still consumed
+   exactly once. `currency` is checked only when present (QR Ph is PHP-only).
+5. Offline commands may only be dismissed (closed without a canonical write) by a
+   manager via `/api/pos/commands/reconcile {action:"dismiss", note}`; there is
+   no dedicated UI yet — the till shows the rejection on the OfflineBanner and
+   the cashier's Retry sends `action:"retry"`.
+6. A rejected offline command whose creator account was deactivated or moved
+   to another store cannot be retried (operator check fails); a manager
+   dismisses it.
+
+## 10. Implementation map
+
+| Piece | Files |
+|---|---|
+| Pure money math | `src/lib/checkout/receipt-math.ts` |
+| Commands | `src/lib/server/pos-commands/{checkout,void-session,receipt-commands,reconcile,effects,effect-runner,operator,http,errors}.ts` |
+| Routes | `src/app/api/pos/commands/{checkout,void-session,receipt-void,receipt-edit,refund,reconcile}/route.ts`, `src/app/api/cron/reconcile-pos-commands/route.ts` |
+| Client | `src/lib/pos-commands/{client,receipts}.ts`, `components/cashier/{firestore,offlinePayment,offlineVoid,payment-modal,void-session-dialog,session-list-view}.tsx`, `components/shared/PaymentQueueSyncProvider.tsx`, `lib/offline/{payment-queue,reconcileQueuedCommand}.ts`, `hooks/use-pending-settlement.ts`, `app/receipt/page.tsx`, both receipts pages |
+| Tests | `src/lib/server/pos-commands/pos-commands.test.ts` (server transactions), `tests/rules/audit-p1-financial-commands.test.ts`, updated `tests/rules/{audit-b01-b16,store-scoped}.test.ts` |
