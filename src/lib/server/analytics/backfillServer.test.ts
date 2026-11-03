@@ -135,3 +135,77 @@ describe("B26: daily rebuild vs live deltas", () => {
     expect(db.data(DAY_DOC).payments.totalGross).toBe(350);
   });
 });
+
+describe("rebuild vs a receipt edit whose analytics delta is still pending", () => {
+  const PATH = "stores/s1/receipts/r1";
+
+  /**
+   * Edit as the receipts screen saves it: the revision (snapshot = the receipt
+   * before the edit) and the edited receipt are committed together; the
+   * analytics delta is applied separately, afterwards (applyReceiptDeltaServerFirst).
+   */
+  function saveEditWithoutDelta(db: FakeFirestore, version: number, newTotal: number) {
+    const before = db.data(PATH);
+    db.seed(`${PATH}/revisions/v${version}`, { version, snapshot: before });
+    db.seed(PATH, {
+      ...before,
+      editVersion: version,
+      total: newTotal,
+      analytics: { ...before.analytics, mop: { cash: newTotal } },
+    });
+  }
+
+  it("rebuilding before the edit delta lands counts the last applied state, then the delta moves it once", async () => {
+    const db = world();
+    await checkout(db, "r1", 100, 0);
+    saveEditWithoutDelta(db, 1, 80);
+
+    await rebuildDay(db);
+    // The day must still hold what the live projection had (100): the pending
+    // edit delta (-20) is what takes it to 80.
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(100);
+
+    await applyReceiptEvent(db as any, "s1", "r1", "edit", { revisionId: "v1" });
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(80);
+
+    // Replaying the same edit event changes nothing.
+    await applyReceiptEvent(db as any, "s1", "r1", "edit", { revisionId: "v1" });
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(80);
+  });
+
+  it("an edit whose delta was already applied is counted at its edited value", async () => {
+    const db = world();
+    await checkout(db, "r1", 100, 0);
+    saveEditWithoutDelta(db, 1, 80);
+    await applyReceiptEvent(db as any, "s1", "r1", "edit", { revisionId: "v1" });
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(80);
+
+    await rebuildDay(db);
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(80);
+  });
+
+  it("with a second edit pending, the rebuild counts the state before the first pending edit", async () => {
+    const db = world();
+    await checkout(db, "r1", 100, 0);
+    saveEditWithoutDelta(db, 1, 80);
+    await applyReceiptEvent(db as any, "s1", "r1", "edit", { revisionId: "v1" });
+    saveEditWithoutDelta(db, 2, 70); // v2 saved, its delta not applied
+
+    await rebuildDay(db);
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(80); // last applied state
+
+    await applyReceiptEvent(db as any, "s1", "r1", "edit", { revisionId: "v2" });
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(70);
+  });
+
+  it("other receipts on the day are unaffected by a pending edit", async () => {
+    const db = world();
+    await checkout(db, "r1", 100, 0);
+    await checkout(db, "r2", 300, 30);
+    saveEditWithoutDelta(db, 1, 80);
+
+    await rebuildDay(db);
+    expect(db.data(DAY_DOC).payments.totalGross).toBe(400);
+    expect(db.data(DAY_DOC).payments.txCount).toBe(2);
+  });
+});

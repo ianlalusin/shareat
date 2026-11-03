@@ -42,11 +42,29 @@ export function requestedDays(startInclusiveMs: number, endExclusiveMs: number):
  *  - pending apply (analyticsApplied:false, not voided) is left OUT — the
  *    endpoint/reconcile cron will add it on top of the rebuilt doc later;
  *  - voided with its reversal still pending (applied, analyticsReversed:false)
- *    is counted as its ORIGINAL sale — the pending reversal will subtract it.
+ *    is counted as its ORIGINAL sale — the pending reversal will subtract it;
+ *  - an edit whose analytics delta is still pending is counted as the receipt
+ *    stood BEFORE that edit (`pendingEditBefore`, the revision snapshot) — the
+ *    pending edit delta (snapshot -> current receipt) will move it once. The
+ *    edit save commits the new receipt body before the delta runs, so counting
+ *    the current body here would be moved a second time by that delta.
  */
-function receiptsAsProjected(receipts: Receipt[]): Receipt[] {
+function receiptsAsProjected(receipts: Receipt[], pendingEditBefore: Map<string, Receipt> = new Map()): Receipt[] {
   const out: Receipt[] = [];
-  for (const r of receipts) {
+  for (const current of receipts) {
+    const before = pendingEditBefore.get(String((current as any).id));
+    // Body of the last applied state; the status/flags that gate the other
+    // pending events still come from the receipt as it is now.
+    const r = before
+      ? ({
+          ...before,
+          id: (current as any).id,
+          status: (current as any).status,
+          isVoided: (current as any).isVoided,
+          analyticsApplied: (current as any).analyticsApplied,
+          analyticsReversed: (current as any).analyticsReversed,
+        } as Receipt)
+      : current;
     const x = r as any;
     const voided = isVoidedReceipt(x);
     if (!voided && x.analyticsApplied === false) continue;
@@ -55,6 +73,39 @@ function receiptsAsProjected(receipts: Receipt[]): Receipt[] {
       continue;
     }
     out.push(r);
+  }
+  return out;
+}
+
+/**
+ * The edit version whose analytics delta has not been applied yet, or null.
+ * The receipts screen bumps `editVersion` when it saves an edit and the applier
+ * sets `analyticsEditVersion` once that edit's delta has landed.
+ */
+export function pendingEditVersion(r: any): number | null {
+  const edited = Number(r?.editVersion || 0);
+  const applied = Number(r?.analyticsEditVersion || 0);
+  return edited > applied ? applied + 1 : null;
+}
+
+/**
+ * For each receipt with a pending edit delta, the receipt as it stood before the
+ * earliest pending edit (that revision's snapshot) = the last state analytics
+ * counted. A missing revision falls back to the current body (and is logged).
+ */
+async function loadPendingEditBefore(db: Firestore, storeId: string, receipts: Receipt[]): Promise<Map<string, Receipt>> {
+  const out = new Map<string, Receipt>();
+  for (const r of receipts) {
+    const version = pendingEditVersion(r);
+    if (version === null) continue;
+    const id = String((r as any).id);
+    const snap = await db.collection(`stores/${storeId}/receipts/${id}/revisions`).get();
+    const rev = snap.docs.map((d) => d.data() as any).find((d) => Number(d?.version || 0) === version);
+    if (!rev?.snapshot) {
+      console.warn(`[analytics rebuild] receipt ${id} has edit v${version} pending but no revision snapshot; counting its current body`);
+      continue;
+    }
+    out.set(id, rev.snapshot as Receipt);
   }
   return out;
 }
@@ -168,8 +219,9 @@ export async function rebuildDailyAnalyticsFromReceiptsServer(
     receiptCount = receipts.length;
     ticketCount = tickets.length;
 
+    const pendingEditBefore = await loadPendingEditBefore(db, storeId, receipts);
     const aggregates = aggregateDailyMetrics({
-      receipts: receiptsAsProjected(receipts),
+      receipts: receiptsAsProjected(receipts, pendingEditBefore),
       tickets,
       verifiedSessions,
       store,
