@@ -23,6 +23,18 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
+async function revocationBoundarySeconds(uid: string, existing: unknown): Promise<number> {
+  let firebaseSec = 0;
+  try {
+    const after = Date.parse((await getAdminAuth().getUser(uid)).tokensValidAfterTime ?? "");
+    if (Number.isFinite(after)) firebaseSec = Math.floor(after / 1000);
+  } catch {
+    // Fall back to the server clock below.
+  }
+  const prior = typeof existing === "number" && Number.isFinite(existing) ? existing : 0;
+  return Math.max(Math.floor(Date.now() / 1000), firebaseSec, prior);
+}
+
 export async function POST(req: Request) {
   try {
     const authz = req.headers.get("authorization") || "";
@@ -79,6 +91,24 @@ export async function POST(req: Request) {
       );
     }
 
+    // Audit B22: revocation only stops refresh tokens and checkRevoked API
+    // calls. Firestore/Storage rules cannot see it, so an ID token issued before
+    // this reset kept working against direct reads/writes for up to an hour.
+    // tokensValidAfter (epoch SECONDS, the unit of the token's auth_time) is the
+    // boundary the rules' tokenNotRevoked() compares against. auth_time is set
+    // at sign-in, so the user must sign in again (with the temporary password)
+    // to pass it. Never lowered: an earlier reset's later boundary stays.
+    //
+    // Written FIRST, before the password changes or anything is revoked: if this
+    // write fails the request fails with nothing reset, rather than revoking
+    // refresh tokens while every pre-reset ID token keeps direct data access.
+    // It already fences every token signed in before this request began.
+    const boundaryBefore = Math.max(
+      Math.floor(Date.now() / 1000),
+      typeof target?.tokensValidAfter === "number" ? target.tokensValidAfter : 0
+    );
+    await db.doc(`staff/${uid}`).update({ tokensValidAfter: boundaryBefore });
+
     const tempPassword = generateTempPassword();
 
     await getAdminAuth().updateUser(uid, { password: tempPassword });
@@ -88,7 +118,14 @@ export async function POST(req: Request) {
     // password alone does not invalidate issued refresh tokens.
     await getAdminAuth().revokeRefreshTokens(uid);
 
+    // Raise the boundary to the revoke moment (never below Firebase's own
+    // tokensValidAfterTime, so server clock skew cannot leave a gap). This
+    // closes the short window between the first write and the password change,
+    // in which someone holding the OLD password could still have signed in.
+    const tokensValidAfter = await revocationBoundarySeconds(uid, boundaryBefore);
+
     await db.doc(`staff/${uid}`).update({
+      tokensValidAfter,
       mustChangePassword: true,
       passwordResetAt: FieldValue.serverTimestamp(),
       passwordResetByUid: staff.uid,

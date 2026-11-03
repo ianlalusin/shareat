@@ -10,12 +10,36 @@ service cloud.firestore {
     }
     function staffExists() { return isSignedIn() && exists(staffPath()); }
     function staffData() { return get(staffPath()).data; }
-    function isActiveStaff() { return staffExists() && staffData().status == 'active'; }
+    // Audit B22: revocation fence. Firestore rules cannot see Firebase's
+    // refresh-token revocation list, so an ID token minted before an admin
+    // password reset stays valid here for up to an hour. The reset route
+    // (src/app/api/admin/users/reset-password) stamps staff/{uid}.tokensValidAfter
+    // (epoch SECONDS, same unit as auth_time) via the Admin SDK right after
+    // revokeRefreshTokens(), and this denies any token whose sign-in predates it.
+    // auth_time is set at sign-in and survives token refreshes, so after a reset
+    // the legitimate user must sign in again (with the temporary password) to get
+    // a newer auth_time; every device still on the old session is shut out.
+    // Strict `>`: a sign-in in the same second as the reset is ambiguous, so it
+    // is denied and simply needs one more sign-in.
+    // A missing field means "never reset" — no fence. The -1 default (not 0) is
+    // equivalent for real tokens (auth_time is always > 0) and keeps emulator
+    // mock tokens, whose auth_time defaults to 0, working in the rules tests.
+    // The field is server-owned: see staffBoundaryUnchanged() on /staff/{uid}.
+    // storage.rules carries the same check in its staff helpers.
+    function tokenNotRevoked(d) {
+      return request.auth.token.auth_time > d.get('tokensValidAfter', -1);
+    }
+    function isActiveStaff() {
+      return staffExists() && staffData().status == 'active' && tokenNotRevoked(staffData());
+    }
 
     // isActiveStaff() (not staffExists()) on the staff-doc branch: a deactivated
     // admin must not keep god access to every store. The platformAdmin custom
     // claim is the break-glass path and stays deliberately un-status-gated, so
-    // it still works when the staff-doc branch cannot let anyone through.
+    // it still works when the staff-doc branch cannot let anyone through. It IS
+    // revocation-fenced (B22) when a staff doc exists, so an admin reset of a
+    // platform admin's password also shuts out their pre-reset tokens; with no
+    // staff doc there is no boundary to read, and break-glass is unchanged.
     //
     // Grant it with `node scripts/set-platform-admin.mjs <UID>` (Admin SDK, so
     // it needs a service account, not a signed-in user). An earlier version of
@@ -33,7 +57,8 @@ service cloud.firestore {
     // is left in its original form rather than made more complex for no gain.
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.platformAdmin == true ||
+        (request.auth.token.platformAdmin == true
+          && (!staffExists() || tokenNotRevoked(staffData()))) ||
         (isActiveStaff() && staffData().role == 'admin')
       );
     }
@@ -225,8 +250,19 @@ service cloud.firestore {
     // -----------------------------
     // Staff Profiles
     // -----------------------------
+    // tokensValidAfter (audit B22) is written only by the Admin SDK reset route,
+    // which bypasses rules. No client, admin included, may set, change or drop
+    // it: lowering it would reopen the revocation fence in isActiveStaff(). A
+    // full-doc setDoc() that omits the field counts as dropping it.
+    // Never call on delete (request.resource is null).
+    function staffBoundaryUnchanged() {
+      return request.resource.data.get('tokensValidAfter', null)
+        == (resource == null ? null : resource.data.get('tokensValidAfter', null));
+    }
+
     match /staff/{uid} {
-      allow read, write: if isAdmin();
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin() && staffBoundaryUnchanged();
       allow get: if isSignedIn() && request.auth.uid == uid;
       // Public self-signup may create ONLY its own non-privileged, pending
       // profile. Role/status/store access are locked here so a signer-up
@@ -236,7 +272,8 @@ service cloud.firestore {
         && request.auth.uid == uid
         && request.resource.data.status == 'pending'
         && request.resource.data.role == 'server'
-        && request.resource.data.assignedStoreIds == [];
+        && request.resource.data.assignedStoreIds == []
+        && staffBoundaryUnchanged();
     }
 
     // -----------------------------
