@@ -20,6 +20,7 @@ import { useServerClockOffset } from "@/hooks/use-server-clock";
 
 export { DEFAULT_SLA_MINUTES } from "@/lib/kitchen/sla";
 import { DEFAULT_SLA_MINUTES } from "@/lib/kitchen/sla";
+import { kitchenModifierLines } from "@/lib/kitchen/modifier-lines";
 
 // Live ticket age in ms, ticking every second. Single source of truth for both
 // the elapsed display and the SLA "late" state on the card.
@@ -197,11 +198,11 @@ export function KdsItemCard({ ticket, onUpdateStatus, onServeBatch, onCancelRema
                           <span className="text-amber-700"> - {(ticket as any).flavorNote}</span>
                         )}
                     </CardTitle>
-                    {(ticket as any).modifiersText && (
-                      <p className="text-sm text-muted-foreground -mt-1 italic">
-                        — {(ticket as any).modifiersText}
+                    {kitchenModifierLines(ticket as any).map((line) => (
+                      <p key={line} className="text-sm text-muted-foreground -mt-1 italic">
+                        {line}
                       </p>
-                    )}
+                    ))}
 
                     {/* Qty progress for batch tickets */}
                     {isBatchTicket && (
