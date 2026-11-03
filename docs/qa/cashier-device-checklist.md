@@ -2,6 +2,8 @@
 
 Run this on the real Lenovo tablet after installing the new APK. A browser cannot show how the Android keyboard behaves, so this list is the real proof.
 
+Keep it separate from the browser test (`npm run test:e2e`, see `e2e/.env.example`). A passing browser run proves the pinned layout in a short window only; it does not fill in or replace any step here.
+
 Fill in the header first.
 
 - Tester:
