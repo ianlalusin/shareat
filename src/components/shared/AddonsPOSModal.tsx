@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,6 @@ import { commitLocalFirst } from "@/lib/offline/commit";
 import { printKitchenTicketBackup } from "@/lib/printing/kitchenBackupPrint";
 import { makeKitchenBackupDeps } from "@/lib/printing/kitchenBackupDeps";
 import { getBrowserDeviceId } from "@/lib/offline/browserDevice";
-import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { stripUndefined } from "@/lib/firebase/utils";
 import type { InventoryItem, OptionGroup, PendingSession, SelectedModifier, SessionBillLine } from "@/lib/types";
@@ -583,7 +582,9 @@ function POSContent({
           </Button>
         </div>
 
-        <ScrollArea className={cn("pr-2 flex-1 min-h-0")}>
+        {/* Plain overflow div, not Radix ScrollArea: touch-drag scrolls it reliably in the
+            Android WebView, and it is the only part that scrolls so the footer stays put. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-2 [-webkit-overflow-scrolling:touch]" data-testid="addons-scroll">
           <div className="flex flex-wrap gap-2 pb-3">
             {categories.map((cat) => (
               <Badge
@@ -614,7 +615,7 @@ function POSContent({
               )}
             </div>
           )}
-        </ScrollArea>
+        </div>
 
         <div className={cn("border-t pt-3 space-y-2 shrink-0")}>
           <div className="text-sm">
@@ -635,7 +636,7 @@ function POSContent({
             />
           )}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 [&>*]:shrink-0">
             <Button
               variant="outline"
               size="icon"
@@ -650,6 +651,7 @@ function POSContent({
               onChange={setQuantity}
               disabled={!selectedAddon || isSubmitting || sessionIsLocked}
               allowDecimal={selectedAddon ? allowsDecimalQty(selectedAddon.uom) : false}
+              className="h-10 w-14 shrink-0 px-1 text-center"
             />
 
             <Button
@@ -661,7 +663,11 @@ function POSContent({
               <Plus className="h-4 w-4" />
             </Button>
 
-            <Button className="ml-auto" onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading || loadingOptionGroups || sessionIsLocked}>
+            <Button variant="outline" className="ml-auto" onClick={onClose}>
+              Close
+            </Button>
+
+            <Button onClick={handleAddToOrder} disabled={!selectedAddon || isSubmitting || isLoading || loadingOptionGroups || sessionIsLocked}>
               {isSubmitting || loadingOptionGroups ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {optionGroupsError ? "Retry" : "Add to Order"}
             </Button>
@@ -706,17 +712,12 @@ export function AddonsPOSModal({ open, onOpenChange, storeId, session, sessionIs
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[88dvh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[88dvh] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle>Add-ons</DialogTitle>
-          <DialogDescription>Select add-on items to add to the order.</DialogDescription>
+          <DialogDescription className="[@media(max-height:500px)]:hidden">Select add-on items to add to the order.</DialogDescription>
         </DialogHeader>
         {content}
-        <DialogFooter className="shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
