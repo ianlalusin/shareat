@@ -16,6 +16,7 @@ const calls: string[] = [];
 const updates: Array<{ path: string; data: any }> = [];
 let targetDoc: Record<string, any>;
 let firebaseValidAfter: string | undefined;
+let failUpdate = false;
 
 vi.mock("firebase-admin/firestore", () => ({
   FieldValue: { serverTimestamp: () => ({ __sentinel: "serverTimestamp" }) },
@@ -54,6 +55,7 @@ vi.mock("@/lib/firebase/admin", () => ({
       get: async () => ({ exists: true, data: () => targetDoc }),
       update: async (data: any) => {
         calls.push("update");
+        if (failUpdate) throw new Error("firestore unavailable");
         updates.push({ path, data });
       },
     }),
@@ -73,6 +75,7 @@ function req() {
 beforeEach(() => {
   calls.length = 0;
   updates.length = 0;
+  failUpdate = false;
   targetDoc = { role: "cashier", status: "active", name: "Ana" };
   firebaseValidAfter = new Date(Math.floor(RESET_AT_MS / 1000) * 1000).toUTCString();
   vi.useFakeTimers();
@@ -89,24 +92,36 @@ describe("POST /api/admin/users/reset-password — B22 revocation boundary", () 
     expect(calls[0]).toBe("verify:true");
   });
 
-  it("writes tokensValidAfter in epoch seconds, after revoking refresh tokens", async () => {
+  it("writes the boundary BEFORE resetting/revoking, then raises it after the revoke", async () => {
     const res = await POST(req());
     expect(res.status).toBe(200);
 
-    expect(updates).toHaveLength(1);
-    expect(updates[0].path).toBe(`staff/${TARGET_UID}`);
-    expect(updates[0].data.tokensValidAfter).toBe(Math.floor(RESET_AT_MS / 1000));
-    expect(updates[0].data.mustChangePassword).toBe(true);
+    const nowSec = Math.floor(RESET_AT_MS / 1000);
+    expect(updates).toHaveLength(2);
+    expect(updates.every((u) => u.path === `staff/${TARGET_UID}`)).toBe(true);
+    expect(updates[0].data).toEqual({ tokensValidAfter: nowSec });
+    expect(updates[1].data.tokensValidAfter).toBe(nowSec);
+    expect(updates[1].data.mustChangePassword).toBe(true);
 
-    expect(calls.indexOf("revoke")).toBeGreaterThan(-1);
-    expect(calls.indexOf("update")).toBeGreaterThan(calls.indexOf("revoke"));
+    const firstUpdate = calls.indexOf("update");
+    expect(firstUpdate).toBeLessThan(calls.indexOf("updateUser"));
+    expect(firstUpdate).toBeLessThan(calls.indexOf("revoke"));
+    expect(calls.lastIndexOf("update")).toBeGreaterThan(calls.indexOf("revoke"));
+  });
+
+  it("fails without resetting the password or revoking if the boundary write fails", async () => {
+    failUpdate = true;
+    const res = await POST(req());
+    expect(res.status).toBe(500);
+    expect(calls).not.toContain("updateUser");
+    expect(calls).not.toContain("revoke");
   });
 
   it("uses Firebase's own tokensValidAfterTime when it is later than the server clock", async () => {
     const later = Math.floor(RESET_AT_MS / 1000) + 3;
     firebaseValidAfter = new Date(later * 1000).toUTCString();
     await POST(req());
-    expect(updates[0].data.tokensValidAfter).toBe(later);
+    expect(updates[1].data.tokensValidAfter).toBe(later);
   });
 
   it("never lowers an existing, later boundary", async () => {
@@ -114,11 +129,12 @@ describe("POST /api/admin/users/reset-password — B22 revocation boundary", () 
     targetDoc = { ...targetDoc, tokensValidAfter: existing };
     await POST(req());
     expect(updates[0].data.tokensValidAfter).toBe(existing);
+    expect(updates[1].data.tokensValidAfter).toBe(existing);
   });
 
   it("still writes a boundary if Firebase omits tokensValidAfterTime", async () => {
     firebaseValidAfter = undefined;
     await POST(req());
-    expect(updates[0].data.tokensValidAfter).toBe(Math.floor(RESET_AT_MS / 1000));
+    expect(updates[1].data.tokensValidAfter).toBe(Math.floor(RESET_AT_MS / 1000));
   });
 });
