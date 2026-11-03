@@ -96,6 +96,10 @@ const SERVER_ONLY_COLLECTIONS = [
   "storefrontConfig",
   "onlineOrders",
   "paymentIntents",
+  // paymentIntentAttempts: create-qr's durable attempt (lease, provider
+  // idempotency key generation, saved PayMongo intent id). Audit B24/P4: a
+  // client write could block or redirect payment recovery.
+  "paymentIntentAttempts",
   // catalogCache: CUSTOMER app's per-store menu/price cache
   // (rebuildCustomerCatalog, customer-catalog.ts) — was missing from this
   // list until 2026-08-13, found while adding inventoryCache below.

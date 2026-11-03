@@ -548,8 +548,12 @@ service cloud.firestore {
         // catalogCache was a pre-existing gap here (missing since it was
         // introduced) — found while adding inventoryCache to this same list.
         // forecastModel: server-learned forecast factors — Admin SDK only.
+        // paymentIntentAttempts: create-qr's durable PayMongo attempt (lease,
+        // idempotency generation, saved provider intent id). Only the Admin SDK
+        // writes it; a client write could stall or misdirect recovery (B24/P4).
         && !(coll in ['analytics', 'analyticsMonths', 'analyticsYears', 'dashPresets', 'dailySessions',
                       'storefrontCatalog', 'storefrontConfig', 'onlineOrders', 'paymentIntents',
+                      'paymentIntentAttempts',
                       'catalogCache', 'inventoryCache', 'forecastModel'])
         && (!isConfigCollection(coll) || isManagerOrAdmin());
     }
