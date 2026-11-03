@@ -3,9 +3,7 @@ import { PosCommandError, isTerminalConflict } from "@/lib/server/pos-commands/e
 import { resolveOperator, type Operator } from "@/lib/server/pos-commands/operator";
 import { checkoutInTx, isSafeId, type CheckoutTender, parseCheckoutInput } from "@/lib/server/pos-commands/checkout";
 import { voidSessionInTx } from "@/lib/server/pos-commands/void-session";
-import { processEffects, listPendingEffectIds, queueEffectsInTx, type EffectRunner } from "@/lib/server/pos-commands/effects";
-import { FieldValue } from "firebase-admin/firestore";
-import { computeSalesAnalytics, dropUndefined, summarizeTenders } from "@/lib/checkout/receipt-math";
+import { processEffects, listPendingEffectIds, type EffectRunner } from "@/lib/server/pos-commands/effects";
 
 /**
  * Offline command reconciliation (audit B16 / B17).
@@ -117,6 +115,8 @@ export async function reconcileCommand(
     bodyCommand?: unknown;
     action?: ReconcileAction;
     note?: string;
+    /** The approving manager's verified local profile (accept-recorded). */
+    approverProfileId?: string | null;
   },
   deps: ReconcileDeps = {},
 ): Promise<ReconcileResult> {
@@ -128,12 +128,40 @@ export async function reconcileCommand(
   const resultRef = db.doc(`stores/${storeId}/posCommandResults/${opId}`);
   const elevated = caller.type === "staff" && (caller.isPlatformAdmin || caller.role === "admin" || caller.role === "manager");
 
+  /** Takes the command out of the cron sweep's unresolved index. */
+  const markResolved = () =>
+    db.runTransaction(async (tx) => {
+      const cur = (await tx.get(cmdRef)) as any;
+      if (cur.exists && cur.data()?.resolved !== true) tx.update(cmdRef, { resolved: true, resolvedAtMs: now });
+    }).catch(() => {});
+
   // 1. The command: Firestore copy, else the caller's localStorage copy (the
   // Firestore create may have been denied or never synced). Persisted once.
   let cmdSnap = (await cmdRef.get()) as any;
   let command: OfflineCommand;
   if (cmdSnap.exists) {
-    command = parseOfflineCommand(cmdSnap.data(), storeId, opId);
+    try {
+      command = parseOfflineCommand(cmdSnap.data(), storeId, opId);
+    } catch (e) {
+      // A stored command that can never parse is terminal: record it as
+      // rejected and take it out of the sweep index (re-review #7).
+      const raw = cmdSnap.data() || {};
+      const message = (e as any)?.message || "Malformed offline command.";
+      await db.runTransaction(async (tx) => {
+        const cur = (await tx.get(resultRef)) as any;
+        if (cur.exists && ["accepted", "dismissed"].includes(cur.data()?.status)) return;
+        tx.set(resultRef, {
+          opId, kind: typeof raw.kind === "string" ? raw.kind.slice(0, 32) : "unknown", storeId,
+          sessionId: typeof raw.sessionId === "string" ? raw.sessionId.slice(0, 128) : null,
+          status: action === "dismiss" && elevated && typeof args.note === "string" && args.note.trim() ? "dismissed" : "rejected",
+          code: "command_invalid", message, malformed: true,
+          ...(action === "dismiss" && elevated ? { note: String(args.note || "").trim().slice(0, 500), dismissedByUid: (caller as any).uid } : {}),
+          processedAtMs: now,
+        });
+      });
+      await markResolved();
+      return { status: "rejected", code: "command_invalid", message };
+    }
   } else {
     if (!args.bodyCommand || caller.type !== "staff") {
       throw new PosCommandError("command_not_found", "Offline command has not reached the server yet.", 404);
@@ -153,13 +181,6 @@ export async function reconcileCommand(
     throw new PosCommandError("forbidden", "Not your offline command.", 403);
   }
 
-  /** Takes the command out of the cron sweep's unresolved index. */
-  const markResolved = () =>
-    db.runTransaction(async (tx) => {
-      const cur = (await tx.get(cmdRef)) as any;
-      if (cur.exists && cur.data()?.resolved !== true) tx.update(cmdRef, { resolved: true, resolvedAtMs: now });
-    }).catch(() => {});
-
   // 2. Previous outcome.
   const prev = (await resultRef.get()) as any;
   const prevData = prev.exists ? prev.data() : null;
@@ -176,10 +197,14 @@ export async function reconcileCommand(
     const note = typeof args.note === "string" ? args.note.trim().slice(0, 500) : "";
     if (!note) bad("A resolution note is required.");
     if (prevData?.status !== "rejected") throw new PosCommandError("command_invalid", "Only a rejected offline sale can be accepted as recorded.", 409);
-    const r = await acceptAsRecorded(db, command, { uid: (caller as any).uid, note }, now);
+    const r = await acceptAsRecorded(
+      db, command,
+      { uid: (caller as any).uid, profileId: args.approverProfileId ?? null, note },
+      now, deps.key,
+    );
     if (deps.runner && r.effectIds.length) await processEffects(db, storeId, r.effectIds, deps.runner, now);
     await markResolved();
-    return { status: "accepted", replay: r.replay, receiptId: r.receiptId, receiptNumber: r.receiptNumber, tableReleased: false };
+    return { status: "accepted", replay: r.replay, receiptId: r.receiptId, receiptNumber: r.receiptNumber, tableReleased: r.tableReleased };
   }
   if (action === "dismiss") {
     if (!elevated) throw new PosCommandError("forbidden", "Only a manager can dismiss an offline command.", 403);
@@ -286,24 +311,27 @@ export async function sweepStore(
 ): Promise<{ accepted: number; rejected: number; errors: number; effects: { done: number; pending: number; failed: number } }> {
   const now = deps.now ?? Date.now();
   const out = { accepted: 0, rejected: 0, errors: 0, effects: { done: 0, pending: 0, failed: 0 } };
-  // Only unresolved commands (audit P1 review #7): resolved ones never occupy
-  // the page, and client clock skew is irrelevant (grace uses server time).
-  const cmds = await db
-    .collection(`stores/${storeId}/posCommands`)
-    .where("resolved", "==", false)
-    .limit(300)
-    .get();
-  for (const d of cmds.docs as any[]) {
-    const writtenMs = typeof d.updateTime?.toMillis === "function" ? d.updateTime.toMillis() : 0;
-    if (writtenMs > now - SWEEP_GRACE_MS) continue;
-    try {
-      const r = await reconcileCommand(db, { storeId, opId: d.id, caller: { type: "cron" } }, { now, runner, ...(deps.key !== undefined ? { key: deps.key } : {}) });
-      if (r.status === "accepted") out.accepted++;
-      else if (r.status === "rejected") out.rejected++;
-    } catch (e) {
-      out.errors++;
-      console.error(`[pos-commands] sweep ${storeId}/${d.id} failed:`, (e as any)?.message || e);
+  // Only unresolved commands (review #7): resolved and malformed ones leave the
+  // index, and the sweep pages until a pass makes no progress (re-review #7),
+  // so no fixed window can blind it. Grace uses server write time.
+  const PAGE = 300;
+  for (let round = 0; round < 20; round++) {
+    const cmds = await db.collection(`stores/${storeId}/posCommands`).where("resolved", "==", false).limit(PAGE).get();
+    let progressed = 0;
+    for (const d of cmds.docs as any[]) {
+      const writtenMs = typeof d.updateTime?.toMillis === "function" ? d.updateTime.toMillis() : 0;
+      if (writtenMs > now - SWEEP_GRACE_MS) continue;
+      try {
+        const r = await reconcileCommand(db, { storeId, opId: d.id, caller: { type: "cron" } }, { now, runner, ...(deps.key !== undefined ? { key: deps.key } : {}) });
+        if (r.status === "accepted") out.accepted++;
+        else if (r.status === "rejected") out.rejected++;
+        progressed++;
+      } catch (e) {
+        out.errors++;
+        console.error(`[pos-commands] sweep ${storeId}/${d.id} failed:`, (e as any)?.message || e);
+      }
     }
+    if (progressed === 0 || cmds.docs.length < PAGE) break;
   }
   const pending = await listPendingEffectIds(db, storeId);
   if (pending.length) {
@@ -314,73 +342,60 @@ export async function sweepStore(
 }
 
 /**
- * Manager-approved acceptance of a REJECTED offline sale (audit P1 review #6):
- * money was taken at the till, the bill could not be settled as recorded
- * (revision moved, session settled elsewhere or deleted). Writes a receipt
- * `offline_{opId}` from the command's own recorded lines, tenders and total,
- * with the approving manager and note on it. It does not touch the session or
- * table. Commands with scan-to-pay or reservation-deposit tenders are refused
- * here (those must be proven by the normal path).
+ * Manager-approved acceptance of a REJECTED offline sale (review #6,
+ * re-review A/B/C). Money was taken at the till but the bill could not be
+ * settled as recorded. Acceptance settles the session AS IT STANDS NOW with
+ * the command's tenders through the normal checkout transaction (prices,
+ * rewards, tenders and the time window validated; server receipt number; the
+ * session closed atomically; refused if it was settled since). Guards:
+ * approver is a different account AND operator than the recorder; the
+ * recorder was a cashier+ with a verified operator session at record time;
+ * no scan-to-pay / deposit tenders. The approval is written to the activity log.
  */
 export async function acceptAsRecorded(
   db: Firestore,
   command: OfflineCommand,
-  approver: { uid: string; note: string },
+  approver: { uid: string; profileId: string | null; note: string },
   now: number,
-): Promise<{ receiptId: string; receiptNumber: string; replay: boolean; effectIds: string[] }> {
+  key?: Buffer | null,
+): Promise<{ receiptId: string; receiptNumber: string; replay: boolean; effectIds: string[]; tableReleased: boolean }> {
   const { storeId, opId } = command;
   const payments = command.payload.payments ?? [];
   if (command.kind !== "checkout") throw new PosCommandError("command_invalid", "Only offline sales can be accepted as recorded.", 409);
   if (payments.some((p) => p.intentDocId || p.fromReservationPaymentId)) {
     throw new PosCommandError("gateway_invalid", "Scan-to-pay or deposit tenders can't be accepted without verification.", 409);
   }
-  const receiptId = `offline_${opId}`;
-  const receiptRef = db.doc(`stores/${storeId}/receipts/${receiptId}`);
-  const resultRef = db.doc(`stores/${storeId}/posCommandResults/${opId}`);
-  return db.runTransaction(async (tx) => {
-    const [rSnap, configSnap, storeSnap] = (await Promise.all([
-      tx.get(receiptRef), tx.get(db.doc(`stores/${storeId}/storeConfig/current`)), tx.get(db.doc(`stores/${storeId}`)),
-    ])) as any[];
-    const receiptNumber = String(command.payload.receiptNumber);
-    if (rSnap.exists) return { receiptId, receiptNumber, replay: true, effectIds: [] };
-    const methods = (Array.isArray(configSnap.data()?.modesOfPayment) ? configSnap.data().modesOfPayment : []) as any[];
-    const totalCents = command.expected.totalCents;
-    let summary;
-    try {
-      summary = summarizeTenders({ payments, paymentMethods: methods, amountDueCents: totalCents });
-    } catch (e: any) {
-      throw new PosCommandError("tender_invalid", e?.message || "Invalid tenders.", 409);
-    }
-    const lines = Array.isArray(command.payload.lines) && command.payload.lines.length
-      ? command.payload.lines
-      : [{ id: "recorded", type: "addon", itemName: "Offline sale (as recorded)", qtyOrdered: 1, unitPrice: totalCents / 100 }];
-    const sales = computeSalesAnalytics(lines as any, (storeSnap.exists ? storeSnap.data() : {}) as any);
-    const total = totalCents / 100;
-    tx.set(receiptRef, dropUndefined({
-      id: receiptId, receiptId, storeId, sessionId: command.sessionId,
-      createdByUid: command.createdByUid, createdByUsername: "offline (manager-accepted)",
-      commandId: opId, offlineOrigin: true, offlineCommandId: opId, terminalId: command.terminalId,
-      acceptedAsRecorded: { byUid: approver.uid, note: approver.note, atMs: now },
-      sessionMode: "alacarte", tableId: null, tableNumber: null, customerName: null,
-      total, totalPaid: summary.totalPaid, change: summary.change, status: "final",
-      receiptSeq: command.payload.receiptSeq ?? 0, receiptNumber, receiptNoFormatUsed: "OL",
-      createdAtClientMs: command.clientCreatedAtMs, lines,
-      billDiscount: null, customAdjustments: [], loyaltyRedemptions: [],
-      analytics: {
-        v: 2, subtotal: total, discountsTotal: 0, chargesTotal: 0, taxAmount: 0,
-        grandTotal: total, totalPaid: summary.totalPaid, change: summary.change, mop: summary.mopMap,
-        salesByItem: sales.salesByItem, salesByCategory: sales.salesByCategory,
-      },
-      analyticsApplied: false, analyticsApplyId: opId,
-      createdAt: FieldValue.serverTimestamp(),
-    }));
-    const effectIds = queueEffectsInTx(db, tx, storeId, { type: "receipt", receiptId, commandId: opId },
-      [{ effect: "analytics", payload: { op: "payment", receiptId } }], now);
-    tx.set(resultRef, {
-      opId, kind: "checkout", storeId, sessionId: command.sessionId, status: "accepted",
-      receiptId, receiptNumber, totalCents, tableReleased: false, mode: "offline-accepted-as-recorded",
-      acceptedByUid: approver.uid, note: approver.note, processedAtMs: now,
-    });
-    return { receiptId, receiptNumber, replay: false, effectIds };
+  if (approver.uid === command.createdByUid) {
+    throw new PosCommandError("forbidden", "A different manager account must approve this offline sale.", 403);
+  }
+  const { role, isPlatformAdmin } = await creatorRole(db, command.createdByUid, storeId);
+  const recorder = await resolveOperator(db, {
+    uid: command.createdByUid, role, isPlatformAdmin, storeId,
+    token: command.operatorSessionToken, commandAtMs: command.clientCreatedAtMs, now,
+    ...(key !== undefined ? { key } : {}),
   });
+  if (!recorder.verified) {
+    throw new PosCommandError("forbidden", "This offline sale has no verified local user; it can only be dismissed.", 403);
+  }
+  if (approver.profileId && recorder.profileId === approver.profileId) {
+    throw new PosCommandError("forbidden", "The person who took the sale cannot approve it.", 403);
+  }
+  const parsed = parseCheckoutInput({
+    storeId, sessionId: command.sessionId, opId, payments,
+    expectedTotalCents: command.expected.totalCents, billingRevision: command.expected.billingRevision,
+  });
+  const out = await db.runTransaction((tx) =>
+    checkoutInTx(db, tx, {
+      ...parsed,
+      offline: {
+        receiptNumber: String(command.payload.receiptNumber),
+        receiptSeq: Number(command.payload.receiptSeq ?? 0),
+        terminalId: command.terminalId,
+        sessionRevision: command.expected.sessionRevision,
+        clientCreatedAtMs: command.clientCreatedAtMs,
+      },
+      acceptRecorded: { byUid: approver.uid, byProfileId: approver.profileId, note: approver.note },
+    }, recorder, now),
+  );
+  return { receiptId: out.receiptId, receiptNumber: out.receiptNumber, replay: out.replay, effectIds: out.effectIds, tableReleased: out.tableReleased };
 }

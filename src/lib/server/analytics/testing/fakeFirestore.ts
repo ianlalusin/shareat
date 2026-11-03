@@ -87,7 +87,7 @@ function cmp(a: any, b: any): number {
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
-type Doc = { data: any; updateTime: FakeTimestamp };
+type Doc = { data: any; updateTime: FakeTimestamp; createTime: FakeTimestamp };
 
 export class FakeFirestore {
   docs = new Map<string, Doc>();
@@ -105,14 +105,21 @@ export class FakeFirestore {
     return this.docs.get(path)?.data;
   }
 
-  seed(path: string, data: any) {
-    this.write(path, () => clone(data));
+  /** `createMs` sets the server createTime (default: the fake clock). */
+  seed(path: string, data: any, opts: { createMs?: number } = {}) {
+    if (opts.createMs !== undefined) this.docs.delete(path);
+    this.write(path, () => clone(data), opts.createMs);
   }
 
-  private write(path: string, fn: (cur: any) => any | undefined) {
-    const next = fn(this.docs.get(path)?.data);
+  private write(path: string, fn: (cur: any) => any | undefined, createMs?: number) {
+    const prev = this.docs.get(path);
+    const next = fn(prev?.data);
     if (next === undefined) this.docs.delete(path);
-    else this.docs.set(path, { data: next, updateTime: new FakeTimestamp(++this.clock) });
+    else {
+      const updateTime = new FakeTimestamp(++this.clock);
+      const createTime = prev?.createTime ?? (createMs !== undefined ? new FakeTimestamp(createMs) : updateTime);
+      this.docs.set(path, { data: next, updateTime, createTime });
+    }
   }
 
   private snap(path: string) {
@@ -123,6 +130,7 @@ export class FakeFirestore {
       ref,
       exists: !!d,
       updateTime: d?.updateTime,
+      createTime: d?.createTime,
       data: () => (d ? clone(d.data) : undefined),
     };
   }

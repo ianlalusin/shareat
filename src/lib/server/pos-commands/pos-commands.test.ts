@@ -495,21 +495,6 @@ describe("review fixes (audit P1 review 2026-11-03)", () => {
     await expectCode(runCheckout(D(), input({ expectedTotalCents: 100000 }), CASHIER, NOW), "loyalty_invalid");
   });
 
-  it("#2 reservation: scan-to-pay deposit rows are refused; manual deposits are deduped and consumed once", async () => {
-    db.seed(`stores/${S}/reservations/res1`, { payments: [{ id: "rp1", methodId: "gcash", amount: 500, reference: "g1" }, { id: "rq1", methodId: "qr", amount: 500, reference: "x" }] });
-    db.seed(`stores/${S}/sessions/s1`, { ...sess(), reservationId: "res1" });
-    await expectCode(runCheckout(D(), input({ payments: [{ methodId: "qr", amount: 500, reference: "x", fromReservationPaymentId: "rq1" }, { methodId: "cash", amount: 600 }] }), CASHIER, NOW), "gateway_invalid");
-    await expectCode(runCheckout(D(), input({ payments: [{ methodId: "gcash", amount: 500, reference: "g1", fromReservationPaymentId: "rp1" }, { methodId: "gcash", amount: 500, reference: "g1", fromReservationPaymentId: "rp1" }, { methodId: "cash", amount: 100 }] }), CASHIER, NOW), "gateway_invalid");
-    await expectCode(runCheckout(D(), input({ payments: [{ methodId: "gcash", amount: 500, reference: "g1", fromReservationPaymentId: "nope" }, { methodId: "cash", amount: 600 }] }), CASHIER, NOW), "tender_invalid");
-    await runCheckout(D(), input({ payments: [{ methodId: "gcash", amount: 500, reference: "g1", fromReservationPaymentId: "rp1" }, { methodId: "cash", amount: 600 }] }), CASHIER, NOW);
-    expect(db.data(`stores/${S}/tenderConsumptions/res_res1__rp1`)).toMatchObject({ receiptId: "s1" });
-    // A client clears paymentsAppliedToSessionId and links the reservation to a second bill.
-    seedSession("s2", "t2");
-    db.seed(`stores/${S}/reservations/res1`, { ...db.data(`stores/${S}/reservations/res1`), paymentsAppliedToSessionId: null });
-    db.seed(`stores/${S}/sessions/s2`, { ...db.data(`stores/${S}/sessions/s2`), reservationId: "res1" });
-    await expectCode(runCheckout(D(), input({ sessionId: "s2", opId: "op2", payments: [{ methodId: "gcash", amount: 500, reference: "g1", fromReservationPaymentId: "rp1" }, { methodId: "cash", amount: 600 }] }), CASHIER, NOW), "tender_invalid");
-  });
-
   it("#3 kitchen voids must be backed by cancelled kitchen tickets", async () => {
     db.seed(LINE, { ...db.data(LINE), voidedQty: 1, kitchenVoidedQty: 1 });
     await expectCode(runCheckout(D(), input({ expectedTotalCents: 100000 }), CASHIER, NOW), "line_void_invalid");
@@ -533,18 +518,6 @@ describe("review fixes (audit P1 review 2026-11-03)", () => {
     expect(db.data(`stores/${S}/posEffects/void_s1__loyaltyReverse`).payload.redemptionIds).toEqual(["mine"]);
   });
 
-  it("#6 a rejected offline sale can be accepted as recorded by a manager only", async () => {
-    await runCheckout(D(), input({ opId: "online1" }), CASHIER, NOW - 100_000);
-    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ payload: { payments: [{ methodId: "cash", amount: 1100 }], receiptNumber: "SHT-OL-AB12-0320-001", receiptSeq: 1, lines: [{ id: "x", type: "addon", itemName: "Coke", qtyOrdered: 1, unitPrice: 1060.5 }] } }));
-    await reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY });
-    await expectCode(reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller, action: "accept-recorded", note: "x" }, { now: NOW, key: KEY }), "forbidden");
-    const r = await reconcileCommand(D(), { storeId: S, opId: "off1", caller: managerCaller, action: "accept-recorded", note: "cash was taken" }, { now: NOW, key: KEY });
-    expect(r).toMatchObject({ status: "accepted", receiptId: "offline_off1", receiptNumber: "SHT-OL-AB12-0320-001" });
-    expect(db.data(`stores/${S}/receipts/offline_off1`)).toMatchObject({ total: 1060.5, offlineOrigin: true, acceptedAsRecorded: { byUid: "u_manager", note: "cash was taken" } });
-    expect(db.data(`stores/${S}/receipts/s1`).commandId).toBe("online1"); // the online receipt is untouched
-    expect(db.data(`stores/${S}/posCommands/off1`).resolved).toBe(true);
-  });
-
   it("#7 sweep queries unresolved commands only (resolved ones never blind it)", async () => {
     for (let i = 0; i < 305; i++) db.seed(`stores/${S}/posCommands/done${i}`, { resolved: true, clientCreatedAtMs: NOW });
     db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ clientCreatedAtMs: 1 })); // wildly skewed clock
@@ -552,11 +525,6 @@ describe("review fixes (audit P1 review 2026-11-03)", () => {
     const out = await sweepStore(D(), S, vi.fn(async () => {}), { now: NOW, key: KEY });
     expect(out.accepted + out.rejected).toBe(1);
     expect(db.data(`stores/${S}/posCommands/off1`).resolved).toBe(true);
-  });
-
-  it("#8 an offline command dated before the bill opened is refused", async () => {
-    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ clientCreatedAtMs: NOW - 2 * 3600_000 }, NOW - 3 * 3600_000));
-    await expect(reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY })).resolves.toMatchObject({ code: "command_time_invalid" });
   });
 
   it("#9 voiding after a partial cash refund records only the cash still held", async () => {
@@ -581,5 +549,93 @@ describe("review fixes (audit P1 review 2026-11-03)", () => {
     await Promise.all([processEffects(D(), S, out.effectIds, runner, NOW), processEffects(D(), S, out.effectIds, runner, NOW)]);
     expect(calls.sort()).toEqual([...out.effectIds].sort());
     for (const id of out.effectIds) expect(db.data(`stores/${S}/posEffects/${id}`).status).toBe("done");
+  });
+});
+
+describe("re-review fixes (audit P1 re-review 2026-11-03)", () => {
+  const sess = () => db.data(`stores/${S}/sessions/s1`);
+  const LINE = `stores/${S}/sessions/s1/sessionBillLines/addon_coke_60.5`;
+  const dep = (id: string) => ({ methodId: "gcash", amount: 500, reference: "g1", fromReservationPaymentId: id });
+
+  it("#2 reservation deposits: QR rows refused, dupes refused, consumed once per reservation even under a new id", async () => {
+    db.seed(`stores/${S}/reservations/res1`, { payments: [{ id: "rp1", methodId: "gcash", amount: 500, reference: "g1" }, { id: "rq1", methodId: "qr", amount: 500, reference: "x" }] });
+    db.seed(`stores/${S}/sessions/s1`, { ...sess(), reservationId: "res1" });
+    await expectCode(runCheckout(D(), input({ payments: [{ methodId: "qr", amount: 500, reference: "x", fromReservationPaymentId: "rq1" }, { methodId: "cash", amount: 600 }] }), CASHIER, NOW), "gateway_invalid");
+    await expectCode(runCheckout(D(), input({ payments: [dep("rp1"), dep("rp1"), { methodId: "cash", amount: 100 }] }), CASHIER, NOW), "gateway_invalid");
+    await expectCode(runCheckout(D(), input({ payments: [dep("nope"), { methodId: "cash", amount: 600 }] }), CASHIER, NOW), "tender_invalid");
+    await runCheckout(D(), input({ payments: [dep("rp1"), { methodId: "cash", amount: 600 }] }), CASHIER, NOW);
+    expect(db.data(`stores/${S}/tenderConsumptions/res_res1`)).toMatchObject({ receiptId: "s1", reservationPaymentIds: ["rp1"] });
+    // Re-add the same deposit under a NEW id, clear the applied marker, link a second bill.
+    seedSession("s2", "t2");
+    db.seed(`stores/${S}/reservations/res1`, { payments: [{ id: "rp2", methodId: "gcash", amount: 500, reference: "g1" }], paymentsAppliedToSessionId: null });
+    db.seed(`stores/${S}/sessions/s2`, { ...db.data(`stores/${S}/sessions/s2`), reservationId: "res1" });
+    await expectCode(runCheckout(D(), input({ sessionId: "s2", opId: "op2", payments: [dep("rp2"), { methodId: "cash", amount: 600 }] }), CASHIER, NOW), "tender_invalid");
+  });
+
+  it("#3 a fabricated cancelled ticket (more tickets than ordered) does not back a kitchen void", async () => {
+    db.seed(`stores/${S}/sessions/s1/kitchentickets/fake`, { status: "cancelled", billLineId: "addon_coke_60.5", qty: 99 });
+    db.seed(LINE, { ...db.data(LINE), voidedQty: 1, kitchenVoidedQty: 1 });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 100000 }), CASHIER, NOW), "line_void_invalid");
+  });
+
+  it("#7 a malformed stored command is rejected and leaves the sweep index", async () => {
+    db.seed(`stores/${S}/posCommands/bad1`, { schema: 1, opId: "bad1", storeId: S, kind: "checkout", resolved: false });
+    const out = await sweepStore(D(), S, vi.fn(async () => {}), { now: NOW, key: KEY });
+    expect(out.rejected).toBe(1);
+    expect(db.data(`stores/${S}/posCommandResults/bad1`)).toMatchObject({ status: "rejected", code: "command_invalid", malformed: true });
+    expect(db.data(`stores/${S}/posCommands/bad1`).resolved).toBe(true);
+  });
+
+  it("#8 the time window uses the session's server createTime, not startedAtClientMs", async () => {
+    db.seed(`stores/${S}/sessions/s1`, { ...sess(), startedAtClientMs: 0 }, { createMs: NOW - 3600_000 });
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ clientCreatedAtMs: NOW - 2 * 3600_000 }, NOW - 3 * 3600_000));
+    await expect(reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY })).resolves.toMatchObject({ code: "command_time_invalid" });
+  });
+
+  const rejectByBillChange = async () => {
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ expected: { sessionRevision: 1, billingRevision: 2, tableId: "t1", totalCents: 106050 } }));
+    const r = await reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY });
+    expect(r).toMatchObject({ status: "rejected", code: "bill_changed" });
+  };
+
+  it("#6/B/C accept-as-recorded settles the CURRENT bill atomically with a server receipt number", async () => {
+    await rejectByBillChange();
+    const r = await reconcileCommand(D(), { storeId: S, opId: "off1", caller: managerCaller, action: "accept-recorded", note: "cash in drawer", approverProfileId: null }, { now: NOW, key: KEY });
+    expect(r).toMatchObject({ status: "accepted", receiptId: "s1", receiptNumber: "SHT-000042", tableReleased: true });
+    expect(db.data(`stores/${S}/receipts/s1`)).toMatchObject({ total: 1060.5, offlineReceiptNumber: "SHT-OL-AB12-0320-001", acceptedAsRecorded: { byUid: "u_manager", note: "cash in drawer" } });
+    expect(sess()).toMatchObject({ status: "closed", isPaid: true });
+    expect(db.data(`stores/${S}/activityLogs/accept_off1`)).toMatchObject({ action: "OFFLINE_SALE_ACCEPTED_AS_RECORDED", actorUid: "u_manager" });
+    // A later normal checkout cannot charge the bill again.
+    await expectCode(runCheckout(D(), input({ opId: "again" }), CASHIER, NOW), "already_settled");
+  });
+
+  it("C: refused if the bill was settled elsewhere since", async () => {
+    await runCheckout(D(), input({ opId: "online1" }), CASHIER, NOW - 100_000);
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand());
+    await reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY });
+    await expectCode(reconcileCommand(D(), { storeId: S, opId: "off1", caller: managerCaller, action: "accept-recorded", note: "x" }, { now: NOW, key: KEY }), "already_settled");
+  });
+
+  it("B: the recorder cannot approve (same account, or same local profile)", async () => {
+    db.seed(`staff/u_mgr2`, { role: "manager", status: "active", assignedStoreIds: [S], name: "M2" });
+    await rejectByBillChange();
+    await expectCode(reconcileCommand(D(), { storeId: S, opId: "off1", caller: { ...managerCaller, uid: "u_cashier" }, action: "accept-recorded", note: "x" }, { now: NOW, key: KEY }), "forbidden");
+    await expectCode(reconcileCommand(D(), { storeId: S, opId: "off1", caller: { ...managerCaller, uid: "u_mgr2" }, action: "accept-recorded", note: "x", approverProfileId: "p_ana" }, { now: NOW, key: KEY }), "forbidden");
+  });
+
+  it("A: a command recorded without a verified cashier+ operator can never be accepted", async () => {
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ createdByUid: "u_server", operatorSessionToken: null, expected: { sessionRevision: 1, billingRevision: 2, tableId: "t1", totalCents: 106050 } }));
+    const r = await reconcileCommand(D(), { storeId: S, opId: "off1", caller: managerCaller }, { now: NOW, key: KEY });
+    expect(r.status).toBe("rejected");
+    await expect(reconcileCommand(D(), { storeId: S, opId: "off1", caller: managerCaller, action: "accept-recorded", note: "x" }, { now: NOW, key: KEY }))
+      .rejects.toSatisfy((e: any) => e instanceof PosCommandError && ["forbidden", "operator_session_invalid"].includes(e.code));
+    expect(sess().status).toBe("active");
+  });
+
+  it("#11 a lease is stamped from real time at claim", async () => {
+    const out = await runCheckout(D(), input(), CASHIER, NOW);
+    let seen: any = null;
+    await processEffects(D(), S, [out.effectIds[0]], async () => { seen = db.data(`stores/${S}/posEffects/${out.effectIds[0]}`); }, 1);
+    expect(seen.leaseUntilMs).toBeGreaterThan(Date.now());
   });
 });

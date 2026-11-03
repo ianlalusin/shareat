@@ -26,7 +26,7 @@ import {
   overrideUids,
   validateLinePrices,
 } from "@/lib/checkout/line-pricing";
-import { OFFLINE_CLOCK_SKEW_MS } from "@/lib/server/pos-commands/operator";
+import { OFFLINE_CLOCK_SKEW_MS, sessionCreatedMs } from "@/lib/server/pos-commands/operator";
 import type { Operator } from "@/lib/server/pos-commands/operator";
 import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
 
@@ -65,6 +65,15 @@ export type CheckoutInput = {
   expectedTotalCents: number;
   billingRevision: number;
   offline?: OfflineCheckoutContext | null;
+  /**
+   * Manager acceptance of a REJECTED offline sale (re-review B/C): settles the
+   * session as it stands now with the command's tenders. Bill / session
+   * revision and recorded-total checks are skipped (that is what was
+   * rejected); prices, rewards, tenders and the time window are still
+   * validated, the receipt gets a server receipt number, and the session is
+   * closed atomically.
+   */
+  acceptRecorded?: { byUid: string; byProfileId: string | null; note: string } | null;
 };
 
 export type CheckoutOutcome = {
@@ -192,10 +201,10 @@ export async function checkoutInTx(
   if (session.status === "closed" || session.isPaid === true || receiptSnap.exists) {
     throw new PosCommandError("already_settled", "This bill was already paid on another till.", 409);
   }
-  if (input.offline && Number(session.revision ?? 1) !== input.offline.sessionRevision) {
+  if (!input.acceptRecorded && input.offline && Number(session.revision ?? 1) !== input.offline.sessionRevision) {
     throw new PosCommandError("session_changed", "This bill changed on another till while offline.", 409);
   }
-  if (Number(session.billingRevision ?? 0) !== input.billingRevision) {
+  if (!input.acceptRecorded && Number(session.billingRevision ?? 0) !== input.billingRevision) {
     throw new PosCommandError("bill_changed", "Bill changed during payment. Review the bill and try again.", 409);
   }
   // Offline sale time is client-chosen: it must fall inside this session's life
@@ -203,8 +212,10 @@ export async function checkoutInTx(
   // closed / posted business day in this codebase to check against.
   if (input.offline) {
     const at = input.offline.clientCreatedAtMs;
-    const started = Number(session.startedAtClientMs ?? 0);
-    if (at > nowMs + OFFLINE_CLOCK_SKEW_MS || (started > 0 && at < started - OFFLINE_CLOCK_SKEW_MS)) {
+    // Server-trusted start: the session doc's createTime (set by Firestore),
+    // not the client-written startedAtClientMs (audit P1 re-review #8).
+    const started = sessionCreatedMs(sessionSnap);
+    if (started === null || at > nowMs + OFFLINE_CLOCK_SKEW_MS || at < started - OFFLINE_CLOCK_SKEW_MS) {
       throw new PosCommandError("command_time_invalid", "The offline sale time is outside this bill's open period.", 409);
     }
   }
@@ -308,10 +319,12 @@ export async function checkoutInTx(
     }
     reservationRef = db.doc(`${base}/reservations/${reservationId}`);
     reservationSnap = (await tx.get(reservationRef)) as unknown as Snap;
-    for (const t of depositTenders) {
-      const ref = db.doc(`${base}/tenderConsumptions/res_${reservationId}__${t.fromReservationPaymentId}`);
-      depositConsumption.push({ ref, snap: (await tx.get(ref)) as unknown as Snap, tender: t });
-    }
+    // Keyed by the RESERVATION (server-owned key), not the client-chosen payment
+    // id: a reservation's deposits back at most one receipt, so re-adding a
+    // deposit under a new id cannot be counted again (re-review #2).
+    const ref = db.doc(`${base}/tenderConsumptions/res_${reservationId}`);
+    const snap = (await tx.get(ref)) as unknown as Snap;
+    for (const t of depositTenders) depositConsumption.push({ ref, snap, tender: t });
   }
 
   // ---------- VALIDATION ----------
@@ -361,7 +374,7 @@ export async function checkoutInTx(
   );
   const amountDue = totals.grandTotal;
   const amountDueCents = Math.round(Number(amountDue || 0) * 100);
-  if (Math.abs(amountDueCents - input.expectedTotalCents) > 1) {
+  if (!input.acceptRecorded && Math.abs(amountDueCents - input.expectedTotalCents) > 1) {
     throw new PosCommandError(
       "total_mismatch",
       `Bill changed before payment could be finalized. Review the bill and collect ₱${(amountDueCents / 100).toFixed(2)}.`,
@@ -474,7 +487,7 @@ export async function checkoutInTx(
   let receiptNumber: string;
   let receiptSeq: number;
   let receiptNoFormat: string;
-  if (input.offline) {
+  if (input.offline && !input.acceptRecorded) {
     receiptNumber = input.offline.receiptNumber;
     receiptSeq = input.offline.receiptSeq;
     receiptNoFormat = "OL";
@@ -512,6 +525,12 @@ export async function checkoutInTx(
     loyaltyRedemptions,
     ...(input.offline
       ? { offlineOrigin: true, offlineCommandId: opId, terminalId: input.offline.terminalId }
+      : {}),
+    ...(input.acceptRecorded
+      ? {
+          offlineReceiptNumber: input.offline?.receiptNumber ?? null,
+          acceptedAsRecorded: { ...input.acceptRecorded, atMs: nowMs },
+        }
       : {}),
     analytics: {
       v: 2,
@@ -563,10 +582,12 @@ export async function checkoutInTx(
   for (const { ref } of intentReads) {
     tx.update(ref, { consumedByReceiptId: sessionId, consumedBySessionId: sessionId, consumedByCommandId: opId, consumedAtMs: nowMs });
   }
-  for (const { ref, tender } of depositConsumption) {
-    tx.set(ref, {
-      reservationId, reservationPaymentId: tender.fromReservationPaymentId, receiptId: sessionId,
-      sessionId, commandId: opId, amount: tender.amount, consumedAtMs: nowMs,
+  if (depositConsumption.length) {
+    tx.set(depositConsumption[0].ref, {
+      reservationId,
+      reservationPaymentIds: depositConsumption.map((d) => d.tender.fromReservationPaymentId),
+      amount: depositConsumption.reduce((s2, d) => s2 + Math.round(d.tender.amount * 100), 0) / 100,
+      receiptId: sessionId, sessionId, commandId: opId, consumedAtMs: nowMs,
     });
   }
   if (reservationRef && reservationSnap?.exists) {
@@ -606,11 +627,22 @@ export async function checkoutInTx(
     receiptNumber,
     totalCents: amountDueCents,
     tableReleased,
-    mode: input.offline ? "offline" : "online",
+    mode: input.acceptRecorded ? "offline-accepted-as-recorded" : input.offline ? "offline" : "online",
     operatorUid: operator.uid,
     operatorProfileId: operator.profileId,
+    ...(input.acceptRecorded ? { acceptedByUid: input.acceptRecorded.byUid, acceptedByProfileId: input.acceptRecorded.byProfileId, note: input.acceptRecorded.note } : {}),
     processedAtMs: nowMs,
   });
+  if (input.acceptRecorded) {
+    // Audit trail of the approval (append-only activity log).
+    tx.set(db.doc(`${base}/activityLogs/accept_${opId}`), {
+      storeId, sessionId, action: "OFFLINE_SALE_ACCEPTED_AS_RECORDED",
+      actorUid: input.acceptRecorded.byUid, actorProfileId: input.acceptRecorded.byProfileId,
+      reason: input.acceptRecorded.note,
+      meta: { opId, receiptId: sessionId, receiptNumber, offlineReceiptNumber: input.offline?.receiptNumber ?? null, recordedByUid: operator.uid, recordedByProfileId: operator.profileId },
+      createdAt: serverTs, createdAtClientMs: nowMs,
+    });
+  }
   return outcome;
 }
 

@@ -137,11 +137,14 @@ export async function processEffects(
 
     const leaseId = `${nowMs}_${Math.random().toString(36).slice(2, 10)}`;
     const claimed = await db.runTransaction(async (tx) => {
+      // Real time at claim, not the sweep's start time (re-review #11): a long
+      // sweep must not hand out leases that are already expired.
+      const claimNow = Math.max(nowMs, Date.now());
       const cur = await tx.get(ref);
       const d = cur.exists ? (cur.data() as any) : null;
       if (!d || d.status !== "pending") return null;
-      if (d.leaseId && Number(d.leaseUntilMs || 0) > nowMs) return null; // someone else is running it
-      tx.update(ref, { leaseId, leaseUntilMs: nowMs + EFFECT_LEASE_MS });
+      if (d.leaseId && Number(d.leaseUntilMs || 0) > claimNow) return null; // someone else is running it
+      tx.update(ref, { leaseId, leaseUntilMs: claimNow + EFFECT_LEASE_MS });
       return d;
     });
     if (!claimed) { out.skipped++; continue; }

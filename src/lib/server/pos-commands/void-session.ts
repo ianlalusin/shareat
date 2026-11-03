@@ -2,7 +2,7 @@ import { FieldValue, type Firestore, type Transaction } from "firebase-admin/fir
 import { PosCommandError } from "@/lib/server/pos-commands/errors";
 import { queueEffectsInTx, type PosEffectSpec } from "@/lib/server/pos-commands/effects";
 import { isSafeId } from "@/lib/server/pos-commands/checkout";
-import { OFFLINE_CLOCK_SKEW_MS, type Operator } from "@/lib/server/pos-commands/operator";
+import { OFFLINE_CLOCK_SKEW_MS, sessionCreatedMs, type Operator } from "@/lib/server/pos-commands/operator";
 
 /**
  * Void an open (unpaid) session — server command replacing the client
@@ -67,8 +67,10 @@ export async function voidSessionInTx(
   }
   if (input.offline) {
     const at = input.offline.clientCreatedAtMs;
-    const started = Number(session.startedAtClientMs ?? 0);
-    if (at > nowMs + OFFLINE_CLOCK_SKEW_MS || (started > 0 && at < started - OFFLINE_CLOCK_SKEW_MS)) {
+    // Server-trusted start: the session doc's createTime (set by Firestore),
+    // not the client-written startedAtClientMs (audit P1 re-review #8).
+    const started = sessionCreatedMs(sessionSnap);
+    if (started === null || at > nowMs + OFFLINE_CLOCK_SKEW_MS || at < started - OFFLINE_CLOCK_SKEW_MS) {
       throw new PosCommandError("command_time_invalid", "The offline void time is outside this bill's open period.", 409);
     }
   }

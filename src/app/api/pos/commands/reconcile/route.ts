@@ -5,6 +5,7 @@ import { requireStaffStoreAccess } from "@/lib/server/staff-access";
 import { commandError, readJson } from "@/lib/server/pos-commands/http";
 import { PosCommandError } from "@/lib/server/pos-commands/errors";
 import { reconcileCommand, type ReconcileAction } from "@/lib/server/pos-commands/reconcile";
+import { OPERATOR_HEADER, resolveOperator } from "@/lib/server/pos-commands/operator";
 import { runPosEffect } from "@/lib/server/pos-commands/effect-runner";
 
 export const runtime = "nodejs";
@@ -38,6 +39,16 @@ export async function POST(req: Request) {
     } catch (e: any) {
       throw new PosCommandError("forbidden", e?.message || "Forbidden.", 403);
     }
+    // The approving manager's verified operator (accept-recorded must come from
+    // a different person than the recorder).
+    let approverProfileId: string | null = null;
+    if (action === "accept-recorded") {
+      const op = await resolveOperator(db, {
+        uid: decoded.uid, role: access.role, isPlatformAdmin: access.isPlatformAdmin, storeId,
+        token: req.headers.get(OPERATOR_HEADER),
+      });
+      approverProfileId = op.profileId;
+    }
     const result = await reconcileCommand(
       db,
       {
@@ -45,6 +56,7 @@ export async function POST(req: Request) {
         opId,
         action,
         note: body?.note,
+        approverProfileId,
         bodyCommand: body?.command,
         caller: { type: "staff", uid: decoded.uid, role: access.role, isPlatformAdmin: access.isPlatformAdmin },
       },

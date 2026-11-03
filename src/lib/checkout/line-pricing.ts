@@ -97,10 +97,18 @@ export function kitchenVoidProblems(
     const kv = Number((line as any).kitchenVoidedQty || 0);
     if (!(kv > 0)) continue;
     const lineId = String((line as any).id ?? "");
-    const allowed = tickets
-      .filter((t) => t?.billLineId === lineId && t?.status === "cancelled")
-      // Full ticket quantity: the kitchen cancel flow voids the whole ticket qty.
-      .reduce((s, t) => s + Math.max(0, Number(t.qty ?? t.qtyOrdered ?? 1)), 0);
+    const qtyOf = (t: Record<string, any>) => Math.max(0, Number(t.qty ?? t.qtyOrdered ?? 1));
+    const lineTickets = tickets.filter((t) => t?.billLineId === lineId && t?.billOnServe !== true);
+    // Tickets are client-written (re-review #3). Real kitchen tickets for a line
+    // never add up to more than the line's ordered quantity; extra (fabricated)
+    // tickets make every kitchen void on the line untrusted.
+    const ticketed = lineTickets.reduce((s, t) => s + qtyOf(t), 0);
+    if (ticketed > Number(line.qtyOrdered || 0) + 1e-9) {
+      out.push({ lineId, itemName: String(line.itemName ?? lineId), reason: `kitchen tickets (${ticketed}) exceed the ordered quantity` });
+      continue;
+    }
+    // Full ticket quantity: the kitchen cancel flow voids the whole ticket qty.
+    const allowed = lineTickets.filter((t) => t?.status === "cancelled").reduce((s, t) => s + qtyOf(t), 0);
     if (kv > allowed + 1e-9) {
       out.push({ lineId, itemName: String(line.itemName ?? lineId), reason: `kitchen voided ${kv} but cancelled kitchen tickets cover only ${allowed}` });
     }

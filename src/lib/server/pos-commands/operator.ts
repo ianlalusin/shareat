@@ -14,6 +14,13 @@ export const OPERATOR_HEADER = "x-pos-operator-session";
 /** Clock skew allowed on an offline command's recorded time. */
 export const OFFLINE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
+/** Firestore-assigned creation time of a doc snapshot (ms), or null if unknown. */
+export function sessionCreatedMs(snap: any): number | null {
+  const t = snap?.createTime;
+  const ms = typeof t?.toMillis === "function" ? t.toMillis() : null;
+  return typeof ms === "number" && Number.isFinite(ms) ? ms : null;
+}
+
 export type Operator = {
   uid: string; // authenticated Firebase account (audit integrity)
   username: string; // display name written as the cashier / actor
