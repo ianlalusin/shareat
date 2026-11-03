@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { AppVersionLabel } from "@/components/shared/AppVersionLabel";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -105,6 +106,7 @@ export default function LoginPage() {
               Sign up
             </Link>
           </div>
+          <AppVersionLabel className="mt-4 text-center text-xs text-muted-foreground" />
         </CardContent>
       </Card>
     </div>

@@ -20,6 +20,7 @@ import { linkWithGoogle, sendPasswordReset } from "@/lib/firebase/account-securi
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useStoreContext } from "@/context/store-context";
 import { auth } from "@/lib/firebase/client";
+import { AppVersionLabel } from "@/components/shared/AppVersionLabel";
 
 export default function AccountPage() {
     const { appUser, user, loading } = useAuthContext();
@@ -215,6 +216,7 @@ export default function AccountPage() {
                                 <span className="text-muted-foreground text-sm">Status</span>
                                     <Badge variant={appUser.status === 'active' ? 'default' : 'secondary'} className="capitalize">{appUser.status}</Badge>
                             </div>
+                            <AppVersionLabel className="text-right text-xs text-muted-foreground" />
                         </div>
                     </CardContent>
                 </Card>

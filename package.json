@@ -13,6 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report",
     "test:rules": "firebase emulators:exec --only firestore,storage --project demo-pos \"vitest run --config vitest.rules.config.ts\"",
     "migrate:addons": "ts-node scripts/migrate_addonSettings_to_storeAddons.ts",
     "backfill:dashPresets": "tsx scripts/backfill-dash-presets.ts",
@@ -90,6 +92,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
+    "@playwright/test": "^1.64.1",
     "@types/lodash": "^4.17.4",
     "@types/node": "^20",
     "@types/react": "18.3.3",

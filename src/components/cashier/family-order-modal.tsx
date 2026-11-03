@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { loadOptionGroups } from "@/lib/billing/option-groups-load";
 import Image from "next/image";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -246,7 +246,8 @@ function FamilyOrderContent({
   const familyImage = resolveFamilyImageUrl(group.items);
 
   return (
-    <div className="grid gap-4 p-4">
+    <>
+    <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4" data-testid="family-order-body">
       {/* Step 1: variant picker (locks on click) */}
       <div>
         <div className="text-sm font-semibold mb-2">1. Choose variant</div>
@@ -411,16 +412,31 @@ function FamilyOrderContent({
       {/* Step 4: special instructions */}
       <div className={cn("transition-opacity", !selectedVariant && "opacity-50 pointer-events-none")}>
         <div className="text-sm font-semibold mb-2">Special instructions <span className="font-normal text-muted-foreground">(optional)</span></div>
-        <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={140} placeholder="e.g. no onions, extra spicy, separate packing…" disabled={!selectedVariant} />
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onFocus={(e) => {
+            // The Android window shrinks when the keyboard opens (adjustResize);
+            // give it a moment, then keep the note box in view inside the body.
+            const el = e.currentTarget;
+            window.setTimeout(() => el.scrollIntoView({ block: "center" }), 250);
+          }}
+          rows={2}
+          maxLength={140}
+          placeholder="e.g. no onions, extra spicy, separate packing…"
+          disabled={!selectedVariant}
+        />
       </div>
-
-      <DialogFooter className="pt-2">
-        <Button variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button>
-        <Button onClick={handleAdd} disabled={!canAdd}>
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Item"}
-        </Button>
-      </DialogFooter>
     </div>
+
+    {/* Pinned footer: sits outside the scrolling body so the buttons stay on screen. */}
+    <div className="flex shrink-0 justify-end gap-2 border-t p-4" data-testid="family-order-footer">
+      <Button variant="outline" onClick={onCancel} disabled={submitting}>Cancel</Button>
+      <Button onClick={handleAdd} disabled={!canAdd}>
+        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Item"}
+      </Button>
+    </div>
+    </>
   );
 }
 
@@ -454,9 +470,11 @@ export function FamilyOrderModal({
 
   if (isMobile) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent>
-          <DrawerHeader className="text-left">
+      // repositionInputs={false}: the Android window itself shrinks (adjustResize),
+      // so vaul must not also move the drawer when an input is focused.
+      <Drawer open={open} onOpenChange={onOpenChange} repositionInputs={false}>
+        <DrawerContent className="flex flex-col overflow-hidden" data-testid="family-order-modal">
+          <DrawerHeader className="shrink-0 text-left">
             <DrawerTitle className="flex items-center gap-2"><Layers className="h-4 w-4" /> {group.title}</DrawerTitle>
             <DrawerDescription>Pick a variant and any modifiers before adding to the order.</DrawerDescription>
           </DrawerHeader>
@@ -468,8 +486,8 @@ export function FamilyOrderModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl max-h-[85dvh] overflow-y-auto p-0">
-        <DialogHeader className="p-4 pb-2">
+      <DialogContent className="flex flex-col overflow-hidden sm:max-w-xl max-h-[85dvh] p-0" data-testid="family-order-modal">
+        <DialogHeader className="shrink-0 p-4 pb-2">
           <DialogTitle className="flex items-center gap-2"><Layers className="h-4 w-4" /> {group.title}</DialogTitle>
           <DialogDescription>Pick a variant and any modifiers before adding to the order.</DialogDescription>
         </DialogHeader>

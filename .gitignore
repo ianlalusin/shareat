@@ -57,3 +57,8 @@ firebase-debug.log
 
 # local auth-purge backups (written by scripts/purge-customer-auth-users.ts --write)
 .purge-backups/
+
+# Playwright (keyboard-layout test): signed-in state, reports, traces
+e2e/.auth/
+playwright-report/
+test-results/
