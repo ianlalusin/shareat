@@ -339,8 +339,14 @@ service cloud.firestore {
       allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged()
         && !(request.resource.data.get('status', '') in ['closed', 'voided'])
         && request.resource.data.get('isPaid', false) != true;
+      // Bill-level discounts / custom adjustments are a cashier+ decision (audit
+      // P1 follow-up); server / kitchen accounts keep every other session write.
+      function billDiscountsUnchangedOrPricingRole() {
+        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier')
+          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['billDiscount', 'customAdjustments']);
+      }
       allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk()
-        && settlementFieldsUnchanged();
+        && settlementFieldsUnchanged() && billDiscountsUnchangedOrPricingRole();
       allow delete: if hasStoreAccess(storeId);
     }
     // Every doc under a session (billLines, payments, kitchentickets, ...).
@@ -349,10 +355,46 @@ service cloud.firestore {
     // deletes it (writeActivityLog only creates).
     // payments (tender rows) are written only by the server checkout command
     // since audit P1.
+    //
+    // sessionBillLines (audit P1 follow-up, B01 "kitchen/server clients can
+    // alter prices"): only cashier / manager / admin accounts may set a price,
+    // a modifier total, a price override, a discount or a free quantity on a
+    // line. Server and kitchen accounts add lines (the checkout command then
+    // proves the price against the store's price list), add quantity, and void
+    // through the kitchen cancel flow; they may not lower an add-on line's
+    // quantity. A priceOverride is only ever written in the writer's own uid,
+    // which is what the checkout command trusts. DEPLOY WITH THE P1 FINAL RULES.
     match /stores/{storeId}/sessions/{sessionId}/{subcoll}/{subPath=**} {
-      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments';
-      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']);
-      allow delete: if hasStoreAccess(storeId) && !(subcoll in ['activityLogs', 'payments']);
+      function canSetPrices() {
+        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier');
+      }
+      function ownOverride() {
+        return !('priceOverride' in request.resource.data)
+          || (resource != null && request.resource.data.priceOverride == resource.data.get('priceOverride', null))
+          || request.resource.data.priceOverride.byUid == request.auth.uid;
+      }
+      function lineCreateOk() {
+        return subcoll != 'sessionBillLines' || ownOverride() && (canSetPrices() || (
+          !('priceOverride' in request.resource.data)
+          && request.resource.data.get('lineAdjustments', {}).size() == 0
+          && request.resource.data.get('freeQty', 0) == 0
+          && request.resource.data.get('discountValue', 0) == 0
+          && request.resource.data.get('discountQty', 0) == 0
+        ));
+      }
+      function lineUpdateOk() {
+        return subcoll != 'sessionBillLines' || ownOverride() && (canSetPrices() || (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'unitPrice', 'modifiersTotal', 'priceOverride', 'lineAdjustments', 'freeQty',
+            'discountType', 'discountValue', 'discountQty', 'discountId', 'itemId', 'type'])
+          && (resource.data.get('type', '') == 'package'
+              || request.resource.data.get('qtyOrdered', 0) >= resource.data.get('qtyOrdered', 0))
+        ));
+      }
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments' && lineCreateOk();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']) && lineUpdateOk();
+      allow delete: if hasStoreAccess(storeId) && !(subcoll in ['activityLogs', 'payments'])
+        && (subcoll != 'sessionBillLines' || canSetPrices());
     }
 
     match /stores/{storeId}/closedSessions/{docPath=**} {
