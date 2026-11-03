@@ -103,21 +103,27 @@ function offlineSaleBatch(f: Firestore, opts: { revision: number; writeId: strin
   return b;
 }
 
-describe("B16 offline sale compare-and-swap", () => {
-  it("accepts an offline sale on a still-open session (revision +1)", async () => {
+// Audit P1 final (2026-11-03): the pre-P1 client checkout / offline batches
+// below are what an OLD APK still sends. After the P1 rules they must all be
+// refused — settlement is a server command (/api/pos/commands/*). The B16
+// compare-and-swap guards above them are therefore belt-and-braces now.
+describe("B16 legacy offline sale batches are refused (P1: server reconcile only)", () => {
+  it("refuses an offline sale batch even on a still-open session", async () => {
     await seed(["stores", A, "activeSessions", "s1"], { status: "active" });
     const f = db("cashier");
     const b = offlineSaleBatch(f, { revision: 2, writeId: "w1", receiptNumber: "OL-A-1" });
     b.delete(doc(f, "stores", A, "activeSessions", "s1"));
-    await assertSucceeds(b.commit());
+    await assertFails(b.commit());
+    expect((await readRaw(["stores", A, "sessions", "s1"])).status).toBe("active");
+    expect(await readRaw(["stores", A, "receipts", "s1"])).toBeNull();
   });
 
-  it("accepts an offline sale on a legacy session with no revision field", async () => {
+  it("refuses it on a legacy session with no revision field", async () => {
     await seed(["stores", A, "sessions", "s1"], { status: "active", tableId: "t1" });
-    await assertSucceeds(offlineSaleBatch(db("cashier"), { revision: 2, writeId: "w1", receiptNumber: "OL-A-1" }).commit());
+    await assertFails(offlineSaleBatch(db("cashier"), { revision: 2, writeId: "w1", receiptNumber: "OL-A-1" }).commit());
   });
 
-  it("rejects the WHOLE stale batch when the session was settled online — online receipt and table survive", async () => {
+  it("a stale batch after an online settlement leaves the online receipt and table untouched", async () => {
     await seed(["stores", A, "sessions", "s1"], { status: "closed", isPaid: true, tableId: "t1", revision: 1 });
     await seed(["stores", A, "receipts", "s1"], { status: "final", receiptNumber: "SELIP-000006", total: 100 });
     await seed(["stores", A, "tables", "t1"], { status: "occupied", currentSessionId: "s2" });
@@ -126,56 +132,52 @@ describe("B16 offline sale compare-and-swap", () => {
     expect((await readRaw(["stores", A, "tables", "t1"])).currentSessionId).toBe("s2");
   });
 
-  it("rejects a second terminal's offline sale of the same session", async () => {
-    await assertSucceeds(offlineSaleBatch(db("cashier"), { revision: 2, writeId: "w1", receiptNumber: "OL-A-1" }).commit());
-    await assertFails(offlineSaleBatch(db("manager"), { revision: 2, writeId: "w2", receiptNumber: "OL-B-1" }).commit());
-    expect((await readRaw(["stores", A, "receipts", "s1"])).receiptNumber).toBe("OL-A-1");
+  it("refuses session close / void / revision stamps from any client", async () => {
+    for (const patch of [
+      { status: "closed", revision: 2, offlineWriteId: "w1" },
+      { status: "closed", revision: 3, offlineWriteId: "w1" },
+      { status: "voided" },
+      { isPaid: true },
+      { revision: 2 },
+    ]) {
+      await assertFails(updateDoc(doc(db("manager"), "stores", A, "sessions", "s1"), patch));
+    }
+    await seed(["stores", A, "sessions", "s1"], { status: "closed", isPaid: true, revision: 2 });
+    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "sessions", "s1"), { status: "active", isPaid: false }));
+    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "sessions", "s1"), { status: "voided", revision: 3, offlineWriteId: "w9", offlineOrigin: true }));
   });
 
-  it("rejects a revision that skips ahead", async () => {
-    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "sessions", "s1"), {
-      status: "closed", revision: 3, offlineWriteId: "w1",
-    }));
-  });
-
-  it("rejects an offline void of a session already paid", async () => {
-    await seed(["stores", A, "sessions", "s1"], { status: "closed", isPaid: true, revision: 1 });
-    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "sessions", "s1"), {
-      status: "voided", revision: 2, offlineWriteId: "w9", offlineOrigin: true,
-    }));
-  });
-
-  it("rejects an offline release of a table re-seated by another session", async () => {
+  it("refuses clearing a seated table from a client (any role); reseating stays allowed", async () => {
     await seed(["stores", A, "tables", "t1"], { status: "occupied", currentSessionId: "s2" });
     await assertFails(updateDoc(doc(db("cashier"), "stores", A, "tables", "t1"), {
       currentSessionId: null, closedSessionId: "s1", releasedByWriteId: "w1",
     }));
-    await seed(["stores", A, "storeConfig", "current", "tables", "t1"], { currentSessionId: "s2" });
+    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "tables", "t1"), { status: "available" }));
+    await assertFails(setDoc(doc(db("manager"), "stores", A, "tables", "t1"), { status: "available", name: "T1" }));
     await assertFails(updateDoc(doc(db("cashier"), "stores", A, "storeConfig", "current", "tables", "t1"), {
-      currentSessionId: null, closedSessionId: "s1", releasedByWriteId: "w1",
+      status: "available", currentSessionId: null,
     }));
-  });
-
-  it("does not block later ordinary table writes after an offline release (incl. full overwrite)", async () => {
-    await assertSucceeds(offlineSaleBatch(db("cashier"), { revision: 2, writeId: "w1", receiptNumber: "OL-A-1" }).commit());
-    await assertSucceeds(updateDoc(doc(db("cashier"), "stores", A, "tables", "t1"), { status: "occupied", currentSessionId: "s2" }));
-    await assertSucceeds(setDoc(doc(db("manager"), "stores", A, "tables", "t1"), { status: "available", name: "T1" }));
+    // seating a new session on top (offline re-seat of a pending-settlement table)
+    await assertSucceeds(updateDoc(doc(db("cashier"), "stores", A, "tables", "t1"), { status: "occupied", currentSessionId: "s3" }));
+    await assertSucceeds(updateDoc(doc(db("manager"), "stores", A, "tables", "t1"), { displayName: "Table 1", isActive: true }));
+    // seating a free table
+    await seed(["stores", A, "tables", "t9"], { status: "available", currentSessionId: null });
+    await assertSucceeds(updateDoc(doc(db("cashier"), "stores", A, "tables", "t9"), { status: "occupied", currentSessionId: "s4" }));
     await assertSucceeds(deleteDoc(doc(db("manager"), "stores", A, "tables", "t1")));
   });
 
-  it("rejects an offline receipt overwriting an online one, or another offline number", async () => {
+  it("refuses offline receipt creates/overwrites; only the print audit stays a client write", async () => {
     await seed(["stores", A, "receipts", "r1"], { status: "final", receiptNumber: "SELIP-1" });
     await assertFails(setDoc(doc(db("cashier"), "stores", A, "receipts", "r1"), { status: "final", offlineOrigin: true, receiptNumber: "OL-A-1" }));
-    await seed(["stores", A, "receipts", "r2"], { status: "final", offlineOrigin: true, receiptNumber: "OL-A-1" });
-    await assertFails(setDoc(doc(db("cashier"), "stores", A, "receipts", "r2"), { status: "final", offlineOrigin: true, receiptNumber: "OL-B-1" }));
-    await assertSucceeds(setDoc(doc(db("cashier"), "stores", A, "receipts", "r2"), { status: "final", offlineOrigin: true, receiptNumber: "OL-A-1" }));
-    // later edits/print stamps of an offline receipt keep working
-    await assertSucceeds(updateDoc(doc(db("cashier"), "stores", A, "receipts", "r2"), { printCount: 1, isEdited: true }));
+    await assertFails(setDoc(doc(db("cashier"), "stores", A, "receipts", "r2"), { status: "final", offlineOrigin: true, receiptNumber: "OL-A-1" }));
+    await assertSucceeds(updateDoc(doc(db("cashier"), "stores", A, "receipts", "r1"), { printedCount: 1, lastPrintedByUid: "u_cashier" }));
+    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "receipts", "r1"), { printedCount: 5 }));
+    await assertFails(updateDoc(doc(db("cashier"), "stores", A, "receipts", "r1"), { printedCount: 2, isEdited: true }));
   });
 });
 
-describe("online checkout / void paths still pass (no CAS fields written)", () => {
-  it("allows the completePaymentFromUnits write set", async () => {
+describe("pre-P1 online checkout / void write sets are refused (old APKs)", () => {
+  it("refuses the old completePaymentFromUnits write set and each piece of it", async () => {
     const f = db("cashier");
     const b = writeBatch(f);
     b.set(doc(f, "stores", A, "sessions", "s1", "payments", "p1"), { methodId: "cash", amount: 100 });
@@ -185,33 +187,30 @@ describe("online checkout / void paths still pass (no CAS fields written)", () =
     b.set(doc(f, "stores", A, "counters", "receipts"), { seq: 6 }, { merge: true });
     b.set(doc(f, "stores", A, "receipts", "s1"), { status: "final", receiptNumber: "SELIP-000006", total: 100, analyticsApplied: false });
     b.update(doc(f, "stores", A, "tables", "t1"), { status: "available", currentSessionId: null });
-    b.update(doc(f, "stores", A, "storeConfig", "current", "tables", "t1"), { status: "available", currentSessionId: null });
-    await assertSucceeds(b.commit());
-    // analytics flag + print stamp afterwards
-    await assertSucceeds(updateDoc(doc(f, "stores", A, "receipts", "s1"), { analyticsApplied: true }));
-    // receipt void (status flip) + refund receipt + edit revision
-    await assertSucceeds(updateDoc(doc(f, "stores", A, "receipts", "s1"), { status: "voided", voidReason: "x" }));
-    await assertSucceeds(setDoc(doc(f, "stores", A, "receipts", "s1_refund_1"), { status: "final", isRefund: true }));
-    await assertSucceeds(setDoc(doc(f, "stores", A, "receipts", "s1", "revisions", "v1"), { version: 1 }));
-    // a later ordinary update to the closed session
-    await assertSucceeds(updateDoc(doc(f, "stores", A, "sessions", "s1"), { note: "after close" }));
+    await assertFails(b.commit());
+    await assertFails(setDoc(doc(f, "stores", A, "sessions", "s1", "payments", "p1"), { methodId: "cash", amount: 100 }));
+    await assertFails(setDoc(doc(f, "stores", A, "counters", "receipts"), { seq: 6 }, { merge: true }));
+    await assertFails(setDoc(doc(f, "stores", A, "receipts", "s1_refund_1"), { status: "final", isRefund: true }));
+    await assertFails(setDoc(doc(f, "stores", A, "receipts", "s1", "revisions", "v1"), { version: 1 }));
+    // ordinary session updates keep working
+    await assertSucceeds(updateDoc(doc(f, "stores", A, "sessions", "s1"), { note: "still open" }));
   });
 
-  it("allows the online voidSession write set", async () => {
+  it("refuses the old voidSession write set", async () => {
     const f = db("cashier");
     const b = writeBatch(f);
     b.update(doc(f, "stores", A, "sessions", "s1"), { status: "voided", voidReason: "test" });
     b.set(doc(f, "stores", A, "closedSessions", "s1"), { status: "voided" });
     b.delete(doc(f, "stores", A, "activeSessions", "s1"));
     b.update(doc(f, "stores", A, "tables", "t1"), { status: "available", currentSessionId: null });
-    await assertSucceeds(b.commit());
+    await assertFails(b.commit());
   });
 
-  it("allows creating the receipt counter when it does not exist yet", async () => {
+  it("refuses creating the receipt counter", async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await deleteDoc(doc(ctx.firestore() as any, "stores", A, "counters", "receipts"));
     });
-    await assertSucceeds(setDoc(doc(db("cashier"), "stores", A, "counters", "receipts"), { seq: 1 }, { merge: true }));
+    await assertFails(setDoc(doc(db("cashier"), "stores", A, "counters", "receipts"), { seq: 1 }, { merge: true }));
   });
 });
 

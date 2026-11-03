@@ -52,6 +52,7 @@ import { stripUndefined } from '@/lib/firebase/utils';
 import { printKitchenTicketBackup } from '@/lib/printing/kitchenBackupPrint';
 import { makeKitchenBackupDeps } from '@/lib/printing/kitchenBackupDeps';
 import { roundMoney } from '@/lib/money';
+import { postPosCommand } from '@/lib/pos-commands/client';
 import { computeSessionLabel } from '@/lib/utils/session';
 import { writeActivityLog } from '@/components/cashier/activity-log';
 import { commitLocalFirst } from '@/lib/offline/commit';
@@ -419,8 +420,11 @@ export async function startSession(storeId: string, payload: StartSessionPayload
 
 
 /**
- * Completes a payment and closes the dining session idempotently using individual billing units.
- * Uses a Firestore transaction to ensure atomicity.
+ * Completes a payment and closes the dining session through the authoritative
+ * server command (audit P1: B01/B03). The server re-reads the bill, recomputes
+ * the total, verifies + consumes gateway tenders, numbers the receipt and runs
+ * the deferred effects (analytics, KDS, PIN, loyalty) from its outbox. The
+ * client only proposes tenders; `opId` makes a retry return the same receipt.
  */
 export async function completePaymentFromUnits(
   storeId: string,
@@ -429,471 +433,51 @@ export async function completePaymentFromUnits(
   payments: CheckoutPayment[],
   store: Store,
   paymentMethods: ModeOfPayment[],
-  expectedTotal?: number
+  expectedTotal?: number,
+  opId: string = uuidv4(),
 ) {
-  // Audit B03: reject bad amounts and unlinked/duplicate gateway tenders up
-  // front; each gateway tender is then proven against its bridge doc (or the
-  // reservation deposit) inside the transaction below.
-  const gatewayChecks = planGatewayChecks(payments, paymentMethods);
-  let finalReceipt: Receipt | null = null;
-  let receiptId = '';
-  let sessionContextForLog: any = null;
-  let finalReceiptNumber: string | null = null;
-
+  // Fast local rejection of bad amounts / unlinked gateway rows; the server
+  // repeats every check authoritatively.
+  planGatewayChecks(payments, paymentMethods);
   const billingState = await getCurrentSessionBillingState(storeId, sessionId);
   const { billLines, billDiscount, customAdjustments, loyaltyRedemptions } = billingState;
   const loyaltyDiscountInput = (loyaltyRedemptions || []).map((r) => ({ type: r.type, value: r.value }));
-  const finalTotals = calculateBillTotals(billLines, store, billDiscount, customAdjustments, loyaltyDiscountInput);
-  const amountDue = finalTotals.grandTotal;
+  const amountDue = calculateBillTotals(billLines, store, billDiscount, customAdjustments, loyaltyDiscountInput).grandTotal;
   if (typeof expectedTotal === "number" && Math.abs(Math.round(expectedTotal * 100) - Math.round(amountDue * 100)) > 1) {
     throw new Error(
       `Bill changed before payment could be finalized. Review the bill and collect ₱${amountDue.toFixed(2)}.`
     );
   }
-  const now = Date.now();
 
-  const kdsDeltas: { old: any; new: any }[] = [];
-  const rtKdsUpdates: { stationId: string; ticketId: string; ticketState: any }[] = [];
+  const out = await postPosCommand<{ receiptId: string; receiptNumber: string; totalCents: number; replay: boolean }>(
+    "checkout",
+    storeId,
+    {
+      sessionId,
+      opId,
+      billingRevision: billingState.billingRevision,
+      expectedTotalCents: Math.round(amountDue * 100),
+      payments: payments.map((p) => stripUndefined({
+        methodId: p.methodId,
+        amount: Math.round(Number(p.amount) * 100) / 100,
+        reference: p.reference ?? null,
+        intentDocId: p.intentDocId ?? null,
+        fromReservationPaymentId: p.fromReservationPaymentId ?? null,
+      })),
+    },
+  );
 
-  // Query active tickets BEFORE the transaction (getDocs not supported inside tx)
-  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-  const activeTicketsSnap = await getDocs(activeTicketsQuery);
-
-  await runTransaction(db, async (tx: Transaction) => {
-    // --- READ PHASE ---
-    const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
-    const settingsRef = doc(db, `stores/${storeId}/receiptSettings`, 'main');
-    const counterRef = doc(db, `stores/${storeId}/counters`, 'receipts');
-    const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-    const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
-    
-    const [
-      sessionSnap, receiptSnap, settingsSnap, counterSnap, activeProjectionSnap
-    ] = await Promise.all([
-      tx.get(sessionRef),
-      tx.get(receiptRef),
-      tx.get(settingsRef),
-      tx.get(counterRef),
-      tx.get(activeProjectionRef),
-    ]);
-    
-
-    const sessionData = sessionSnap.data();
-    if (!sessionData) throw new Error(`Session ${sessionId} does not exist.`);
-
-    const currentBillingRevision = Number((sessionData as any).billingRevision ?? 0);
-    if (currentBillingRevision !== billingState.billingRevision) {
-      throw new Error("Bill changed during payment. Review the bill and try again.");
-    }
-
-    sessionContextForLog = {
-      sessionStatus: 'closed',
-      sessionStartedAt: sessionData.startedAt,
-      sessionMode: sessionData.sessionMode,
-      customerName: sessionData.customer?.name ?? sessionData.customerName,
-      tableNumber: sessionData.tableNumber,
-      tableDisplayName: sessionData.tableDisplayName ?? null,
-    };
-
-    if (receiptSnap.exists() && receiptSnap.data()?.analyticsApplied) {
-      console.warn(`Payment completion skipped: Analytics for session ${sessionId} already applied.`);
-      receiptId = receiptRef.id;
-      return;
-    }
-    if (sessionData.status === 'closed' || sessionData.isPaid === true) {
-      console.warn(`Payment completion skipped: Session ${sessionId} is already closed.`);
-      receiptId = receiptSnap.exists() ? receiptSnap.id : '';
-      return;
-    }
-
-    let tableRef: DocumentReference<DocumentData> | null = null;
-    let tableSnap: DocumentSnapshot<DocumentData> | null = null;
-
-    if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
-      tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
-      tableSnap = await tx.get(tableRef);
-    }
-
-    // Audit B03: every gateway tender must be backed by a server-written,
-    // webhook-confirmed bridge doc for THIS session and amount (clients cannot
-    // write paymentIntents), or by this session's reservation deposit.
-    for (const check of gatewayChecks) {
-      let problem: string | null;
-      if (check.kind === "bridge") {
-        const bridgeSnap = await tx.get(doc(db, `stores/${storeId}/paymentIntents`, check.intentDocId));
-        problem = verifyBridgeTender(check, bridgeSnap.exists() ? bridgeSnap.data() : null, { storeId, sessionId });
-      } else {
-        const reservationId = (sessionData as any).reservationId;
-        const resSnap = reservationId ? await tx.get(doc(db, `stores/${storeId}/reservations`, String(reservationId))) : null;
-        problem = verifyReservationTender(check, resSnap?.exists() ? resSnap.data() : null, { sessionId });
-      }
-      if (problem) throw new Error(problem);
-    }
-
-    const totalPaidCents = payments.reduce((s, p) => s + Math.round(Number(p.amount || 0) * 100), 0);
-    const amountDueCents = Math.round(Number(amountDue || 0) * 100);
-
-    if (totalPaidCents < amountDueCents - 1) { // Allow 1c rounding difference
-      throw new Error(
-        `Cannot complete payment: balance is not zero. Paid: ₱${(totalPaidCents / 100).toFixed(
-          2
-        )}, Due: ₱${(amountDueCents / 100).toFixed(2)}`
-      );
-    }
-
-    const actor = getActorStamp(user);
-    const serverTs = serverTimestamp();
-
-    // Mark remaining active tickets as served
-    for (const ticketDoc of activeTicketsSnap.docs) {
-      const ticketRef = ticketDoc.ref;
-      const oldTicketState = ticketDoc.data() as KitchenTicket;
-      
-      if (oldTicketState.status === 'served' || oldTicketState.status === 'cancelled') {
-          continue;
-      }
-      
-      const startMs = toJsDate(oldTicketState.createdAtClientMs ?? oldTicketState.createdAt)?.getTime();
-      const durationMs = startMs ? Math.max(0, now - startMs) : 0;
-      
-      // Same quantity bookkeeping the KDS "Served" button writes. Without it
-      // this sweep leaves `qtyServed` unset, which logs zero serves to KDS
-      // analytics and used to read as "cancelled" in the customer app.
-      const updatePayload: any = {
-          status: 'served',
-          servedAt: serverTs,
-          servedAtClientMs: now,
-          servedByUid: actor.uid,
-          durationMs: durationMs,
-          updatedAt: serverTs,
-          ...servedQtyFields(oldTicketState),
-      };
-
-      const newTicketState: KitchenTicket = { ...oldTicketState, ...updatePayload };
-      
-      kdsDeltas.push({ old: oldTicketState, new: newTicketState });
-      tx.update(ticketRef, updatePayload);
-      
-      const { kitchenLocationId } = oldTicketState;
-      if (kitchenLocationId) {
-          rtKdsUpdates.push({ stationId: kitchenLocationId, ticketId: ticketRef.id, ticketState: newTicketState });
-      }
-    }
-    
-    // write payments subcollection
-    const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, 'payments');
-    payments.forEach((payment) => {
-      const paymentRef = doc(paymentsCol);
-      tx.set(paymentRef, {
-        ...payment,
-        id: paymentRef.id,
-        createdByUid: actor.uid,
-        createdByUsername: actor.username,
-        createdAt: serverTs,
-      });
-    });
-
-    // close session
-    tx.update(sessionRef, {
-      status: 'closed',
-      isPaid: true,
-      closedByUid: actor.uid,
-      closedByUsername: actor.username,
-      closedAt: serverTs,
-      closedAtClientMs: now,
-      updatedAt: serverTs,
-    });
-    
-    // Move session projection
-    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
-    if (activeProjectionSnap.exists()) {
-      const projectionData = activeProjectionSnap.data();
-      tx.set(closedProjectionRef, {
-        ...projectionData,
-        status: 'closed',
-        customerAccessEnabled: false,
-        updatedAt: serverTimestamp(),
-        closedAt: serverTimestamp(),
-        closedAtClientMs: now,
-      });
-      tx.delete(activeProjectionRef);
-    } else {
-        tx.set(closedProjectionRef, {
-            ...sessionData,
-            status: 'closed',
-            customerAccessEnabled: false,
-            updatedAt: serverTimestamp(),
-            closedAt: serverTimestamp(),
-            closedAtClientMs: now,
-        })
-    }
-
-    // receipt numbering
-    const receiptNoFormat = settingsSnap.exists()
-      ? settingsSnap.data()?.receiptNoFormat ?? 'SELIP-######'
-      : 'SELIP-######';
-
-    const currentSeq = counterSnap.exists() ? Number(counterSnap.data()?.seq ?? 0) : 0;
-    const nextSeq = currentSeq + 1;
-
-    tx.set(counterRef, { seq: nextSeq, updatedAt: serverTs }, { merge: true });
-
-    const receiptNumber = formatReceiptNumber(receiptNoFormat, nextSeq);
-    finalReceiptNumber = receiptNumber;
-
-    const mopCentsMap: Record<string, number> = {};
-    for (const payment of payments) {
-        const method = paymentMethods.find((m) => m.id === payment.methodId);
-        const key = method?.name || payment.methodId || "unknown";
-        mopCentsMap[key] = (mopCentsMap[key] || 0) + Math.round(Number(payment.amount || 0) * 100);
-    }
-    const changeCents = Math.max(0, totalPaidCents - amountDueCents);
-    if (changeCents > 1) { // >1 to ignore 1-cent rounding artifacts
-        const cashMethod =
-          paymentMethods.find((pm: any) => String(pm.type || "").toLowerCase() === "cash") ||
-          paymentMethods.find((pm: any) => String(pm.name || "").toLowerCase().includes("cash"));
-        let cashKey = cashMethod?.name;
-        if (!cashKey) cashKey = Object.keys(mopCentsMap).find((k) => k.toLowerCase().includes("cash"));
-        if (!cashKey || mopCentsMap[cashKey] == null) {
-          throw new Error("Change exists but no Cash payment was included. Add Cash payment.");
-        }
-        if (mopCentsMap[cashKey] < changeCents) {
-            throw new Error(`Invalid payment: change (₱${(changeCents / 100).toFixed(2)}) exceeds cash paid (₱${(mopCentsMap[cashKey] / 100).toFixed(2)}).`);
-        }
-        mopCentsMap[cashKey] -= changeCents;
-    }
-    const mopMap: Record<string, number> = {};
-    for (const [key, cents] of Object.entries(mopCentsMap)) {
-        mopMap[key] = cents / 100;
-    }
-    
-    const totalPaid = totalPaidCents / 100;
-    const change = changeCents / 100;
-
-    const receiptPayload: Omit<Receipt, 'createdAt'> = stripUndefined({
-      id: sessionId, storeId, sessionId, createdByUid: actor.uid, createdByUsername: actor.username,
-      sessionMode: sessionData.sessionMode,
-      tableId: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableId ?? null,
-      tableNumber: sessionData.sessionMode === 'alacarte' ? null : sessionData.tableNumber ?? null,
-      customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
-      total: amountDue, totalPaid, change, status: 'final',
-      receiptSeq: nextSeq, receiptNumber, receiptNoFormatUsed: receiptNoFormat,
-      createdAtClientMs: Date.now(), lines: billLines, billDiscount: billDiscount ?? null, customAdjustments: customAdjustments ?? [], receiptId: sessionId,
-      loyaltyRedemptions: loyaltyRedemptions ?? [],
-    } as Omit<Receipt, 'createdAt'>);
-
-    const salesAnalytics = billLines.reduce(
-        (acc, line) => {
-            if (line.type !== 'package' && line.type !== 'addon') return acc;
-            const netQty = Math.max(0, line.qtyOrdered - (line.freeQty || 0) - (line.voidedQty || 0));
-            if (netQty <= 0) return acc;
-            const grossAmount = netQty * line.unitPrice;
-            const discountBaseUnit = store.taxType === 'VAT_INCLUSIVE' && store.taxRatePct && store.taxRatePct > 0 ? line.unitPrice / (1 + store.taxRatePct / 100) : line.unitPrice;
-            const adjs = Object.values((line as any).lineAdjustments ?? {}) as LineAdjustment[];
-            const discountAdjs = adjs.filter(a => a.kind === "discount").sort((a, b) => (a.createdAtClientMs || 0) - (b.createdAtClientMs || 0));
-            let discountAmount = 0;
-            if (discountAdjs.length > 0) {
-              let remaining = netQty;
-              for (const a of discountAdjs) {
-                const q = Math.min(Number(a.qty || 0), remaining);
-                if (q <= 0) continue;
-                if (a.type === "percent") discountAmount += q * discountBaseUnit * ((Number(a.value || 0)) / 100);
-                else discountAmount += Math.min(discountBaseUnit, Number(a.value || 0)) * q;
-                remaining -= q;
-                if (remaining <= 0) break;
-              }
-            } else {
-              const discountQty = Math.min(line.discountQty || 0, netQty);
-              if (discountQty > 0) {
-                if (line.discountType === 'percent') discountAmount = discountQty * discountBaseUnit * ((line.discountValue || 0) / 100);
-                else discountAmount = Math.min(discountBaseUnit, line.discountValue ?? 0) * discountQty;
-              }
-            }
-            const netAmount = roundMoney(grossAmount - discountAmount);
-            const categoryName = (line as any).category || 'Uncategorized';
-            acc.salesByItem ??= {}; acc.salesByCategory ??= {};
-            if (!acc.salesByItem[line.itemName]) acc.salesByItem[line.itemName] = { qty: 0, amount: 0, categoryName };
-            acc.salesByItem[line.itemName].qty += netQty; acc.salesByItem[line.itemName].amount += netAmount;
-            if (!acc.salesByCategory[categoryName]) acc.salesByCategory[categoryName] = { qty: 0, amount: 0 };
-            acc.salesByCategory[categoryName].qty += netQty; acc.salesByCategory[categoryName].amount += netAmount;
-            return acc;
-        },
-        {} as { salesByItem?: ReceiptAnalyticsV2['salesByItem']; salesByCategory?: ReceiptAnalyticsV2['salesByCategory']; }
-    );
-    let guestCountSnapshot: ReceiptAnalyticsV2['guestCountSnapshot'] | undefined = undefined;
-    if (sessionData.sessionMode === 'package_dinein') {
-      const cashierInitial = sessionData.guestCountCashierInitial ?? 0;
-      const serverVerified = sessionData.guestCountServerVerified ?? 0;
-      const finalGuestCount = sessionData.guestCountFinal ?? Math.max(cashierInitial, serverVerified);
-      const pkgLine = billLines.find((l) => l.type === 'package');
-      const billableUnits = Math.max(0, (pkgLine?.qtyOrdered ?? 0) - (pkgLine?.voidedQty ?? 0) - (pkgLine?.freeQty ?? 0));
-      const isBundle = !!sessionData.packageSnapshot?.isBundle;
-      // Bundles bill flat units, not per-cover. Treat headcount as fully covered
-      // so the package-count check shows no false discrepancy.
-      const billedPackageCovers = isBundle ? finalGuestCount : billableUnits;
-      const discrepancy = billedPackageCovers - finalGuestCount;
-      const packageOfferingId = sessionData.packageOfferingId ?? null;
-      const packageName = sessionData.packageSnapshot?.name ?? pkgLine?.itemName ?? null;
-      guestCountSnapshot = { packageOfferingId, packageName, finalGuestCount, billedPackageCovers, discrepancy, computedAtClientMs: Date.now(), rule: 'MAX', ...(isBundle ? { isBundle: true, billedUnits: billableUnits } : {}) };
-    }
-
-    const analyticsV2: ReceiptAnalyticsV2 = {
-      v: 2,
-      sessionStartedAt: sessionData.startedAt ?? sessionData.createdAt ?? null, sessionStartedAtClientMs: sessionData.startedAtClientMs ?? null,
-      sessionStartedAtHour: (new Date(sessionData.startedAtClientMs ?? Date.now())).getHours(),
-      subtotal: finalTotals.subtotal, discountsTotal: finalTotals.totalDiscounts, chargesTotal: finalTotals.chargesTotal,
-      taxAmount: finalTotals.taxTotal, vatableSales: finalTotals.vatableSales, vatExemptSales: finalTotals.vatExemptSales,
-      grandTotal: finalTotals.grandTotal, totalPaid, change, mop: mopMap,
-      salesByItem: salesAnalytics.salesByItem, salesByCategory: salesAnalytics.salesByCategory,
-      servedRefillsByName: sessionData.servedRefillsByName || {},
-      serveCountByType: sessionData.serveCountByType || {},
-      serveTimeMsTotalByType: sessionData.serveTimeMsTotalByType || {},
-      guestCountSnapshot,
-    };
-    
-    finalReceipt = { ...receiptPayload, analytics: analyticsV2, createdAt: serverTs, analyticsApplied: false, analyticsApplyId: uuidv4() } as Receipt;
-    
-    // analytics applied separately below to avoid hitting 500-transform limit
-    tx.set(receiptRef, finalReceipt);
-    receiptId = receiptRef.id;
-
-    if (tableSnap && tableRef && tableSnap.exists()) {
-      const t = tableSnap.data() as any;
-      if (t.currentSessionId === sessionId) {
-        tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTs });
-        
-        const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-        tx.update(tableProjectionRef, {
-          status: 'available',
-          currentSessionId: null,
-          customerName: null,
-          packageLabel: null,
-          sessionType: null,
-          guestCount: null,
-          itemCount: null,
-          startedAtMs: null,
-          updatedAt: serverTimestamp(),
-        });
-      }
-    }
-  });
-
-  if (rtKdsUpdates.length > 0) {
-    try {
-      const { writeBatch: wb0, deleteField: df, arrayRemove: ar } = await import("firebase/firestore");
-      const rtKdsBatch = wb0(db);
-      const byStation = new Map<string, { ticketIds: string[]; states: any[] }>();
-      for (const u of rtKdsUpdates) {
-        if (!byStation.has(u.stationId)) byStation.set(u.stationId, { ticketIds: [], states: [] });
-        byStation.get(u.stationId)!.ticketIds.push(u.ticketId);
-        byStation.get(u.stationId)!.states.push({ id: u.ticketId, state: u.ticketState });
-      }
-      for (const [stationId, { ticketIds, states }] of byStation.entries()) {
-        const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-        const mergedUpdate: Record<string, any> = {
-          activeIds: ar(...ticketIds),
-          [`sessionIndex.${sessionId}`]: df(), // delete empty array key
-          "meta.updatedAt": serverTimestamp(),
-        };
-        for (const tid of ticketIds) mergedUpdate[`tickets.${tid}`] = df();
-        rtKdsBatch.update(rtKdsDocRef, mergedUpdate);
-        for (const { id, state } of states) {
-          const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", stationId, "closedKdsTickets", id);
-          rtKdsBatch.set(closedTicketRef, state);
-        }
-      }
-      await rtKdsBatch.commit();
-    } catch (kdsErr) {
-      console.error("[KDS] Failed to update rtKdsTickets for session", sessionId, kdsErr);
-    }
-  }
-
-  if (kdsDeltas.length > 0) {
-    // Server-first KDS analytics (marker-based, idempotent). Fallback also writes
-    // the ticket markers so a later server call doesn't double-count.
-    const ticketIds = kdsDeltas.map((d) => String(d.new.id)).filter(Boolean);
-    await applyKdsDeltaServerFirst(storeId, sessionId, ticketIds, undefined, async () => {
-      const { writeBatch: wb2 } = await import("firebase/firestore");
-      const kdsBatch = wb2(db);
-      for (const d of kdsDeltas) {
-        await applyKdsTicketDelta(db, storeId, d.old, d.new, { batch: kdsBatch });
-        const tg = computeKdsTargets(d.new);
-        kdsBatch.update(doc(db, "stores", storeId, "sessions", sessionId, "kitchentickets", d.new.id), {
-          analyticsServedQty: tg.servedQty, analyticsCancelledQty: tg.cancelledQty,
-          analyticsDurationMs: tg.durationMs, analyticsDurationCount: tg.durationCount,
-        });
-      }
-      await kdsBatch.commit();
-    });
-  }
-
-  if (finalReceipt && receiptId) {
-    // Prefer the server endpoint (authoritative, server clock, idempotent on
-    // analyticsApplied). If it fails for any reason, fall back to the existing
-    // client delta so analytics is never silently dropped and payment is never
-    // blocked. Both paths are non-fatal — the receipt itself is already committed.
-    let appliedViaServer = false;
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      if (token) {
-        const res = await fetch("/api/analytics/apply-delta", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ storeId, receiptId, op: "payment" }),
-        });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok) {
-          appliedViaServer = true;
-          console.log("[Analytics] Delta applied server-side for receipt", receiptId, j?.skipped ? "(already applied)" : "");
-        }
-      }
-    } catch (serverErr) {
-      console.warn("[Analytics] Server apply-delta failed; falling back to client delta:", serverErr);
-    }
-
-    if (!appliedViaServer) {
-      const MAX_ANALYTICS_RETRIES = 2;
-      for (let attempt = 0; attempt <= MAX_ANALYTICS_RETRIES; attempt++) {
-        try {
-          const { writeBatch: wb, doc: docRef, updateDoc: ud, serverTimestamp: st, getDoc: gd } = await import("firebase/firestore");
-          const rRef = docRef(db, `stores/${storeId}/receipts`, receiptId);
-          // Guard against double-apply: the server may have committed even if the
-          // request appeared to fail (e.g. a timeout after the transaction ran).
-          const rSnap = await gd(rRef);
-          if (rSnap.exists() && (rSnap.data() as any)?.analyticsApplied === true) {
-            console.log("[Analytics] Already applied (server); skipping client fallback for", receiptId);
-            break;
-          }
-          const analyticsBatch = wb(db);
-          await applyAnalyticsDeltaV2(db, storeId, null, finalReceipt, { batch: analyticsBatch });
-          await analyticsBatch.commit();
-          await ud(rRef, { analyticsApplied: true, analyticsAppliedAt: st() });
-          console.log("[Analytics] Delta applied (client fallback) for receipt", receiptId);
-          break;
-        } catch (analyticsErr) {
-          console.error(`[Analytics] Client fallback attempt ${attempt + 1} failed for receipt ${receiptId}:`, analyticsErr);
-          if (attempt === MAX_ANALYTICS_RETRIES) {
-            console.error("[Analytics] All retries exhausted. Receipt", receiptId, "needs manual analytics reconciliation.");
-          }
-        }
-      }
-    }
-  }
-
-  if (receiptId) {
+  if (!out.replay) {
     try {
       await writeActivityLog({
         storeId, sessionId, user, action: 'PAYMENT_COMPLETED', note: 'Payment completed',
-        sessionContext: sessionContextForLog,
-        meta: { receiptId, receiptNumber: finalReceiptNumber ?? undefined, paymentTotal: amountDue },
+        meta: { receiptId: out.receiptId, receiptNumber: out.receiptNumber, paymentTotal: out.totalCents / 100 },
       });
     } catch (logErr) {
       console.error("[ActivityLog] Failed to write payment log for session", sessionId, logErr);
     }
   }
-
-  return receiptId;
+  return out.receiptId;
 }
 
 export async function voidSession({
@@ -901,130 +485,35 @@ export async function voidSession({
   sessionId,
   reason,
   actor,
+  opId = uuidv4(),
 }: {
   storeId: string;
   sessionId: string;
   reason: string;
   actor: AppUser;
+  opId?: string;
 }) {
+  // Server command (audit P1): the session void, ticket cancellation, table
+  // release and the PIN / loyalty reversal effects are written by the server.
   const safeReason = (reason ?? '').toString().trim();
-  const sessionRef = doc(db, 'stores', storeId, 'sessions', sessionId);
-  const nowMs = Date.now();
-  
-  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-  const activeTicketsQuery = query(ticketsRef, where("status", "in", ['preparing', 'ready']));
-  const activeTicketsSnap = await getDocs(activeTicketsQuery);
-
-  const kdsDeltas: { old: any; new: any }[] = [];
-  const rtKdsUpdates: { stationId: string; ticketId: string; ticketState: any }[] = [];
-  let redemptionIdsToReverse: string[] = [];
-  await runTransaction(db, async (tx: Transaction) => {
-    // New projection paths
-    const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
-    const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
-
-    const [sessionSnap, activeProjectionSnap] = await Promise.all([
-        tx.get(sessionRef),
-        tx.get(activeProjectionRef),
-    ]);
-    
-    if (!sessionSnap.exists()) throw new Error("Session disappeared during transaction.");
-    const sessionData = sessionSnap.data() as any;
-    if (sessionData.status === 'closed' || sessionData.status === 'voided' || sessionData.isPaid) {
-      console.warn(`voidSession skipped: Session ${sessionId} was already finalized.`);
-      return;
-    }
-
-    redemptionIdsToReverse = Array.isArray(sessionData.loyaltyRedemptions)
-      ? sessionData.loyaltyRedemptions.map((r: any) => r.redemptionId).filter(Boolean)
-      : [];
-
-    // Cancel any remaining active tickets
-    for (const ticketDoc of activeTicketsSnap.docs) {
-        const ticketRef = ticketDoc.ref;
-        const oldTicketState = ticketDoc.data() as KitchenTicket;
-        const updatePayload = {
-            status: 'cancelled' as const,
-            cancelledAt: serverTimestamp(),
-            cancelledAtClientMs: nowMs,
-            cancelledByUid: actor.uid,
-            cancelReason: "Session Voided",
-            updatedAt: serverTimestamp(),
-        };
-        const newTicketState = { ...oldTicketState, ...updatePayload };
-
-        tx.update(ticketRef, updatePayload);
-        
-        const stationId = ticketDoc.data().kitchenLocationId;
-        if(stationId) {
-            const rtKdsDocRef = doc(db, "stores", storeId, "rtKdsTickets", stationId);
-            tx.update(rtKdsDocRef, {
-                [`tickets.${ticketRef.id}`]: deleteField(),
-                activeIds: arrayRemove(ticketRef.id),
-                [`sessionIndex.${sessionId}`]: deleteField(), // delete empty array key
-                "meta.updatedAt": serverTimestamp(),
-            });
-            // Add to historical view
-            const closedTicketRef = doc(db, "stores", storeId, "rtKdsTickets", stationId, "closedKdsTickets", ticketRef.id);
-            tx.set(closedTicketRef, newTicketState);
-        }
-    }
-
-    tx.update(sessionRef, { status: 'voided', voidedAt: serverTimestamp(), voidedByUid: actor.uid, voidedByUsername: getActorStamp(actor).username, voidReason: safeReason, updatedAt: serverTimestamp() });
-    
-    // Move projection from active to closed
-    if (activeProjectionSnap.exists()) {
-      const projectionData = activeProjectionSnap.data();
-      tx.set(closedProjectionRef, {
-        ...projectionData,
-        status: 'voided',
-        customerAccessEnabled: false,
-        updatedAt: serverTimestamp(),
-        closedAt: serverTimestamp(),
-      });
-      tx.delete(activeProjectionRef);
-    }
-    
-    if (sessionData.tableId && sessionData.tableId !== 'alacarte') {
-      const tableRef = doc(db, 'stores', storeId, 'tables', sessionData.tableId);
-      tx.update(tableRef, { status: 'available', currentSessionId: null, updatedAt: serverTimestamp() });
-      
-      const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-      tx.update(tableProjectionRef, {
-        status: 'available',
-        currentSessionId: null,
-        customerName: null,
-        packageLabel: null,
-        sessionType: null,
-        guestCount: null,
-        itemCount: null,
-        startedAtMs: null,
-        updatedAt: serverTimestamp(),
-      });
-    }
-  });
-
-  const sessionDocAfter = await getDoc(sessionRef);
-  const initialSessionData = sessionDocAfter.data();
-
-  if (initialSessionData) {
+  const sessionSnap = await getDoc(doc(db, 'stores', storeId, 'sessions', sessionId)).catch(() => null);
+  const s = sessionSnap?.exists() ? (sessionSnap.data() as any) : null;
+  const out = await postPosCommand<{ replay: boolean }>("void-session", storeId, { sessionId, opId, reason: safeReason });
+  if (!out.replay && s) {
     await writeActivityLog({
       storeId, sessionId, user: actor, action: "SESSION_VOIDED", reason: safeReason,
       sessionContext: {
-          sessionStatus: 'voided', sessionStartedAt: initialSessionData.startedAt,
-          sessionMode: initialSessionData.sessionMode ?? undefined,
-          customerName: initialSessionData.customer?.name ?? initialSessionData.customerName,
-          tableNumber: initialSessionData.tableNumber,
-          tableDisplayName: initialSessionData.tableDisplayName ?? null,
+        sessionStatus: 'voided', sessionStartedAt: s.startedAt,
+        sessionMode: s.sessionMode ?? undefined,
+        customerName: s.customer?.name ?? s.customerName,
+        tableNumber: s.tableNumber,
+        tableDisplayName: s.tableDisplayName ?? null,
       },
-      meta: { sessionLabel: computeSessionLabel(initialSessionData) }
-    });
+      meta: { sessionLabel: computeSessionLabel(s) }
+    }).catch((e) => console.warn("[ActivityLog] void log failed", e));
   }
-
-  // Loyalty rewards redeemed against this session must have their points
-  // refunded. The reversal runs server-side (Admin SDK), so the caller is
-  // handed the ids to reverse via /api/loyalty/redeem.
-  return { reversedRedemptionIds: redemptionIdsToReverse };
+  // Loyalty reversal now runs from the server outbox; nothing for the caller.
+  return { reversedRedemptionIds: [] as string[] };
 }
 
 /**
@@ -1487,126 +976,15 @@ export async function createRefundReceipt(
   reason: string,
   requestId: string = uuidv4(),
 ): Promise<string> {
-  const refundId = requestId;
-  const refundRef = doc(db, `stores/${storeId}/receipts`, refundId);
+  // Server command (audit P1). Same quoteRefund math, idempotent on requestId;
+  // analytics and loyalty reversal run from the server outbox.
+  void actor;
   const parentReceiptId = parentReceipt.receiptId ?? parentReceipt.id;
-  const parentRef = doc(db, `stores/${storeId}/receipts`, parentReceiptId);
-  const serverTs = serverTimestamp();
-  const now = Date.now();
-
-  let refundPayload: Omit<Receipt, 'createdAt'> | null = null;
-
-  const created = await runTransaction(db, async (tx) => {
-    const existing = await tx.get(refundRef);
-    if (existing.exists()) {
-      const ex = existing.data() as any;
-      if (ex?.isRefund === true && ex?.parentReceiptId === parentReceiptId) return false;
-      throw new Error("Refund request id collides with another receipt.");
-    }
-    const parentSnap = await tx.get(parentRef);
-    if (!parentSnap.exists()) throw new Error("Original receipt not found.");
-    const parent = { id: parentRef.id, ...(parentSnap.data() as any) } as Receipt & Record<string, any>;
-
-    const quote = quoteRefund(parent, refundQtys);
-    const totalCents = quote.totalCents;
-    if (totalCents <= 0) throw new Error("Nothing left to refund on this receipt.");
-
-    const byId = new Map((parent.lines || []).map((l) => [l.id, l]));
-    const refundLines = quote.lines.map((q) => ({
-      ...(byId.get(q.lineId) as SessionBillLine),
-      qtyOrdered: q.qty,
-      freeQty: 0,
-      voidedQty: 0,
-      refundPaidAmount: q.paidCents / 100,
-      refundSalesAmount: q.salesCents / 100,
-    })) as SessionBillLine[];
-
-    const mop: Record<string, number> = {};
-    for (const [name, cents] of Object.entries(quote.mopCents)) mop[name] = -cents / 100;
-    const total = -totalCents / 100;
-    const refundGross = refundLines.reduce((s, l) => s + lineItemAmounts(l).gross, 0);
-
-    const parentAnalytics = (parent.analytics || {}) as ReceiptAnalyticsV2;
-    const analytics = {
-      v: 2,
-      sessionStartedAt: parentAnalytics.sessionStartedAt ?? null,
-      sessionStartedAtClientMs: parentAnalytics.sessionStartedAtClientMs ?? null,
-      subtotal: -roundMoney(refundGross),
-      discountsTotal: -quote.discountsCents / 100,
-      chargesTotal: -quote.chargesCents / 100,
-      taxAmount: -quote.taxCents / 100,
-      grandTotal: total,
-      totalPaid: total,
-      change: 0,
-      mop,
-    } as unknown as ReceiptAnalyticsV2;
-
-    refundPayload = stripUndefined({
-      id: refundId,
-      receiptId: refundId,
-      parentReceiptId,
-      isRefund: true,
-      storeId,
-      sessionId: parent.sessionId,
-      createdByUid: actor.uid,
-      createdByUsername: actor.username,
-      sessionMode: parent.sessionMode,
-      tableId: parent.tableId ?? null,
-      tableNumber: parent.tableNumber ?? null,
-      customerName: parent.customerName ?? null,
-      customerTin: parent.customerTin ?? null,
-      customerAddress: parent.customerAddress ?? null,
-      lines: refundLines,
-      total,
-      totalPaid: total,
-      change: 0,
-      status: 'final',
-      receiptSeq: 0,
-      receiptNumber: `RF-${parent.receiptNumber}`,
-      receiptNoFormatUsed: parent.receiptNoFormatUsed,
-      createdAtClientMs: now,
-      editReason: reason,
-      refundPayments: Object.entries(quote.mopCents).map(([name, cents]) => ({ methodName: name, amount: cents / 100 })),
-      analytics,
-    } as any) as Omit<Receipt, 'createdAt'>;
-
-    // Parent counters are rewritten whole (not dotted increments) from the
-    // values read in this transaction — line ids / tender names are arbitrary.
-    const refundedQtys: Record<string, number> = { ...(parent.refundedQtys || {}) };
-    for (const q of quote.lines) refundedQtys[q.lineId] = normalizeQty((Number(refundedQtys[q.lineId]) || 0) + q.qty);
-    const refundedMop: Record<string, number> = { ...(parent.refundedMop || {}) };
-    for (const [name, cents] of Object.entries(quote.mopCents)) {
-      refundedMop[name] = (Math.round((Number(refundedMop[name]) || 0) * 100) + cents) / 100;
-    }
-
-    tx.set(refundRef, { ...refundPayload, createdAt: serverTs, analyticsApplied: false });
-    tx.update(parentRef, {
-      refundedQtys,
-      refundedMop,
-      totalRefunded: (Math.round((Number(parent.totalRefunded) || 0) * 100) + totalCents) / 100,
-      refundCount: (Number(parent.refundCount) || 0) + 1,
-    });
-    return true;
+  const out = await postPosCommand<{ refundId: string }>("refund", storeId, {
+    parentReceiptId,
+    requestId,
+    refundQtys,
+    reason,
   });
-
-  // Idempotent retry: refund already exists; analytics was (or will be, via the
-  // reconcile cron) applied for it on the first call.
-  if (!created || !refundPayload) return refundId;
-  const savedPayload: Omit<Receipt, 'createdAt'> = refundPayload;
-
-  // Apply analytics for the refund receipt server-first (authoritative, server
-  // clock, idempotent on analyticsApplied); fall back to the client delta on
-  // failure. Non-fatal — the refund receipt is already committed.
-  await applyReceiptDeltaServerFirst(storeId, refundId, "refund", async () => {
-    const rRef = doc(db, `stores/${storeId}/receipts`, refundId);
-    const rSnap = await getDoc(rRef);
-    if (rSnap.exists() && (rSnap.data() as any)?.analyticsApplied === true) return;
-    const analyticsBatch = writeBatch(db);
-    const refundReceiptForAnalytics = { ...savedPayload, createdAt: new Date(), isRefund: true } as any;
-    await applyAnalyticsDeltaV2(db, storeId, null, refundReceiptForAnalytics, { batch: analyticsBatch });
-    await analyticsBatch.commit();
-    await updateDoc(rRef, { analyticsApplied: true, analyticsAppliedAt: serverTimestamp() });
-  });
-
-  return refundId;
+  return out.refundId;
 }

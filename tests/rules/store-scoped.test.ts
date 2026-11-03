@@ -60,8 +60,8 @@ const CONFIG_COLLECTIONS = [
 /** Written by cashier/server/kitchen during a normal shift — must stay open. */
 const OPEN_COLLECTIONS = [
   "sessions",
-  "receipts",
-  "counters",
+  // receipts and counters left this list in audit P1 (server commands only);
+  // see SERVER_ONLY_COLLECTIONS and tests/rules/audit-p1-financial-commands.test.ts.
   "tables",
   "rtKdsTickets",
   "activeSessions",
@@ -87,6 +87,12 @@ const OPEN_COLLECTIONS = [
 
 /** Server-only (Admin SDK writes these; clients never may). */
 const SERVER_ONLY_COLLECTIONS = [
+  // Canonical money docs, server commands only since audit P1.
+  "receipts",
+  "counters",
+  "paymentConversions",
+  "posCommandResults",
+  "posEffects",
   "analytics",
   "analyticsMonths",
   "analyticsYears",
@@ -214,8 +220,8 @@ describe("§1 operational collections stay open to the shift roles", () => {
     }
   }
 
-  it("allows a cashier to write nested receipts/{id}/revisions/{v}", async () => {
-    await assertSucceeds(
+  it("denies a cashier writing nested receipts/{id}/revisions/{v} (audit P1)", async () => {
+    await assertFails(
       setDoc(doc(db("cashier"), "stores", STORE_A, "receipts", "r1", "revisions", "v1"), { n: 1 })
     );
   });
@@ -244,8 +250,8 @@ describe("§1 operational collections stay open to the shift roles", () => {
     );
   });
 
-  it("allows a cashier to write the receipt-number counter", async () => {
-    await assertSucceeds(
+  it("denies a cashier writing the receipt-number counter (audit P1)", async () => {
+    await assertFails(
       setDoc(doc(db("cashier"), "stores", STORE_A, "counters", "receipts"), { seq: 5 })
     );
   });
@@ -547,8 +553,10 @@ describe("§5 Sharelebrator link fields cannot be written by clients", () => {
       );
     });
 
-    it(`allows a cashier to delete a linked ${coll} doc (payment / void path)`, async () => {
-      await assertSucceeds(deleteDoc(doc(db("cashier"), "stores", STORE_A, coll, "linked1")));
+    it(`delete of a linked ${coll} doc: activeSessions yes (payment / void path), sessions never (audit P1 review #1)`, async () => {
+      const del = deleteDoc(doc(db("cashier"), "stores", STORE_A, coll, "linked1"));
+      if (coll === "sessions") await assertFails(del);
+      else await assertSucceeds(del);
     });
   }
 
@@ -624,7 +632,8 @@ describe("§5 Sharelebrator link fields cannot be written by clients", () => {
 });
 
 describe("deletes on operational collections stay open", () => {
-  for (const coll of ["sessions", "waitlist", "reservations", "rtKdsTickets", "closedSessions"] as const) {
+  // sessions left this list in audit P1 review #1 (no client deletes a session).
+  for (const coll of ["waitlist", "reservations", "rtKdsTickets", "closedSessions"] as const) {
     it(`allows a cashier to delete from ${coll}`, async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore() as any, "stores", STORE_A, coll, "d1"), { v: 1 });

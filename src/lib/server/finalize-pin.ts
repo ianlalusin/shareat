@@ -37,10 +37,25 @@ export async function finalizePinLogic(params: {
   reason: FinalizeReason;
 }): Promise<{ ok: boolean; pin: string | null; reason: FinalizeReason; archivedDayId: string }> {
   const { decoded, storeId, sessionId, reason } = params;
-  const pin = params.pin || "";
-
   const adminDb = getAdminDb();
   const { uid: actorUid } = await requireStaffStoreAccess(adminDb, decoded, storeId, ["admin", "manager", "cashier"]);
+  return finalizePinCore({ storeId, sessionId, pin: params.pin, reason, actorUid });
+}
+
+/**
+ * The archive/disable work itself, for callers that already authorized the
+ * actor (the financial-command effects outbox, audit B17).
+ */
+export async function finalizePinCore(params: {
+  storeId: string;
+  sessionId: string;
+  pin?: string | null;
+  reason: FinalizeReason;
+  actorUid: string;
+}): Promise<{ ok: boolean; pin: string | null; reason: FinalizeReason; archivedDayId: string }> {
+  const { storeId, sessionId, reason, actorUid } = params;
+  const pin = params.pin || "";
+  const adminDb = getAdminDb();
   const activeSessionRef = adminDb.doc(`stores/${storeId}/activeSessions/${sessionId}`);
 
   const result = await adminDb.runTransaction(async (tx) => {
@@ -59,7 +74,12 @@ export async function finalizePinLogic(params: {
       const pinRef = adminDb.doc(`pinRegistry/${currentPin}`);
       const pinSnap = await tx.get(pinRef);
 
-      if (pinSnap.exists) {
+      // The pin comes from client-writable session data: only archive a
+      // registry entry that belongs to THIS store and session (audit P1
+      // hardening), so one bill cannot retire another bill's live PIN.
+      const pinData = pinSnap.exists ? (pinSnap.data() as any) : null;
+      const pinBelongsHere = !!pinData && pinData.storeId === storeId && pinData.sessionId === sessionId;
+      if (pinSnap.exists && pinBelongsHere) {
         tx.set(
           adminDb.doc(`stores/${storeId}/pinArchiveByDay/${dayId}/pins/${currentPin}`),
           {

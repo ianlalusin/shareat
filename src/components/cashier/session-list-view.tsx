@@ -11,6 +11,7 @@ import { Loader2, AlertCircle, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StartSessionForm, type Table } from "@/components/cashier/start-session-form";
 import { ActiveSessionsGrid, type ActiveSession } from "@/components/cashier/active-sessions-grid";
+import { usePendingSettlement } from "@/hooks/use-pending-settlement";
 import { PastSessionsCard } from "@/components/cashier/past-sessions-card";
 import { isScheduleActiveNow } from "@/lib/utils/isScheduleActiveNow";
 import { ApprovalQueue } from "@/components/cashier/ApprovalQueue";
@@ -129,11 +130,19 @@ export function SessionListView() {
     const { config: storeConfig, isLoading: isConfigLoading, error: configError, retry: retryConfig } = useStoreConfigDoc(activeStore?.id);
 
     const {
-        sessions,
+        sessions: liveSessions,
         isLoading: isLoadingSessions,
         error: sessionsError,
         retry: retrySessions,
     } = useActiveSessions(activeStore?.id ?? null, !!appUser && !isSigningOut);
+    // Audit P1: bills paid/voided offline on this till stay open in Firestore
+    // until the server accepts the command; hide them here ("pending
+    // settlement") and offer their tables for re-seating.
+    const pendingSettlement = usePendingSettlement();
+    const sessions = useMemo(
+        () => (pendingSettlement.size ? liveSessions.filter((s) => !pendingSettlement.has(s.id)) : liveSessions),
+        [liveSessions, pendingSettlement],
+    );
 
     const [cachedTables, setCachedTables] = useState<any[]>([]);
     const [isLoadingTables, setIsLoadingTables] = useState(true);
@@ -224,7 +233,7 @@ export function SessionListView() {
 
     const sortedTables = useMemo(() => {
         const available = [...cachedTables]
-            .filter(t => t.status === 'available' && t.isActive !== false)
+            .filter(t => (t.status === 'available' || (t.currentSessionId && pendingSettlement.has(t.currentSessionId))) && t.isActive !== false)
             .sort((a, b) => {
                 const numA = parseInt(a.tableNumber, 10);
                 const numB = parseInt(b.tableNumber, 10);
@@ -250,7 +259,7 @@ export function SessionListView() {
             else before.push(t);
         }
         return [...after, ...before];
-    }, [cachedTables, sessions]);
+    }, [cachedTables, sessions, pendingSettlement]);
 
     // Badge flags (hasVoids/hasFree/hasDiscounts) are maintained on the
     // activeSessions projection at write time by recomputeSessionAdjustmentFlags;

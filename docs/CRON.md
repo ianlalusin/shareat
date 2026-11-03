@@ -54,6 +54,7 @@ from this doc. All jobs are `Asia/Manila`.
 | `rebuild-presets` | `GET /api/cron/rebuild-presets` | `30 0 * * *` (12:30 AM) | **asia-east1** | ENABLED |
 | `holiday-calendar` | `GET /api/cron/holiday-calendar` | `0 2 1 * *` (1st, 2 AM) | asia-southeast1 | ENABLED |
 | `purge-customer-auth-users` | `GET /api/cron/purge-customer-auth-users?write=1` | `30 4 * * *` (daily 4:30 AM) | asia-southeast1 | **PAUSED** (created 2026-09-13) |
+| `reconcile-pos-commands` | `GET /api/cron/reconcile-pos-commands` | `*/5 * * * *` (proposed) | asia-southeast1 | **NOT YET CREATED** (audit P1, 2026-11-03; owner creates after the P1 server deploy) |
 
 Discrepancies this table corrects, all confirmed live:
 

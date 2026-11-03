@@ -616,9 +616,14 @@ export default function KitchenPage() {
                 if (voidLineId) {
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", voidLineId);
                     const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
-                    const ticketQty = oldTicketState.qty || 1;
+                    // Void only what was cancelled unserved (= qtyCancelled above);
+                    // served portions stay billed. Audit P1: kitchen voids are also
+                    // tracked in kitchenVoidedQty so checkout can bound them by the
+                    // tickets' qtyCancelled (rules require the same delta).
+                    const ticketQty = updatePayload.qtyCancelled;
                     transaction.update(billLineRef, {
                         voidedQty: increment(ticketQty),
+                        kitchenVoidedQty: increment(ticketQty),
                         voidReason: "kitchen_cancel",
                         voidNote: "Cancelled by kitchen: " + (reason || ""),
                         updatedAt: serverTimestamp(),
@@ -997,7 +1002,7 @@ export default function KitchenPage() {
         if (billLineIdToVoid) {
           const billLineRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId, 'sessionBillLines', billLineIdToVoid);
           const sessionRef = doc(db, 'stores', activeStore.id, 'sessions', sessionId);
-          transaction.update(billLineRef, { voidedQty: increment(qtyRemaining), voidReason: "kitchen_cancel", voidNote: "Cancelled by kitchen: " + reason, updatedAt: serverTimestamp() });
+          transaction.update(billLineRef, { voidedQty: increment(qtyRemaining), kitchenVoidedQty: increment(qtyRemaining), voidReason: "kitchen_cancel", voidNote: "Cancelled by kitchen: " + reason, updatedAt: serverTimestamp() });
           transaction.update(sessionRef, { billingRevision: increment(1), updatedAt: serverTimestamp() });
         }
         transaction.update(ticketRef, updatePayload);

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireStaffStoreAccess } from "@/lib/server/staff-access";
+import { OPERATOR_HEADER, resolveOperator } from "@/lib/server/pos-commands/operator";
+import { PosCommandError } from "@/lib/server/pos-commands/errors";
 import {
   createPaymentConversionServer,
   voidPaymentConversionServer,
@@ -13,8 +15,10 @@ export const runtime = "nodejs";
  * Server-side payment conversion (create / void). A conversion is a net-zero
  * reshuffle of the day's payment mix; the write touches the locked analytics
  * collections, so it runs admin-side. The conversion doc + byMethod delta are
- * written atomically in one transaction. `uid`/`role` are taken from the token;
- * `actorName` is display metadata only.
+ * written atomically in one transaction. `uid`/`role` are taken from the token
+ * and the actor NAME from the verified local-profile session header
+ * (x-pos-operator-session), like the financial commands (audit P1). A
+ * client-sent `actorName` is ignored.
  */
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
@@ -32,6 +36,7 @@ async function verifyToken(req: Request): Promise<DecodedIdToken> {
 }
 
 function mapError(e: any) {
+  if (e instanceof PosCommandError) return NextResponse.json({ ok: false, code: e.code, error: e.message }, { status: e.status });
   const message = e?.message || "Request failed.";
   const status =
     /Missing bearer token|Invalid token/i.test(message) ? 401 :
@@ -57,9 +62,16 @@ export async function POST(req: Request) {
     const decoded = await verifyToken(req);
     const db = getAdminDb();
     const access = await requireStaffStoreAccess(db, decoded, storeId, ["admin", "manager", "cashier"]);
+    const operator = await resolveOperator(db, {
+      uid: decoded.uid,
+      role: access.role,
+      isPlatformAdmin: access.isPlatformAdmin,
+      storeId,
+      token: req.headers.get(OPERATOR_HEADER),
+    });
+    const actorName = operator.username;
 
     if (action === "create") {
-      const actorName = String(body.actorName || "").trim() || "Unknown";
       const id = await createPaymentConversionServer(
         db,
         storeId,
@@ -78,7 +90,6 @@ export async function POST(req: Request) {
     // action === "void"
     const conversionId = String(body.conversionId || "");
     if (!conversionId) return bad("Missing conversionId.");
-    const actorName = String(body.actorName || "").trim() || "Unknown";
     const result = await voidPaymentConversionServer(
       db,
       storeId,

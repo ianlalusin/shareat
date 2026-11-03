@@ -7,7 +7,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, getDoc, updateDoc, serverTimestamp, getDocs, collectionGroup, orderBy, limit, runTransaction, increment, writeBatch } from "firebase/firestore";
 import { auth } from "@/lib/firebase/client";
 import { db } from "@/lib/firebase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -183,10 +183,17 @@ export function ServerPageClient() {
     // per-head packages. Bundle lines stay at qty 1 (flat price).
     if (!isBundle) {
       const packageLineRef = doc(db, `stores/${activeStore.id}/sessions/${session.id}/sessionBillLines`, `package_${session.packageOfferingId}`);
-      batch.update(packageLineRef, {
-          qtyOrdered: finalCount,
-          updatedAt: serverTimestamp(),
-      });
+      // Audit P1: lowering the billed heads is a cashier decision (rules deny it
+      // for server accounts), so only ever raise the line here. A lower count
+      // still lands on the session (guestCountServerVerified) for the cashier.
+      const lineSnap = await getDoc(packageLineRef).catch(() => null);
+      const currentQty = Number(lineSnap?.exists() ? lineSnap.data()?.qtyOrdered ?? 0 : 0);
+      if (finalCount > currentQty) {
+        batch.update(packageLineRef, {
+            qtyOrdered: finalCount,
+            updatedAt: serverTimestamp(),
+        });
+      }
     }
     
     // Update session projection in the NEW location

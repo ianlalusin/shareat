@@ -33,6 +33,8 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { RejectedOfflineSalesCard } from "@/components/receipts/RejectedOfflineSalesCard";
+import { saveReceiptCorrectionCommand, voidReceiptCommand } from "@/lib/pos-commands/receipts";
 import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { reverseReceiptLoyalty } from "@/lib/loyalty/reverse-receipt-client";
 import { v4 as uuidv4 } from "uuid";
@@ -343,62 +345,26 @@ export default function ReceiptsPageContents() {
       if (!appUser || !activeStore || !editingReceipt) return;
     
       try {
-        const batch = writeBatch(db);
-        const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
-    
-        const nextVersion = (editingReceipt.editVersion || 0) + 1;
-        const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
-        const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
-    
-        // 1. Create a revision document with a snapshot of the original receipt data.
-        batch.set(revisionRef, {
-          version: nextVersion,
-          editedAt: serverTimestamp(),
-          editedByUid: appUser.uid,
-          editedByEmail: appUser.email,
+        // Server command (audit P1 / B01): the revision snapshot is taken from
+        // the server copy, totals are recomputed and the edit analytics delta is
+        // queued server-side. Only the editable inputs are sent.
+        const saved = await saveReceiptCorrectionCommand(
+          activeStore.id,
+          editingReceipt,
+          updatedReceiptData,
           reason,
-          snapshot: editingReceipt, // The original, unedited data
-        });
-        
-        const applyId = uuidv4();
-    
-        // 2. Prepare the final updated receipt object for writing.
+          (name) => paymentMethods.find((pm) => pm.name === name)?.id ?? null,
+        );
+        const nextVersion = saved.editVersion;
         const finalReceiptPayload = {
           ...updatedReceiptData,
+          total: saved.total,
           isEdited: true,
           editVersion: nextVersion,
-          editedAt: new Date(), // Use JS Date for immediate state update
+          editedAt: new Date(),
           editedByUid: appUser.uid,
-          editedByEmail: appUser.email,
           editReason: reason,
-          analyticsApplied: true, // Mark analytics as applied
-          analyticsAppliedAt: serverTimestamp(),
-          analyticsApplyId: applyId,
         };
-        batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
-    
-        // 3. (analytics delta applied separately, server-first — see step 4)
-    
-        // 4. Commit the revision + edited receipt, then apply the edit analytics
-        //    delta server-first (server reads old=revision snapshot + new=receipt
-        //    doc, idempotent on analyticsEditVersion; client fallback applies
-        //    old->new locally).
-        await batch.commit();
-
-        await applyReceiptDeltaServerFirst(
-          activeStore.id,
-          editingReceipt.id,
-          "edit",
-          async () => {
-            const rSnap = await getDoc(originalReceiptRef);
-            if (rSnap.exists() && Number((rSnap.data() as any)?.analyticsEditVersion || 0) >= nextVersion) return;
-            const ab = writeBatch(db);
-            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceiptData as ReceiptType, { batch: ab });
-            await ab.commit();
-            await updateDoc(originalReceiptRef, { analyticsEditVersion: nextVersion, analyticsEditAppliedAt: serverTimestamp() });
-          },
-          { revisionId },
-        );
 
         // 5. Update local state immediately after successful commit
         setReceipts(prev =>
@@ -502,60 +468,19 @@ export default function ReceiptsPageContents() {
       }
 
       try {
-        const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-
-        // 1. Commit the void (status + audit metadata + cash disposition) first.
-        //    Done in a transaction that re-reads the LIVE doc and aborts if the
-        //    receipt is already voided. This is the idempotency gate: the
-        //    in-memory `receipt.status` check above can be stale (second tab,
-        //    retry, concurrent trigger), and unconditionally writing
-        //    `analyticsReversed:false` here would otherwise re-arm the server
-        //    route's guard and reverse the sale a SECOND time — double-counting
-        //    the void in analytics. Only the transaction that actually flips
-        //    final -> voided proceeds to reverse analytics / log the void.
-        //    Cash disposition is written BEFORE the delta call so the server route
-        //    reads voidCashRetained off the fresh doc when accumulating it.
-        const alreadyVoided = await runTransaction(db, async (tx) => {
-          const snap = await tx.get(receiptRef);
-          if (!snap.exists()) throw new Error("Receipt not found.");
-          if ((snap.data() as any)?.status === "voided") return true;
-          tx.update(receiptRef, {
-            status: "voided",
-            voidedAt: serverTimestamp(),
-            voidedByUid: appUser.uid,
-            voidedByEmail: appUser.email,
-            voidReason: reason,
-            voidCashPaid: void_.voidCashPaid,
-            voidCashRefunded: void_.voidCashRefunded,
-            voidCashRetained: void_.voidCashRetained,
-            voidCashDisposition: void_.voidCashDisposition,
-            analyticsReversed: false, // set true by the server/reconcile cron once reversed
-          });
-          return false;
+        // Server command (audit P1 / B01): idempotent (already voided -> no-op).
+        // Cash paid/retained are derived from the receipt by the server; the
+        // analytics + loyalty reversals run from the server outbox.
+        const { alreadyVoided } = await voidReceiptCommand(activeStore.id, receipt.id, {
+          reason,
+          voidCashDisposition: void_.voidCashDisposition,
+          voidCashRefunded: void_.voidCashRefunded,
         });
 
         if (alreadyVoided) {
           toast({ title: "Already voided", description: "This receipt was already voided." });
           return;
         }
-
-        // 2. Reverse the receipt's analytics contribution server-first; fall back
-        //    to the client delta on failure. `receipt` here is the in-memory,
-        //    still-`final` object, so its contribution reconstructs correctly even
-        //    though the doc is now voided. Idempotent on `analyticsReversed`.
-        await applyReceiptDeltaServerFirst(activeStore.id, receipt.id, "void", async () => {
-          const rSnap = await getDoc(receiptRef);
-          if (rSnap.exists() && (rSnap.data() as any)?.analyticsReversed === true) return;
-          const ab = writeBatch(db);
-          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, {
-            batch: ab,
-            ...(void_.voidCashRetained > 0
-              ? { dayExtraIncrements: { "payments.voidCashRetainedTotal": void_.voidCashRetained } }
-              : {}),
-          });
-          await ab.commit();
-          await updateDoc(receiptRef, { analyticsReversed: true, analyticsReversedAt: serverTimestamp() });
-        });
 
         await writeActivityLog({
           action: "RECEIPT_VOIDED",
@@ -588,33 +513,17 @@ export default function ReceiptsPageContents() {
       if (!appUser || !activeStore) throw new Error("User or store not available.");
       const receiptRef = doc(db, "stores", activeStore.id, "receipts", voided.id);
 
-      await applyReceiptDeltaServerFirst(
+      // Server-only (audit P1): the re-ring link + retained-cash reversal run in
+      // the analytics applier; there is no client fallback any more, so a
+      // failure is reported instead of writing receipt flags from the browser.
+      const { appliedViaServer } = await applyReceiptDeltaServerFirst(
         activeStore.id,
         voided.id,
         "voidcash-reverse",
-        async () => {
-          // Client fallback: reverse the retained accrual + stamp flags.
-          const rSnap = await getDoc(receiptRef);
-          if (!rSnap.exists() || (rSnap.data() as any)?.voidCashRetainedReversed === true) return;
-          const retained = Number((rSnap.data() as any)?.voidCashRetained || 0);
-          if (retained > 0) {
-            const dayId = getDayIdFromTimestamp(voided.createdAtClientMs ?? null);
-            const ab = writeBatch(db);
-            ab.set(
-              dailyAnalyticsDocRef(db, activeStore.id, dayId),
-              { payments: { voidCashRetainedTotal: increment(-retained) }, meta: { updatedAt: serverTimestamp() } },
-              { merge: true },
-            );
-            await ab.commit();
-          }
-          await updateDoc(receiptRef, {
-            voidCashRetainedReversed: true,
-            reRingReceiptId,
-            reRingLinkedAt: serverTimestamp(),
-          });
-        },
+        async () => {},
         { reRingReceiptId },
       );
+      if (!appliedViaServer) throw new Error("Could not link the re-ring right now. Try again when online.");
 
       await writeActivityLog({
         action: "RECEIPT_VOIDED",
@@ -765,6 +674,9 @@ export default function ReceiptsPageContents() {
                         <Button onClick={() => setIsSettingsOpen(true)}><Settings className="mr-2"/> Receipt Settings</Button>
                     </div>
                 </PageHeader>
+                {activeStore && (appUser?.role === "admin" || appUser?.role === "manager") && (
+                    <RejectedOfflineSalesCard storeId={activeStore.id} />
+                )}
                 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-6">
                     <div className="relative flex-1 w-full sm:w-auto">

@@ -4,6 +4,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { doc, getDoc, collection, orderBy, query, where, onSnapshot } from "firebase/firestore";
+import { findQueuedReceipt } from "@/lib/offline/payment-queue";
 import { db } from "@/lib/firebase/client";
 import { useAuthContext } from "@/context/auth-context";
 import { useStoreContext } from "@/context/store-context";
@@ -81,8 +82,13 @@ export default function ReceiptPage() {
     if (!loaderRef.current) {
         loaderRef.current = new ReceiptLoader<StrippedReceiptData>(async (storeId, receiptId) => {
             const receiptSnap = await getDoc(doc(db, "stores", storeId, "receipts", receiptId));
-            if (!receiptSnap.exists()) throw new Error("Receipt not found.");
-            const receiptDocData = receiptSnap.data({ serverTimestamps: "estimate" }) as any;
+            // Audit P1: an offline sale has no receipt doc until the server
+            // accepts its command; show/print the till's provisional copy.
+            const queued = receiptSnap.exists() ? null : findQueuedReceipt(receiptId);
+            if (!receiptSnap.exists() && !queued) throw new Error("Receipt not found.");
+            const receiptDocData = (queued
+                ? { ...queued.provisionalReceipt, createdAt: new Date(Number((queued.provisionalReceipt as any)?.createdAtClientMs) || Date.now()) }
+                : receiptSnap.data({ serverTimestamps: "estimate" })) as any;
             const sessionDataForPreview = {
                 id: receiptDocData.sessionId,
                 tableNumber: receiptDocData.tableNumber,

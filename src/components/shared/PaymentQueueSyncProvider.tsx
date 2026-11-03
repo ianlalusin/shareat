@@ -4,6 +4,7 @@ import { usePaymentQueueSync } from "@/hooks/use-payment-queue-sync";
 import { replayDeferredEffects } from "@/lib/offline/replayDeferredEffects";
 import { updateQueueItem } from "@/lib/offline/payment-queue";
 import { decideOfflineReplay } from "@/lib/offline/offlineSyncGate";
+import { reconcileQueuedCommand } from "@/lib/offline/reconcileQueuedCommand";
 import { useAuthContext } from "@/context/auth-context";
 import { db } from "@/lib/firebase/client";
 
@@ -13,10 +14,19 @@ export function PaymentQueueSyncProvider() {
   usePaymentQueueSync(async (item) => {
     if (!firebaseUser) return { item, complete: false }; // transient: auth not ready
 
-    // Audit B16/B17: replay deferred effects only after the SERVER (not the
-    // local cache, which already shows this device's own pending writes)
-    // confirms the offline batch landed. A read failure is transient; a server
-    // state showing another terminal settled the bill is a terminal conflict.
+    // Audit P1: offline commands are settled by the server. Accepted ->
+    // done (effects run from the server outbox); rejected -> throw, which
+    // marks the item failed and shows it on the OfflineBanner for a manager.
+    if (item.opId) {
+      return reconcileQueuedCommand(item, {
+        getToken: () => firebaseUser.getIdToken(),
+        onRejected: () => updateQueueItem(item.id, { rejected: true }),
+      });
+    }
+
+    // Legacy queue items (recorded by a pre-P1 build that wrote the canonical
+    // batch locally). Audit B16/B17: replay deferred effects only after the
+    // SERVER confirms the offline batch landed.
     let serverReceipt: Record<string, any> | null = null;
     let serverSession: Record<string, any> | null = null;
     try {

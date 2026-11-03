@@ -359,19 +359,138 @@ service cloud.firestore {
     // Audit B16 (2026-10-29): the session doc and its subcollections are split
     // so the session doc can carry an offline compare-and-swap, and the
     // session's activityLogs subcollection can be append-only (B01 slice).
+    //
+    // Audit P1 final: paying / closing / voiding a session (status closed or
+    // voided, isPaid, the ownership revision, offline write ids) is a server
+    // command. Clients keep every other session write (bill edits, guest
+    // counts, approvals, notes...).
     match /stores/{storeId}/sessions/{sessionId} {
-      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged();
-      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk();
-      allow delete: if hasStoreAccess(storeId);
+      function settlementFieldsUnchanged() {
+        return request.resource.data.get('isPaid', false) == resource.data.get('isPaid', false)
+          && request.resource.data.get('revision', null) == resource.data.get('revision', null)
+          && request.resource.data.get('offlineWriteId', null) == resource.data.get('offlineWriteId', null)
+          && (request.resource.data.get('status', '') == resource.data.get('status', '')
+              || (!(request.resource.data.get('status', '') in ['closed', 'voided'])
+                  && !(resource.data.get('status', '') in ['closed', 'voided'])));
+      }
+      function isPricingRole() {
+        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier');
+      }
+      // Review #1: a new session starts open, unpaid, at ownership revision 1,
+      // with no loyalty rewards (server-only, below) and — unless a cashier+
+      // creates it — no bill discount or custom adjustments.
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged()
+        && !(request.resource.data.get('status', '') in ['closed', 'voided'])
+        && request.resource.data.get('isPaid', false) != true
+        && request.resource.data.get('revision', 1) == 1
+        && request.resource.data.get('loyaltyRedemptions', []).size() == 0
+        && (isPricingRole() || (
+          request.resource.data.get('billDiscount', null) == null
+          && request.resource.data.get('customAdjustments', []).size() == 0
+          && request.resource.data.get('reservationId', null) == null));
+      // Bill-level discounts / custom adjustments are a cashier+ decision (audit
+      // P1 follow-up); loyaltyRedemptions is written only by the loyalty server
+      // routes and is never client-editable (review #1).
+      function billDiscountsUnchangedOrPricingRole() {
+        return isPricingRole()
+          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['billDiscount', 'customAdjustments', 'reservationId']);
+      }
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk()
+        && settlementFieldsUnchanged() && billDiscountsUnchangedOrPricingRole()
+        && request.resource.data.get('loyaltyRedemptions', null) == resource.data.get('loyaltyRedemptions', null);
+      // No client deletes a session (review #1: delete + recreate would reset
+      // revision and discounts while the bill lines survive).
+      allow delete: if false;
     }
     // Every doc under a session (billLines, payments, kitchentickets, ...).
     // activityLogs is append-only: the timeline and loss-prevention review read
     // it, so a past entry must never be edited or erased. No client updates or
     // deletes it (writeActivityLog only creates).
+    // payments (tender rows) are written only by the server checkout command
+    // since audit P1.
+    //
+    // sessionBillLines (audit P1 follow-up, B01 "kitchen/server clients can
+    // alter prices"): only cashier / manager / admin accounts may set a price,
+    // a modifier total, a price override, a discount or a free quantity on a
+    // line. Server and kitchen accounts add lines (the checkout command then
+    // proves the price against the store's price list), add quantity, and void
+    // through the kitchen cancel flow; they may not lower an add-on line's
+    // quantity. A priceOverride is only ever written in the writer's own uid,
+    // which is what the checkout command trusts. DEPLOY WITH THE P1 FINAL RULES.
     match /stores/{storeId}/sessions/{sessionId}/{subcoll}/{subPath=**} {
-      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged();
-      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'activityLogs';
-      allow delete: if hasStoreAccess(storeId) && subcoll != 'activityLogs';
+      function canSetPrices() {
+        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier');
+      }
+      function ownOverride() {
+        return !('priceOverride' in request.resource.data)
+          || (resource != null && request.resource.data.priceOverride == resource.data.get('priceOverride', null))
+          || request.resource.data.priceOverride.byUid == request.auth.uid;
+      }
+      function lineCreateOk() {
+        return subcoll != 'sessionBillLines' || ownOverride() && (canSetPrices() || (
+          !('priceOverride' in request.resource.data)
+          && request.resource.data.get('lineAdjustments', {}).size() == 0
+          && request.resource.data.get('freeQty', 0) == 0
+          && request.resource.data.get('discountValue', 0) == 0
+          && request.resource.data.get('discountQty', 0) == 0
+          && request.resource.data.get('voidedQty', 0) == 0
+          && request.resource.data.get('kitchenVoidedQty', 0) == 0
+        ));
+      }
+      function lineUpdateOk() {
+        return subcoll != 'sessionBillLines' || ownOverride() && (canSetPrices() || (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'unitPrice', 'modifiersTotal', 'priceOverride', 'lineAdjustments', 'freeQty',
+            'discountType', 'discountValue', 'discountQty', 'discountId', 'itemId', 'type', 'id'])
+          // Re-review D: no line's quantity (package heads included) goes down
+          // without a cashier+.
+          && request.resource.data.get('qtyOrdered', 0) >= resource.data.get('qtyOrdered', 0)
+          // Review #3: server / kitchen voids only through the kitchen cancel
+          // flow, which moves voidedQty and kitchenVoidedQty by the same amount;
+          // checkout bounds kitchenVoidedQty by cancelled kitchen tickets.
+          && request.resource.data.get('voidedQty', 0) - resource.data.get('voidedQty', 0)
+             == request.resource.data.get('kitchenVoidedQty', 0) - resource.data.get('kitchenVoidedQty', 0)
+          && request.resource.data.get('kitchenVoidedQty', 0) >= resource.data.get('kitchenVoidedQty', 0)
+          // Final review #1: only kitchen accounts void, and only add-on lines.
+          && (request.resource.data.get('kitchenVoidedQty', 0) == resource.data.get('kitchenVoidedQty', 0)
+              || (isActiveStaff() && staffData().role == 'kitchen' && resource.data.get('type', '') == 'addon'))
+        ));
+      }
+      // Re-review #3: kitchen tickets back kitchen voids at checkout, so a
+      // server / kitchen account cannot create an already-cancelled ticket or
+      // change a ticket's quantity / bill line / bill-on-serve flag later;
+      // cancelling is only a status transition of an existing ticket.
+      //
+      // Final review #1 (separation of duties): kitchen accounts never create
+      // tickets and server accounts never cancel them, so one account cannot
+      // both fabricate a ticket and cancel it. Served / cancelled tickets are
+      // final for both, and cancelled + served quantity never exceeds the
+      // ticket's (immutable) quantity.
+      function isKitchen() { return isActiveStaff() && staffData().role == 'kitchen'; }
+      function ticketQty() { return resource.data.get('qty', resource.data.get('qtyOrdered', 1)); }
+      function ticketCreateOk() {
+        return subcoll != 'kitchentickets' || canSetPrices() || (
+          !isKitchen()
+          && request.resource.data.get('status', '') != 'cancelled'
+          && request.resource.data.get('qtyCancelled', 0) == 0
+        );
+      }
+      function ticketUpdateOk() {
+        return subcoll != 'kitchentickets' || canSetPrices() || (
+          !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['qty', 'qtyOrdered', 'billLineId', 'billOnServe', 'sessionId'])
+          && !(resource.data.get('status', '') in ['served', 'cancelled']
+               && request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'qtyCancelled', 'qtyServed']))
+          && (isKitchen() || (
+               request.resource.data.get('status', '') != 'cancelled'
+               && request.resource.data.get('qtyCancelled', 0) == resource.data.get('qtyCancelled', 0)))
+          && request.resource.data.get('qtyCancelled', 0) + request.resource.data.get('qtyServed', 0) <= ticketQty()
+        );
+      }
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments' && lineCreateOk() && ticketCreateOk();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']) && lineUpdateOk() && ticketUpdateOk();
+      allow delete: if hasStoreAccess(storeId) && !(subcoll in ['activityLogs', 'payments'])
+        && (subcoll != 'sessionBillLines' || canSetPrices());
     }
 
     match /stores/{storeId}/closedSessions/{docPath=**} {
@@ -427,7 +546,17 @@ service cloud.firestore {
       // tableReleaseOk(): offline release must still match the seated session
       // (audit B16). Residual: managers/admins also pass the storeConfig
       // catch-all, which ORs past this guard for them.
-      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk();
+      // Audit P1 final: releasing a seated table is a server command (checkout /
+      // void / offline reconcile). Managers keep the wholesale rebuild via the
+      // storeConfig catch-all (existing residual).
+      function projectionReleaseDenied() {
+        return resource != null
+          && resource.data.get('currentSessionId', null) != null
+          && (request.resource.data.get('currentSessionId', null) == null
+              || (request.resource.data.get('status', '') == 'available'
+                  && resource.data.get('status', '') != 'available'));
+      }
+      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk() && !projectionReleaseDenied();
       allow delete: if hasStoreAccess(storeId);
     }
 
@@ -443,27 +572,107 @@ service cloud.firestore {
     // every report, so delete is denied. create/update stay open (online and
     // offline checkout, print counter, edits, voids, refunds, analytics flags)
     // with the offline overwrite guard.
+    //
+    // Audit P1 final (B01 / NOV-RECEIPTS): receipts, refund receipts, voids,
+    // corrections and every analytics flag on them are written ONLY by the
+    // server commands (/api/pos/commands/*, Admin SDK). The one client write
+    // left is the print audit (use-print.ts): exactly those four fields, with
+    // printedCount advancing by one. Revision snapshots are server-only (no
+    // block below grants them, and the catch-all excludes receipts).
+    // DEPLOY ONLY AFTER EVERY TILL RUNS THE P1 APK — older builds write
+    // receipts directly and would fail checkout.
     match /stores/{storeId}/receipts/{receiptId} {
-      allow create, update: if hasStoreAccess(storeId) && offlineReceiptWriteOk();
-    }
-    // receipts/{id}/revisions/{v} — edit history snapshots: append/update only.
-    match /stores/{storeId}/receipts/{receiptId}/{subcoll}/{subPath=**} {
-      allow create, update: if hasStoreAccess(storeId);
+      function printAuditOnly() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['printedCount', 'lastPrintedAt', 'lastPrintedByUid', 'lastPrintedByUsername'])
+          && request.resource.data.get('printedCount', 0) == resource.data.get('printedCount', 0) + 1
+          // Final review #7: the print is attributed to the signed-in account.
+          && request.resource.data.get('lastPrintedByUid', null) == request.auth.uid;
+      }
+      allow update: if hasStoreAccess(storeId) && printAuditOnly();
     }
 
-    // tables: the offline release guard; everything else as before.
+    // tables: releasing a seated table (clearing currentSessionId, or flipping
+    // it to available) is a server command since audit P1, so an old offline
+    // settlement can never free a table another till re-seated. Seating
+    // (startSession) and manager edits (name / active) stay client writes.
     match /stores/{storeId}/tables/{docPath=**} {
-      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk();
+      function tableReleaseDenied() {
+        return resource != null
+          && resource.data.get('currentSessionId', null) != null
+          && (request.resource.data.get('currentSessionId', null) == null
+              || (request.resource.data.get('status', '') == 'available'
+                  && resource.data.get('status', '') != 'available'));
+      }
+      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk() && !tableReleaseDenied();
       allow delete: if hasStoreAccess(storeId);
     }
 
-    // counters/receipts is the receipt-number sequence. The only client writer
-    // (completePaymentFromUnits) bumps it by exactly one inside a transaction,
-    // so a client may not rewind it (duplicate receipt numbers) or delete it.
+    // counters/receipts is the receipt-number sequence. Since audit P1 only the
+    // server checkout command advances it; no client write at all (the
+    // catch-all excludes counters).
     match /stores/{storeId}/counters/{counterId} {
-      allow create: if hasStoreAccess(storeId);
-      allow update: if hasStoreAccess(storeId)
-        && (!('seq' in resource.data) || request.resource.data.get('seq', null) == resource.data.seq + 1);
+      allow create, update, delete: if false;
+    }
+
+    // -----------------------------
+    // OFFLINE POS COMMANDS (audit P1: B16/B17, 2026-11-03)
+    // -----------------------------
+    // An offline till records each sale / void as an immutable command that
+    // the server applies on reconnect (/api/pos/commands/reconcile and the
+    // reconcile-pos-commands cron). Clients may only CREATE their own command:
+    // no read (it carries the operator's signed session token, which a
+    // colleague could otherwise replay), no update, no delete. A second setDoc
+    // on the same id is an update and is denied, so a command cannot be
+    // rewritten after the fact. Outcomes live in posCommandResults
+    // (server-written, staff-readable); the effects outbox posEffects is
+    // server-only (its payloads include customer PINs). All three are excluded
+    // from the catch-all below.
+    match /stores/{storeId}/posCommands/{opId} {
+      // Re-review #7 / A: only roles that settle bills record commands, and the
+      // shape is fixed so a malformed doc cannot be planted.
+      allow create: if hasStoreAccess(storeId)
+        && (isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier'))
+        && request.resource.data.keys().hasOnly(['schema', 'opId', 'kind', 'storeId', 'sessionId', 'terminalId',
+             'createdByUid', 'clientCreatedAtMs', 'operatorSessionToken', 'expected', 'payload', 'resolved'])
+        && request.resource.data.sessionId is string && request.resource.data.sessionId.size() > 0
+        && request.resource.data.sessionId.size() <= 128
+        && request.resource.data.terminalId is string && request.resource.data.terminalId.size() <= 64
+        && request.resource.data.clientCreatedAtMs is int
+        && (request.resource.data.get('operatorSessionToken', null) == null
+            || (request.resource.data.operatorSessionToken is string && request.resource.data.operatorSessionToken.size() <= 2048))
+        && request.resource.data.expected is map
+        && request.resource.data.payload is map
+        && request.resource.data.schema == 1
+        && request.resource.data.opId == opId
+        && request.resource.data.storeId == storeId
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.kind in ['checkout', 'voidSession']
+        // Review #7: the server sweep indexes unresolved commands; a client may
+        // not create one pre-resolved to hide it from the sweep.
+        && request.resource.data.resolved == false;
+    }
+    match /stores/{storeId}/posCommandResults/{opId} {
+      allow read: if hasStoreAccess(storeId);
+    }
+
+    // Reservations (audit P1 re-review #2): a reservation's deposit records
+    // (`payments`) and `paymentsAppliedToSessionId` stand for money already
+    // taken, so only cashier / manager / admin accounts may write them; other
+    // reservation fields stay open to the shift. Excluded from the catch-all.
+    match /stores/{storeId}/reservations/{resId} {
+      function canTakeMoney() {
+        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier');
+      }
+      allow create: if hasStoreAccess(storeId) && (canTakeMoney() || (
+        request.resource.data.get('payments', []).size() == 0
+        && request.resource.data.get('paymentsAppliedToSessionId', null) == null));
+      allow update: if hasStoreAccess(storeId) && (canTakeMoney()
+        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['payments', 'paymentsAppliedToSessionId']));
+      allow delete: if hasStoreAccess(storeId);
+    }
+    match /stores/{storeId}/reservations/{resId}/{sub}/{subPath=**} {
+      allow create, update, delete: if hasStoreAccess(storeId);
     }
 
     // Activity / audit logs are append-only: the only client writers
@@ -545,7 +754,9 @@ service cloud.firestore {
     // and writes it through the Admin SDK.
     match /stores/{storeId}/{coll}/{docPath=**} {
       allow read: if hasStoreAccess(storeId)
-        && coll != 'serverProfileSecrets';
+        && coll != 'serverProfileSecrets'
+        // posCommands / posEffects: see OFFLINE POS COMMANDS above.
+        && !(coll in ['posCommands', 'posEffects']);
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
         // sessions has a dedicated block above (link-field guard); see its comment.
@@ -571,6 +782,14 @@ service cloud.firestore {
         // (no delete, offline overwrite guard), tables (offline release guard),
         // counters (monotonic), activity logs (append-only).
         && !(coll in ['receipts', 'tables', 'counters', 'activityLogs', 'activityLogsByDay'])
+        // Offline POS commands (create-only block above) and their server-only
+        // results / effects outbox (audit P1).
+        && !(coll in ['posCommands', 'posCommandResults', 'posEffects', 'tenderConsumptions'])
+        // reservations: dedicated block above (deposit fields cashier+).
+        && coll != 'reservations'
+        // paymentConversions: written only by /api/analytics/payment-conversion
+        // (audit P1 final).
+        && coll != 'paymentConversions'
         // catalogCache (CUSTOMER app menu/price cache, written by
         // rebuildCustomerCatalog) and inventoryCache (the internal shared
         // inventory-scan cache both rebuildCustomerCatalog and

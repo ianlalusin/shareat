@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// In-memory stand-in for the client Firestore SDK (same approach as
-// refund-receipt.test.ts). Exercises the real completePaymentFromUnits
-// transaction against fabricated / reused / mismatched PayMongo tenders (B03).
+// Since audit P1 the client only PROPOSES tenders: completePaymentFromUnits
+// posts to /api/pos/commands/checkout and the server verifies + consumes
+// gateway payments (forged / reused / wrong-store / wrong-revision cases live
+// in src/lib/server/pos-commands/pos-commands.test.ts). This pins the client
+// contract: what is sent, and what is rejected before any network call.
 const state = new Map<string, any>();
 
 const snap = (path: string) => ({
@@ -60,6 +62,14 @@ vi.mock("@/lib/offline/browserDevice", () => ({ getBrowserDeviceId: () => "dev" 
 vi.mock("@/lib/server-profiles/activeLocalProfile", () => ({ getActiveLocalProfile: () => null }));
 vi.mock("@/context/auth-context", () => ({}));
 
+const posted: any[] = [];
+vi.mock("@/lib/pos-commands/client", () => ({
+  postPosCommand: async (path: string, storeId: string, body: any) => {
+    posted.push({ path, storeId, body });
+    return { receiptId: body.sessionId, receiptNumber: "X-1", totalCents: body.expectedTotalCents, replay: false };
+  },
+}));
+
 import { completePaymentFromUnits } from "./firestore";
 import { calculateBillTotals } from "@/lib/tax";
 
@@ -71,81 +81,46 @@ const methods = [
 ] as any[];
 const user = { uid: "u1", username: "cashier" } as any;
 const line = { type: "addon", itemId: "i1", itemName: "Wings", category: "Food", qtyOrdered: 1, freeQty: 0, voidedQty: 0, unitPrice: 300 };
-
 let due = 0;
-function seedSession(id: string) {
-  state.set(`${S}/sessions/${id}`, { status: "active", tableId: "alacarte", sessionMode: "alacarte", billingRevision: 0 });
-  state.set(`${S}/sessions/${id}/sessionBillLines/l1`, line);
-}
-function seedBridge(id: string, over: Record<string, any> = {}) {
-  state.set(`${S}/paymentIntents/${id}`, {
-    storeId: "s1", sessionId: "sessA", methodId: "qr", status: "paid",
-    amount: due, amountCentavos: Math.round(due * 100), paymongoIntentId: `pi_${id}`, paymongoPaymentId: `pay_${id}`,
-    ...over,
-  });
-}
-const qr = (intentDocId: string | undefined, reference: string, amount = due) =>
-  ({ id: "t1", methodId: "qr", amount, reference, ...(intentDocId ? { intentDocId } : {}) });
 
 beforeEach(() => {
   state.clear();
+  posted.length = 0;
   due = calculateBillTotals([line as any], store, null, [], []).grandTotal;
-  seedSession("sessA");
-  seedSession("sessB");
+  state.set(`${S}/sessions/sessA`, { status: "active", tableId: "alacarte", sessionMode: "alacarte", billingRevision: 7 });
+  state.set(`${S}/sessions/sessA/sessionBillLines/l1`, line);
 });
 
-describe("completePaymentFromUnits gateway tenders (audit B03)", () => {
-  it("settles a bill with a webhook-confirmed bridge for this session", async () => {
-    seedBridge("b1");
-    await completePaymentFromUnits("s1", "sessA", user, [qr("b1", "pay_b1")], store, methods, due);
-    expect(state.get(`${S}/sessions/sessA`).status).toBe("closed");
-    expect(state.get(`${S}/receipts/sessA`).status).toBe("final");
+describe("completePaymentFromUnits client contract (audit P1 / B03)", () => {
+  it("posts only tenders, bill revision, expected centavos and a stable opId", async () => {
+    const id = await completePaymentFromUnits("s1", "sessA", user, [{ id: "t1", methodId: "qr", amount: due, reference: "pay_b1", intentDocId: "b1" } as any], store, methods, due, "op-1");
+    expect(id).toBe("sessA");
+    expect(posted).toHaveLength(1);
+    expect(posted[0].path).toBe("checkout");
+    expect(posted[0].body).toEqual({
+      sessionId: "sessA", opId: "op-1", billingRevision: 7, expectedTotalCents: Math.round(due * 100),
+      payments: [{ methodId: "qr", amount: due, reference: "pay_b1", intentDocId: "b1", fromReservationPaymentId: null }],
+    });
+    // Nothing canonical is written by the client.
+    expect([...state.keys()].some((k) => k.includes("/receipts/"))).toBe(false);
   });
 
-  it("rejects a fabricated reference with no bridge link", async () => {
-    await expect(completePaymentFromUnits("s1", "sessA", user, [qr(undefined, "pay_forged")], store, methods, due))
+  it("rejects a fabricated QR reference with no bridge link before calling the server", async () => {
+    await expect(completePaymentFromUnits("s1", "sessA", user, [{ id: "t", methodId: "qr", amount: due, reference: "pay_forged" } as any], store, methods, due))
       .rejects.toThrow(/isn't linked/);
-    expect(state.get(`${S}/sessions/sessA`).status).toBe("active");
-    expect(state.has(`${S}/receipts/sessA`)).toBe(false);
+    expect(posted).toHaveLength(0);
   });
 
-  it("rejects a bridge id that does not exist", async () => {
-    await expect(completePaymentFromUnits("s1", "sessA", user, [qr("nope", "pay_nope")], store, methods, due))
-      .rejects.toThrow(/could not be found/);
-    expect(state.has(`${S}/receipts/sessA`)).toBe(false);
-  });
-
-  it("rejects reusing one paid QR on a second session", async () => {
-    seedBridge("b1");
-    await completePaymentFromUnits("s1", "sessA", user, [qr("b1", "pay_b1")], store, methods, due);
-    await expect(completePaymentFromUnits("s1", "sessB", user, [qr("b1", "pay_b1")], store, methods, due))
-      .rejects.toThrow(/another bill/);
-    expect(state.get(`${S}/sessions/sessB`).status).toBe("active");
-  });
-
-  it("rejects an unpaid bridge", async () => {
-    seedBridge("b1", { status: "awaiting_payment", paymongoPaymentId: null });
-    await expect(completePaymentFromUnits("s1", "sessA", user, [qr("b1", "pi_b1")], store, methods, due))
-      .rejects.toThrow(/not confirmed/);
-  });
-
-  it("rejects a partial QR payment passed off as the full amount", async () => {
-    seedBridge("b1", { amount: 1, amountCentavos: 100 });
-    await expect(completePaymentFromUnits("s1", "sessA", user, [qr("b1", "pay_b1")], store, methods, due))
-      .rejects.toThrow(/amount does not match/);
-  });
-
-  it("still accepts a split tender: partial QR + cash", async () => {
-    const qrPart = Math.round((due / 2) * 100) / 100;
-    seedBridge("b1", { amount: qrPart, amountCentavos: Math.round(qrPart * 100) });
-    const cash = { id: "c1", methodId: "cash", amount: Math.round((due - qrPart) * 100) / 100 };
-    await completePaymentFromUnits("s1", "sessA", user, [qr("b1", "pay_b1", qrPart), cash], store, methods, due);
-    expect(state.get(`${S}/receipts/sessA`).status).toBe("final");
-  });
-
-  it("rejects a negative cash tender", async () => {
+  it("rejects a negative cash tender before calling the server", async () => {
     await expect(
-      completePaymentFromUnits("s1", "sessA", user, [{ id: "c", methodId: "cash", amount: -5 }, { id: "c2", methodId: "cash", amount: due + 5 }], store, methods, due),
+      completePaymentFromUnits("s1", "sessA", user, [{ id: "c", methodId: "cash", amount: -5 }, { id: "c2", methodId: "cash", amount: due + 5 }] as any, store, methods, due),
     ).rejects.toThrow(/positive number/);
+    expect(posted).toHaveLength(0);
+  });
+
+  it("refuses when the bill total moved since the cashier set up tenders", async () => {
+    await expect(completePaymentFromUnits("s1", "sessA", user, [{ id: "c", methodId: "cash", amount: 999 } as any], store, methods, due + 1))
+      .rejects.toThrow(/Bill changed/);
+    expect(posted).toHaveLength(0);
   });
 });

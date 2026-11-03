@@ -29,6 +29,42 @@ export interface QueuedPayment {
   ctx: QueuedReceiptContext;
   effects: Record<DeferredEffect, EffectState>;
   errorMessage?: string;
+  /**
+   * Audit P1: offline command id. Items with an opId are settled by the server
+   * (/api/pos/commands/reconcile) and their effects run from the server outbox;
+   * `effects` is all "skip" for them. Items without one are legacy (pre-P1 APK).
+   */
+  opId?: string;
+  /** Full immutable command, also written to stores/{s}/posCommands/{opId}. */
+  command?: Record<string, unknown>;
+  /** Receipt as shown/printed on the till while settlement is pending. */
+  provisionalReceipt?: Record<string, unknown>;
+  /** Set after a server rejection so a manual Retry asks the server to re-validate. */
+  rejected?: boolean;
+}
+
+/** Fired on this tab whenever the queue changes (storage events cover other tabs). */
+export const QUEUE_EVENT = "offline-payment-queue-changed";
+
+function notifyQueueChanged() {
+  try {
+    if (typeof window !== "undefined") window.dispatchEvent(new Event(QUEUE_EVENT));
+  } catch {
+    // non-browser
+  }
+}
+
+/**
+ * Session ids whose offline sale/void is recorded on this till but not yet
+ * accepted by the server ("pending settlement"). Rejected (failed) items are
+ * NOT included, so the bill reappears for the cashier to resolve.
+ */
+export function pendingSettlementSessionIds(queue: QueuedPayment[] = getQueue()): Set<string> {
+  return new Set(queue.filter((q) => q.opId && q.status !== "failed").map((q) => q.sessionId));
+}
+
+export function findQueuedReceipt(receiptId: string): QueuedPayment | null {
+  return getQueue().find((q) => q.opId && q.receiptId === receiptId && q.provisionalReceipt) ?? null;
 }
 
 const ALL_EFFECTS: DeferredEffect[] = ["analytics", "loyaltyFinalize", "loyaltyEarn", "pinFinalize", "loyaltyReverse"];
@@ -64,6 +100,7 @@ export function addToQueue(item: Omit<QueuedPayment, "id" | "queuedAtMs" | "stat
   };
   queue.push(newItem);
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  notifyQueueChanged();
 
   // Register background sync so SW can process when reconnected (PWA only)
   if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
@@ -85,11 +122,13 @@ export function updateQueueItem(id: string, patch: Partial<QueuedPayment>) {
   if (idx === -1) return;
   queue[idx] = { ...queue[idx], ...patch };
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  notifyQueueChanged();
 }
 
 export function removeFromQueue(id: string) {
   const queue = getQueue().filter(q => q.id !== id);
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  notifyQueueChanged();
 }
 
 export function clearQueue() {

@@ -1,35 +1,24 @@
 "use client";
 
-import {
-  doc,
-  collection,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  writeBatch,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/lib/firebase/client";
-import { servedQtyFields } from "@/lib/kitchen/served-qty";
 import type { AppUser } from "@/context/auth-context";
-import type { Payment, Store, ModeOfPayment } from "@/lib/types";
+import type { Store, ModeOfPayment } from "@/lib/types";
 import { stripUndefined } from "@/lib/firebase/utils";
 import { calculateBillTotals } from "@/lib/tax";
 import {
   getActorStamp,
   getCurrentSessionBillingState,
 } from "@/components/cashier/firestore";
-import { commitLocalFirst } from "@/lib/offline/commit";
 import {
   nextDailySeq,
   formatOfflineReceiptNumber,
 } from "@/lib/offline/offlineReceiptNumber";
 import { deviceReceiptTag, getBrowserDeviceId } from "@/lib/offline/browserDevice";
 import { buildOfflinePaymentSummary } from "@/lib/offline/offlinePaymentSummary";
-import { addToQueue, updateQueueItem } from "@/lib/offline/payment-queue";
-import { toast } from "@/hooks/use-toast";
+import { addToQueue } from "@/lib/offline/payment-queue";
+import { getOperatorSessionToken } from "@/lib/pos-commands/client";
 import {
   planGatewayChecks,
   verifyBridgeTender,
@@ -38,13 +27,15 @@ import {
 } from "@/components/cashier/gatewayTenders";
 
 /**
- * Records a completed sale entirely from the local Firestore cache — no
- * network. Mirrors the CORE of completePaymentFromUnits (reads → checks →
- * receipt → close → free table → mark tickets served) but: (1) reads from
- * cache via getDoc/getDocs; (2) mints a local OL receipt number instead of the
- * server counter; (3) writes via a single writeBatch committed local-first;
- * (4) defers ALL server-only effects (analytics, KDS rollups, loyalty, PINs)
- * to sync. Online sales still go through completePaymentFromUnits unchanged.
+ * Records an offline sale as an immutable provisional command (audit P1 /
+ * B16 / B17). Validates from the local cache exactly as before (totals, bill
+ * revision, cached gateway bridge, tenders), mints the OL receipt number, then
+ * persists the command durably (localStorage queue first, then the create-only
+ * Firestore doc) BEFORE reporting success. No canonical doc (receipt, session
+ * close, table release, counters) is written on the till: the server settles
+ * the command on reconnect via /api/pos/commands/reconcile, transactionally,
+ * only if the bill, its revision and the table ownership still match. Until
+ * then the till shows the bill as "pending settlement" from the local queue.
  */
 export async function completePaymentOffline(
   storeId: string,
@@ -66,23 +57,19 @@ export async function completePaymentOffline(
   }
 
   const now = Date.now();
-  const sessionRef = doc(db, `stores/${storeId}/sessions`, sessionId);
-  const receiptRef = doc(db, `stores/${storeId}/receipts`, sessionId);
-  const activeProjectionRef = doc(db, `stores/${storeId}/activeSessions`, sessionId);
-
   const [sessionSnap, receiptSnap, activeProjectionSnap] = await Promise.all([
-    getDoc(sessionRef),
-    getDoc(receiptRef),
-    getDoc(activeProjectionRef),
+    getDoc(doc(db, `stores/${storeId}/sessions`, sessionId)),
+    getDoc(doc(db, `stores/${storeId}/receipts`, sessionId)),
+    getDoc(doc(db, `stores/${storeId}/activeSessions`, sessionId)),
   ]);
 
   const sessionData = sessionSnap.data() as any;
   if (!sessionData) throw new Error(`Session ${sessionId} is not available offline. Open it while online first.`);
 
-  // Idempotency: already finalized.
-  if ((receiptSnap.exists() && receiptSnap.data()?.analyticsApplied) || sessionData.status === "closed" || sessionData.isPaid === true) {
+  // Already finalized (as far as this device knows).
+  if (receiptSnap.exists() || sessionData.status === "closed" || sessionData.isPaid === true) {
     const existingNumber = (receiptSnap.data()?.receiptNumber as string) || "";
-    return { receiptId: receiptSnap.exists() ? receiptSnap.id : sessionId, receiptNumber: existingNumber };
+    return { receiptId: sessionId, receiptNumber: existingNumber };
   }
 
   // Billing-revision concurrency guard (same as online).
@@ -92,8 +79,8 @@ export async function completePaymentOffline(
   }
 
   // 1b. Gateway (PayMongo QR) tenders must match a paid bridge doc for this
-  // session (audit B03). Offline we can only read the cached copy the QR
-  // overlay / recovery query already loaded; if it isn't cached, refuse.
+  // session (audit B03). Offline we can only read the cached copy; the server
+  // re-verifies and consumes it authoritatively at reconciliation.
   for (const check of planGatewayChecks(payments, paymentMethods)) {
     let problem: string | null;
     try {
@@ -125,98 +112,46 @@ export async function completePaymentOffline(
   const deviceTag = deviceReceiptTag(getBrowserDeviceId());
   const receiptNumber = formatOfflineReceiptNumber({ storeCode: store.code, deviceTag, date: new Date(), seq });
 
-  // 4. Build the local-first batch.
+  // 4. The immutable command (contract: docs/audit/pos-financial-commands.md §4).
+  const opId = uuidv4();
   const actor = getActorStamp(user);
-  const serverTs = serverTimestamp();
-  const batch = writeBatch(db);
-  // Audit B16: a fresh id per offline write. firestore.rules treats a session
-  // update carrying a NEW offlineWriteId as a compare-and-swap (session must
-  // still be open on the server, revision exactly +1) and a table update
-  // carrying a new releasedByWriteId as "only if still seated by this session".
-  // The batch is atomic, so a stale write is rejected whole on reconnect.
-  const offlineWriteId = uuidv4();
-
-  // payments subcollection
-  const paymentsCol = collection(db, `stores/${storeId}/sessions`, sessionId, "payments");
-  payments.forEach((payment) => {
-    const paymentRef = doc(paymentsCol);
-    batch.set(paymentRef, {
-      ...payment,
-      id: paymentRef.id,
-      createdByUid: actor.uid,
-      createdByUsername: actor.username,
-      createdAt: serverTs,
-    });
-  });
-
-  // mark active kitchen tickets served (local state; KDS rollups deferred)
-  const ticketsRef = collection(db, "stores", storeId, "sessions", sessionId, "kitchentickets");
-  const activeTicketsSnap = await getDocs(query(ticketsRef, where("status", "in", ["preparing", "ready"])));
-  activeTicketsSnap.docs.forEach((t) => {
-    const st = t.data() as any;
-    if (st.status === "served" || st.status === "cancelled") return;
-    // Same quantity bookkeeping the KDS "Served" button writes — see
-    // `servedQtyFields`. KDS rollups are deferred on this path, so the fields
-    // have to be right on the ticket for the later reconcile to read them.
-    batch.update(t.ref, { status: "served", servedAt: serverTs, servedAtClientMs: now, servedByUid: actor.uid, updatedAt: serverTs, ...servedQtyFields(st) });
-  });
-
-  // close session (increment ownership revision)
-  batch.update(sessionRef, {
-    status: "closed",
-    isPaid: true,
-    closedByUid: actor.uid,
-    closedByUsername: actor.username,
-    closedAt: serverTs,
-    closedAtClientMs: now,
-    revision: Number(sessionData.revision ?? 1) + 1,
-    offlineWriteId,
-    updatedAt: serverTs,
-  });
-
-  // move projection active → closed
-  const closedProjectionRef = doc(db, `stores/${storeId}/closedSessions`, sessionId);
-  const projectionSource = activeProjectionSnap.exists() ? activeProjectionSnap.data() : sessionData;
-  batch.set(closedProjectionRef, {
-    ...projectionSource,
-    status: "closed",
-    customerAccessEnabled: false,
-    updatedAt: serverTs,
-    closedAt: serverTs,
-    closedAtClientMs: now,
-  });
-  if (activeProjectionSnap.exists()) batch.delete(activeProjectionRef);
-
-  // receipt doc — analytics DEFERRED (analyticsApplied:false, no baked analytics)
-  const receiptPayload = stripUndefined({
-    id: sessionId,
+  const projData: any = activeProjectionSnap.exists() ? activeProjectionSnap.data() : {};
+  const command = buildOfflineCheckoutCommand({
+    opId,
     storeId,
     sessionId,
+    terminalId: getBrowserDeviceId(),
+    createdByUid: user.uid,
+    clientCreatedAtMs: now,
+    operatorSessionToken: getOperatorSessionToken(storeId),
+    sessionRevision: Number(sessionData.revision ?? 1),
+    billingRevision: currentBillingRevision,
+    tableId: sessionData.tableId && sessionData.tableId !== "alacarte" ? String(sessionData.tableId) : null,
+    totalCents: amountDueCents,
+    receiptNumber,
+    receiptSeq: seq,
+    payments,
+    lines: billLines,
+  });
+
+  // What the till shows / prints while settlement is pending (same fields the
+  // receipt page reads from a receipt doc).
+  const provisionalReceipt = stripUndefined({
+    id: sessionId,
     receiptId: sessionId,
-    createdByUid: actor.uid,
+    sessionId,
+    storeId,
+    receiptNumber,
+    pendingSettlement: true,
     createdByUsername: actor.username,
+    createdAtClientMs: now,
     sessionMode: sessionData.sessionMode,
-    tableId: sessionData.sessionMode === "alacarte" ? null : sessionData.tableId ?? null,
     tableNumber: sessionData.sessionMode === "alacarte" ? null : sessionData.tableNumber ?? null,
     customerName: sessionData.customer?.name ?? sessionData.customerName ?? null,
+    lines: billLines,
     total: amountDue,
     totalPaid: summary.totalPaid,
     change: summary.change,
-    status: "final",
-    receiptSeq: seq,
-    receiptNumber,
-    receiptNoFormatUsed: "OL",
-    offlineOrigin: true,
-    createdAtClientMs: now,
-    lines: billLines,
-    billDiscount: billDiscount ?? null,
-    customAdjustments: customAdjustments ?? [],
-    loyaltyRedemptions: loyaltyRedemptions ?? [],
-    // Print-critical analytics baked in immediately so the receipt renders
-    // correct money totals + MOP offline. Server-only aggregates (salesByItem,
-    // salesByCategory, servedRefillsByName, serveCountByType,
-    // serveTimeMsTotalByType, guestCountSnapshot) are DEFERRED — Plan 4's
-    // sync-time analytics delta computes and applies those.
     analytics: {
       v: 2,
       subtotal: finalTotals.subtotal,
@@ -230,89 +165,100 @@ export async function completePaymentOffline(
       change: summary.change,
       mop: summary.mopMap,
     },
-    analyticsApplied: false,
-    analyticsApplyId: uuidv4(),
-    createdAt: serverTs,
   });
-  batch.set(receiptRef, receiptPayload);
 
-  // free the table + its projection
-  if (sessionData.tableId && sessionData.tableId !== "alacarte") {
-    const tableRef = doc(db, `stores/${storeId}/tables`, sessionData.tableId);
-    const tableSnap = await getDoc(tableRef);
-    if (tableSnap.exists() && (tableSnap.data() as any).currentSessionId === sessionId) {
-      batch.update(tableRef, {
-        status: "available",
-        currentSessionId: null,
-        closedSessionId: sessionId,
-        releasedByWriteId: offlineWriteId,
-        updatedAt: serverTs,
-      });
-      const tableProjectionRef = doc(db, `stores/${storeId}/storeConfig/current/tables`, sessionData.tableId);
-      batch.update(tableProjectionRef, {
-        status: "available",
-        currentSessionId: null,
-        customerName: null,
-        packageLabel: null,
-        sessionType: null,
-        guestCount: null,
-        itemCount: null,
-        startedAtMs: null,
-        closedSessionId: sessionId,
-        releasedByWriteId: offlineWriteId,
-        updatedAt: serverTs,
-      });
-    }
-  }
-
-  // 5. Record the deferred-finalization marker BEFORE committing (audit B17).
-  // If it can't be saved (localStorage full / blocked) the sale is NOT taken:
-  // a closed sale with no marker would never get its loyalty / PIN / analytics
-  // effects. The marker also keeps the receipt number + tenders so a sale the
-  // server later rejects can be reconciled by hand.
-  const projData: any = activeProjectionSnap.exists() ? activeProjectionSnap.data() : {};
-  const pin = projData.customerPin ? String(projData.customerPin) : null;
-  const phone = projData.linkedCustomerPhone ? String(projData.linkedCustomerPhone) : null;
-  let queued: { id: string };
+  // 5. Durable record #1 BEFORE the sale is accepted locally (audit B17): if
+  // it can't be saved the payment is NOT taken.
   try {
-    queued = addToQueue({
+    addToQueue({
       storeId,
       sessionId,
       receiptId: sessionId,
       receiptNumber,
-      offlineWriteId,
+      opId,
+      kind: "payment",
+      command,
+      provisionalReceipt,
       ctx: {
-        pin,
-        phone,
+        pin: projData.customerPin ? String(projData.customerPin) : null,
+        phone: projData.linkedCustomerPhone ? String(projData.linkedCustomerPhone) : null,
         amount: amountDue,
         tenders: payments.map((p) => ({ methodId: p.methodId, amount: p.amount, reference: p.reference ?? null })),
       },
-      effects: {
-        analytics: "pending",
-        loyaltyFinalize: "pending",
-        loyaltyEarn: phone ? "pending" : "skip",
-        pinFinalize: pin ? "pending" : "skip",
-        loyaltyReverse: "skip", // payment sales never reverse loyalty (void-only effect)
-      },
+      // Effects run from the server outbox once the command is accepted.
+      effects: { analytics: "skip", loyaltyFinalize: "skip", loyaltyEarn: "skip", pinFinalize: "skip", loyaltyReverse: "skip" },
     });
   } catch {
     throw new Error("This device couldn't save the offline sale record, so the payment was not taken. Free up browser storage or reconnect, then try again.");
   }
 
-  // 6. Commit local-first (does not await the server ack that never comes offline).
-  // A server rejection (e.g. the session was settled on another terminal, or the
-  // table was re-seated) marks the queued sale failed so it is never replayed
-  // as if accepted, and tells the cashier.
-  commitLocalFirst(batch, (err) => {
-    console.error("[completePaymentOffline] batch sync failed", err);
-    const message = (err as any)?.message ?? String(err);
-    updateQueueItem(queued.id, { status: "failed", errorMessage: `Server rejected offline sale: ${message}` });
-    toast({
-      variant: "destructive",
-      title: "Offline sale was not accepted",
-      description: `Receipt ${receiptNumber} (session ${sessionId.slice(0, 6)}…) was rejected by the server. Check this bill with a manager.`,
-    });
-  });
+  // 6. Durable record #2: the create-only command doc, local-first (kept in
+  // Firestore's persistent cache across restarts). A denied/failed sync is not
+  // fatal: reconcile accepts the localStorage copy above.
+  writeOfflineCommand(storeId, opId, command);
 
   return { receiptId: sessionId, receiptNumber };
+}
+
+/** Pure builder for the offline checkout command (unit-tested). */
+export function buildOfflineCheckoutCommand(a: {
+  opId: string;
+  storeId: string;
+  sessionId: string;
+  terminalId: string;
+  createdByUid: string;
+  clientCreatedAtMs: number;
+  operatorSessionToken: string | null;
+  sessionRevision: number;
+  billingRevision: number;
+  tableId: string | null;
+  totalCents: number;
+  receiptNumber: string;
+  receiptSeq: number;
+  payments: CheckoutPayment[];
+  /** Lines as charged, kept so a manager can accept a rejected sale as recorded. */
+  lines?: unknown[];
+}): Record<string, unknown> {
+  return stripUndefined({
+    schema: 1,
+    opId: a.opId,
+    kind: "checkout",
+    // Server sweep index: false until the server resolves the command.
+    resolved: false,
+    storeId: a.storeId,
+    sessionId: a.sessionId,
+    terminalId: a.terminalId,
+    createdByUid: a.createdByUid,
+    clientCreatedAtMs: a.clientCreatedAtMs,
+    operatorSessionToken: a.operatorSessionToken,
+    expected: {
+      sessionRevision: a.sessionRevision,
+      billingRevision: a.billingRevision,
+      tableId: a.tableId,
+      totalCents: a.totalCents,
+    },
+    payload: {
+      receiptNumber: a.receiptNumber,
+      receiptSeq: a.receiptSeq,
+      payments: a.payments.map((p) => stripUndefined({
+        methodId: p.methodId,
+        amount: Math.round(Number(p.amount) * 100) / 100,
+        reference: p.reference ?? null,
+        intentDocId: p.intentDocId ?? null,
+        fromReservationPaymentId: p.fromReservationPaymentId ?? null,
+      })),
+      ...(a.lines ? { lines: JSON.parse(JSON.stringify(a.lines)) } : {}),
+    },
+  });
+}
+
+/** Local-first create of stores/{s}/posCommands/{opId}; never awaited. */
+export function writeOfflineCommand(storeId: string, opId: string, command: Record<string, unknown>) {
+  try {
+    void setDoc(doc(db, "stores", storeId, "posCommands", opId), command).catch((err) => {
+      console.warn("[offline] posCommands sync failed; reconcile will use the local copy", err);
+    });
+  } catch (err) {
+    console.warn("[offline] posCommands write failed; reconcile will use the local copy", err);
+  }
 }
