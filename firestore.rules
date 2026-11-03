@@ -359,37 +359,19 @@ service cloud.firestore {
     // Audit B16 (2026-10-29): the session doc and its subcollections are split
     // so the session doc can carry an offline compare-and-swap, and the
     // session's activityLogs subcollection can be append-only (B01 slice).
-    //
-    // Audit P1 final: paying / closing / voiding a session (status closed or
-    // voided, isPaid, the ownership revision, offline write ids) is a server
-    // command. Clients keep every other session write (bill edits, guest
-    // counts, approvals, notes...).
     match /stores/{storeId}/sessions/{sessionId} {
-      function settlementFieldsUnchanged() {
-        return request.resource.data.get('isPaid', false) == resource.data.get('isPaid', false)
-          && request.resource.data.get('revision', null) == resource.data.get('revision', null)
-          && request.resource.data.get('offlineWriteId', null) == resource.data.get('offlineWriteId', null)
-          && (request.resource.data.get('status', '') == resource.data.get('status', '')
-              || (!(request.resource.data.get('status', '') in ['closed', 'voided'])
-                  && !(resource.data.get('status', '') in ['closed', 'voided'])));
-      }
-      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged()
-        && !(request.resource.data.get('status', '') in ['closed', 'voided'])
-        && request.resource.data.get('isPaid', false) != true;
-      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk()
-        && settlementFieldsUnchanged();
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk();
       allow delete: if hasStoreAccess(storeId);
     }
     // Every doc under a session (billLines, payments, kitchentickets, ...).
     // activityLogs is append-only: the timeline and loss-prevention review read
     // it, so a past entry must never be edited or erased. No client updates or
     // deletes it (writeActivityLog only creates).
-    // payments (tender rows) are written only by the server checkout command
-    // since audit P1.
     match /stores/{storeId}/sessions/{sessionId}/{subcoll}/{subPath=**} {
-      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments';
-      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']);
-      allow delete: if hasStoreAccess(storeId) && !(subcoll in ['activityLogs', 'payments']);
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'activityLogs';
+      allow delete: if hasStoreAccess(storeId) && subcoll != 'activityLogs';
     }
 
     match /stores/{storeId}/closedSessions/{docPath=**} {
@@ -445,17 +427,7 @@ service cloud.firestore {
       // tableReleaseOk(): offline release must still match the seated session
       // (audit B16). Residual: managers/admins also pass the storeConfig
       // catch-all, which ORs past this guard for them.
-      // Audit P1 final: releasing a seated table is a server command (checkout /
-      // void / offline reconcile). Managers keep the wholesale rebuild via the
-      // storeConfig catch-all (existing residual).
-      function projectionReleaseDenied() {
-        return resource != null
-          && resource.data.get('currentSessionId', null) != null
-          && (request.resource.data.get('currentSessionId', null) == null
-              || (request.resource.data.get('status', '') == 'available'
-                  && resource.data.get('status', '') != 'available'));
-      }
-      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk() && !projectionReleaseDenied();
+      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk();
       allow delete: if hasStoreAccess(storeId);
     }
 
@@ -471,45 +443,27 @@ service cloud.firestore {
     // every report, so delete is denied. create/update stay open (online and
     // offline checkout, print counter, edits, voids, refunds, analytics flags)
     // with the offline overwrite guard.
-    //
-    // Audit P1 final (B01 / NOV-RECEIPTS): receipts, refund receipts, voids,
-    // corrections and every analytics flag on them are written ONLY by the
-    // server commands (/api/pos/commands/*, Admin SDK). The one client write
-    // left is the print audit (use-print.ts): exactly those four fields, with
-    // printedCount advancing by one. Revision snapshots are server-only (no
-    // block below grants them, and the catch-all excludes receipts).
-    // DEPLOY ONLY AFTER EVERY TILL RUNS THE P1 APK — older builds write
-    // receipts directly and would fail checkout.
     match /stores/{storeId}/receipts/{receiptId} {
-      function printAuditOnly() {
-        return request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['printedCount', 'lastPrintedAt', 'lastPrintedByUid', 'lastPrintedByUsername'])
-          && request.resource.data.get('printedCount', 0) == resource.data.get('printedCount', 0) + 1;
-      }
-      allow update: if hasStoreAccess(storeId) && printAuditOnly();
+      allow create, update: if hasStoreAccess(storeId) && offlineReceiptWriteOk();
+    }
+    // receipts/{id}/revisions/{v} — edit history snapshots: append/update only.
+    match /stores/{storeId}/receipts/{receiptId}/{subcoll}/{subPath=**} {
+      allow create, update: if hasStoreAccess(storeId);
     }
 
-    // tables: releasing a seated table (clearing currentSessionId, or flipping
-    // it to available) is a server command since audit P1, so an old offline
-    // settlement can never free a table another till re-seated. Seating
-    // (startSession) and manager edits (name / active) stay client writes.
+    // tables: the offline release guard; everything else as before.
     match /stores/{storeId}/tables/{docPath=**} {
-      function tableReleaseDenied() {
-        return resource != null
-          && resource.data.get('currentSessionId', null) != null
-          && (request.resource.data.get('currentSessionId', null) == null
-              || (request.resource.data.get('status', '') == 'available'
-                  && resource.data.get('status', '') != 'available'));
-      }
-      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk() && !tableReleaseDenied();
+      allow create, update: if hasStoreAccess(storeId) && tableReleaseOk();
       allow delete: if hasStoreAccess(storeId);
     }
 
-    // counters/receipts is the receipt-number sequence. Since audit P1 only the
-    // server checkout command advances it; no client write at all (the
-    // catch-all excludes counters).
+    // counters/receipts is the receipt-number sequence. The only client writer
+    // (completePaymentFromUnits) bumps it by exactly one inside a transaction,
+    // so a client may not rewind it (duplicate receipt numbers) or delete it.
     match /stores/{storeId}/counters/{counterId} {
-      allow create, update, delete: if false;
+      allow create: if hasStoreAccess(storeId);
+      allow update: if hasStoreAccess(storeId)
+        && (!('seq' in resource.data) || request.resource.data.get('seq', null) == resource.data.seq + 1);
     }
 
     // -----------------------------
@@ -647,9 +601,6 @@ service cloud.firestore {
         // Offline POS commands (create-only block above) and their server-only
         // results / effects outbox (audit P1).
         && !(coll in ['posCommands', 'posCommandResults', 'posEffects'])
-        // paymentConversions: written only by /api/analytics/payment-conversion
-        // (audit P1 final).
-        && coll != 'paymentConversions'
         // catalogCache (CUSTOMER app menu/price cache, written by
         // rebuildCustomerCatalog) and inventoryCache (the internal shared
         // inventory-scan cache both rebuildCustomerCatalog and
