@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { v4 as uuidv4 } from "uuid";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,6 +147,8 @@ export function PaymentModal({
   const router = useRouter();
   const { toast } = useToast();
   const isOnline = useOnlineStatus();
+  // One checkout command id per modal opening (audit P1 idempotent retry).
+  const checkoutOpIdRef = useRef<string>(uuidv4());
   const isMobile = useIsMobile();
   const { currentProfile } = useLocalProfile();
 
@@ -513,94 +516,25 @@ export function PaymentModal({
     }
 
     // --- ONLINE ---
-    let currentPin = "";
-    let linkedPhone = "";
+    // Server command (audit P1): totals, receipt number, gateway consumption,
+    // PIN archive, voucher finalize and loyalty earn all run server-side (the
+    // last three from the posEffects outbox, retried by cron). `checkoutOpIdRef`
+    // stays the same across retries so a timed-out attempt is replayed, not
+    // charged twice.
     const result = await runCheckout({
-      commit: async () => {
-        const activeProjectionSnap = await getDoc(doc(db, "stores", storeId, "activeSessions", sessionId));
-        currentPin = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.customerPin || "") : "";
-        linkedPhone = activeProjectionSnap.exists() ? String(activeProjectionSnap.data()?.linkedCustomerPhone || "") : "";
-        return completePaymentFromUnits(
+      commit: async () =>
+        completePaymentFromUnits(
           storeId, sessionId, appUser, normalizedPayments,
-          activeStore, paymentMethods, grandTotal,
-        );
-      },
+          activeStore, paymentMethods, grandTotal, checkoutOpIdRef.current,
+        ),
       readAutoPrint,
-      // If this session pulled in reservation prepayments, mark the
-      // reservation so reopening this modal can't double-apply them.
+      // History entry on the reservation (the server already set
+      // paymentsAppliedToSessionId atomically with the receipt).
       afterCommit: usesReservationPayments
         ? [{ label: "Marking the reservation deposit as used", run: async () => { await markReservationApplied(); } }]
         : [],
     });
     finish(result, false);
-    if (result.phase !== "committed") return;
-    const receiptId = result.receiptId;
-
-    // Post-sale follow-ups. Everything below is best-effort and can never
-    // turn a committed sale back into "Payment failed".
-    try {
-      // PIN cleanup (fire-and-forget)
-      if (firebaseUser && currentPin) {
-        const token = await firebaseUser.getIdToken();
-        fetch("/api/pins/finalize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ storeId, sessionId, pin: currentPin, reason: "payment_closed" }),
-        }).catch(() => {
-          fetch("/api/pins/disable", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ storeId, sessionId }),
-          }).catch(() => console.error("[PIN] Fallback disable also failed for session", sessionId));
-        });
-      }
-    } catch (err) {
-      console.warn("[PIN] cleanup token failed (non-fatal):", err);
-    }
-
-    // Lock in any Sharelebrator vouchers/redemptions used on this bill now
-    // that the session is paid. Until this runs an applied voucher could be
-    // removed and returned to "active" (reusable); this commits its used
-    // state. Fire-and-forget + idempotent — never blocks the receipt.
-    if (firebaseUser) {
-      try {
-        const token = await firebaseUser.getIdToken();
-        fetch("/api/loyalty/finalize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ storeId, sessionId, receiptId }),
-        }).catch((err) => console.warn("[Loyalty] voucher finalize failed (non-fatal):", err));
-      } catch (err) {
-        console.warn("[Loyalty] voucher finalize token failed (non-fatal):", err);
-      }
-    }
-
-    // Sharelebrator loyalty earn (awaited so cashier sees failures)
-    if (firebaseUser && linkedPhone) {
-      try {
-        const token = await firebaseUser.getIdToken();
-        const res = await fetch("/api/loyalty/earn", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ storeId, sessionId, phone: linkedPhone, amount: grandTotal, receiptId }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          toast({
-            variant: "destructive",
-            title: "Loyalty earn failed",
-            description: data?.error || "Points were not awarded — please notify admin.",
-          });
-        }
-      } catch (err: any) {
-        console.error("[Loyalty] earn failed for session", sessionId, err);
-        toast({
-          variant: "destructive",
-          title: "Loyalty earn failed",
-          description: "Network error — points were not awarded. Admin can adjust manually.",
-        });
-      }
-    }
   };
 
   const fmt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

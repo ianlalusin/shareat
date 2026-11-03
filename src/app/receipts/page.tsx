@@ -32,6 +32,7 @@ import { writeActivityLog } from "@/components/cashier/activity-log";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { applyAnalyticsDeltaV2 } from "@/lib/analytics/applyAnalyticsDeltaV2";
+import { saveReceiptCorrectionCommand, voidReceiptCommand } from "@/lib/pos-commands/receipts";
 import { applyReceiptDeltaServerFirst } from "@/lib/analytics/applyReceiptDeltaServerFirst";
 import { reverseReceiptLoyalty } from "@/lib/loyalty/reverse-receipt-client";
 import { v4 as uuidv4 } from "uuid";
@@ -346,62 +347,26 @@ export default function ReceiptsPage() {
       if (!appUser || !activeStore || !editingReceipt) return;
     
       try {
-        const batch = writeBatch(db);
-        const originalReceiptRef = doc(db, "stores", activeStore.id, "receipts", editingReceipt.id);
-    
-        const nextVersion = (editingReceipt.editVersion || 0) + 1;
-        const revisionId = `v${nextVersion}_${format(new Date(), "yyyyMMddHHmmss")}`;
-        const revisionRef = doc(originalReceiptRef, "revisions", revisionId);
-    
-        // 1. Create a revision document with a snapshot of the original receipt data.
-        batch.set(revisionRef, {
-          version: nextVersion,
-          editedAt: serverTimestamp(),
-          editedByUid: appUser.uid,
-          editedByEmail: appUser.email,
+        // Server command (audit P1 / B01): the revision snapshot is taken from
+        // the server copy, totals are recomputed and the edit analytics delta is
+        // queued server-side. Only the editable inputs are sent.
+        const saved = await saveReceiptCorrectionCommand(
+          activeStore.id,
+          editingReceipt,
+          updatedReceiptData,
           reason,
-          snapshot: editingReceipt, // The original, unedited data
-        });
-        
-        const applyId = uuidv4();
-    
-        // 2. Prepare the final updated receipt object for writing.
+          (name) => paymentMethods.find((pm) => pm.name === name)?.id ?? null,
+        );
+        const nextVersion = saved.editVersion;
         const finalReceiptPayload = {
           ...updatedReceiptData,
+          total: saved.total,
           isEdited: true,
           editVersion: nextVersion,
-          editedAt: new Date(), // Use JS Date for immediate state update
+          editedAt: new Date(),
           editedByUid: appUser.uid,
-          editedByEmail: appUser.email,
           editReason: reason,
-          analyticsApplied: true, // Mark analytics as applied
-          analyticsAppliedAt: serverTimestamp(),
-          analyticsApplyId: applyId,
         };
-        batch.update(originalReceiptRef, { ...finalReceiptPayload, editedAt: serverTimestamp() }); // Use serverTimestamp for DB
-    
-        // 3. (analytics delta applied separately, server-first — see step 4)
-    
-        // 4. Commit the revision + edited receipt, then apply the edit analytics
-        //    delta server-first (server reads old=revision snapshot + new=receipt
-        //    doc, idempotent on analyticsEditVersion; client fallback applies
-        //    old->new locally).
-        await batch.commit();
-
-        await applyReceiptDeltaServerFirst(
-          activeStore.id,
-          editingReceipt.id,
-          "edit",
-          async () => {
-            const rSnap = await getDoc(originalReceiptRef);
-            if (rSnap.exists() && Number((rSnap.data() as any)?.analyticsEditVersion || 0) >= nextVersion) return;
-            const ab = writeBatch(db);
-            await applyAnalyticsDeltaV2(db, activeStore.id, editingReceipt, updatedReceiptData as ReceiptType, { batch: ab });
-            await ab.commit();
-            await updateDoc(originalReceiptRef, { analyticsEditVersion: nextVersion, analyticsEditAppliedAt: serverTimestamp() });
-          },
-          { revisionId },
-        );
 
         // 5. Update local state immediately after successful commit
         setReceipts(prev =>
@@ -506,48 +471,14 @@ export default function ReceiptsPage() {
       }
       
       try {
-        const receiptRef = doc(db, "stores", activeStore.id, "receipts", receipt.id);
-
-        // 1. Commit the void (status + audit metadata) first. Done in a
-        //    transaction that re-reads the LIVE doc and aborts if the receipt is
-        //    already voided. This is the idempotency gate: the in-memory
-        //    `receipt.status` check above can be stale (second tab, retry,
-        //    concurrent trigger), and unconditionally writing
-        //    `analyticsReversed:false` here would re-arm the server route's
-        //    guard and reverse the sale a SECOND time. Only the transaction that
-        //    actually flips final -> voided proceeds to reverse analytics / log.
-        const alreadyVoided = await runTransaction(db, async (tx) => {
-          const snap = await tx.get(receiptRef);
-          if (!snap.exists()) throw new Error("Receipt not found.");
-          if ((snap.data() as any)?.status === "voided") return true;
-          tx.update(receiptRef, {
-            status: "voided",
-            voidedAt: serverTimestamp(),
-            voidedByUid: appUser.uid,
-            voidedByEmail: appUser.email,
-            voidReason: reason,
-            analyticsReversed: false, // set true by the server/reconcile cron once reversed
-          });
-          return false;
-        });
+        // Server command (audit P1 / B01): idempotent (already voided -> no-op);
+        // the analytics reversal + loyalty reversal run from the server outbox.
+        const { alreadyVoided } = await voidReceiptCommand(activeStore.id, receipt.id, { reason });
 
         if (alreadyVoided) {
           toast({ title: "Already voided", description: "This receipt was already voided." });
           return;
         }
-
-        // 2. Reverse the receipt's analytics contribution server-first; fall back
-        //    to the client delta on failure. `receipt` here is the in-memory,
-        //    still-`final` object, so its contribution reconstructs correctly even
-        //    though the doc is now voided. Idempotent on `analyticsReversed`.
-        await applyReceiptDeltaServerFirst(activeStore.id, receipt.id, "void", async () => {
-          const rSnap = await getDoc(receiptRef);
-          if (rSnap.exists() && (rSnap.data() as any)?.analyticsReversed === true) return;
-          const ab = writeBatch(db);
-          await applyAnalyticsDeltaV2(db, activeStore.id, receipt, null, { batch: ab });
-          await ab.commit();
-          await updateDoc(receiptRef, { analyticsReversed: true, analyticsReversedAt: serverTimestamp() });
-        });
 
         await writeActivityLog({
           action: "RECEIPT_VOIDED",
