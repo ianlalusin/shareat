@@ -39,17 +39,40 @@ export function buildInitialIntentDoc(input: {
 
 // ===== Task 8: Idempotent webhook → intent-doc reducer =====
 
+/** Only PHP is chargeable through the POS QR Ph flow. */
+export const BRIDGE_CURRENCY = "PHP";
+
+/**
+ * Why a signed payment.paid event must NOT settle this bridge, or null when it
+ * matches. The signature proves the event came from PayMongo, not that it is
+ * for this bridge's amount: the intent id, amount (centavos) and currency must
+ * all equal what create-qr stored (audit B24).
+ */
+export function paidEventMismatch(doc: PosPaymentIntentDoc, ev: WebhookEvent): string | null {
+  if (!ev.paymentIntentId || ev.paymentIntentId !== doc.paymongoIntentId) return "intent_mismatch";
+  if (ev.amountCentavos === null) return "amount_missing";
+  if (ev.amountCentavos !== doc.amountCentavos) return "amount_mismatch";
+  if (ev.currency === null) return "currency_missing";
+  if (ev.currency.toUpperCase() !== BRIDGE_CURRENCY) return "currency_mismatch";
+  return null;
+}
+
 export function applyWebhookToIntentDoc(
   doc: PosPaymentIntentDoc,
   ev: WebhookEvent,
-): { changed: boolean; next: PosPaymentIntentDoc } {
+): { changed: boolean; next: PosPaymentIntentDoc; rejected?: string } {
   if (ev.eventId && doc.processedEventIds.includes(ev.eventId)) return { changed: false, next: doc };
   if (doc.status === "paid") return { changed: false, next: doc }; // terminal-positive: never downgrade
   const processedEventIds = ev.eventId ? [...doc.processedEventIds, ev.eventId] : doc.processedEventIds;
   if (ev.type === "payment.paid") {
+    // Validate BEFORE any transition; a mismatch is not recorded as processed
+    // so a redelivery (or a corrected bridge) can still be evaluated.
+    const rejected = paidEventMismatch(doc, ev);
+    if (rejected) return { changed: false, next: doc, rejected };
     return { changed: true, next: { ...doc, status: "paid", paymongoPaymentId: ev.paymentId, processedEventIds } };
   }
   if (ev.type === "payment.failed") {
+    if (ev.paymentIntentId && ev.paymentIntentId !== doc.paymongoIntentId) return { changed: false, next: doc };
     return { changed: true, next: { ...doc, status: "failed", processedEventIds } };
   }
   return { changed: false, next: doc };

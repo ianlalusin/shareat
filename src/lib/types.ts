@@ -773,6 +773,17 @@ export type PosPaymentIntentDoc = {
   methodId: string;
   createdByLocalUserId: string | null;
   createdByUid: string;
+  /**
+   * Recovery correlation (audit B24/P4), additive and absent on older docs.
+   * attemptId: stores/{storeId}/paymentIntentAttempts/{attemptId} that minted
+   * this bridge. operationId: client tender request id of the first request.
+   * billingRevision: session billingRevision this payable amount was last
+   * confirmed against (create-qr refreshes it when a same-amount retry reuses
+   * the QR after a bill revision bump).
+   */
+  attemptId?: string;
+  operationId?: string | null;
+  billingRevision?: number;
 };
 
 export type Adjustment = {

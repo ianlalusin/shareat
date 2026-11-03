@@ -29,6 +29,14 @@ export type QrhpMetadata = {
   sessionId: string;
   intentDocId: string;
   kind: "pos_session";
+  /**
+   * Correlation for recovery (audit B24/P4). PayMongo metadata accepts string
+   * values only, so the revision is sent as a string. Optional so intents
+   * created before this change still parse.
+   */
+  attemptId?: string;
+  operationId?: string;
+  billingRevision?: string;
 };
 
 export function buildPaymentIntentBody(input: {
@@ -126,6 +134,9 @@ export type WebhookEvent = {
   paymentId: string | null;
   paymentIntentId: string | null;
   status: string | null;
+  /** Payment amount in centavos as signed by PayMongo; null when absent/non-integer. */
+  amountCentavos: number | null;
+  currency: string | null;
   metadata: Partial<QrhpMetadata>;
 };
 
@@ -140,6 +151,8 @@ export function parseWebhookEvent(json: unknown): WebhookEvent {
     paymentId: resource?.id ? String(resource.id) : null,
     paymentIntentId: rAttrs?.payment_intent_id ? String(rAttrs.payment_intent_id) : null,
     status: rAttrs?.status ? String(rAttrs.status) : null,
+    amountCentavos: Number.isInteger(rAttrs?.amount) ? Number(rAttrs.amount) : null,
+    currency: typeof rAttrs?.currency === "string" ? rAttrs.currency : null,
     metadata: (rAttrs?.metadata ?? {}) as Partial<QrhpMetadata>,
   };
 }

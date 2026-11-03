@@ -40,7 +40,8 @@ function baseDoc(): PosPaymentIntentDoc {
 }
 const paidEvent: WebhookEvent = {
   eventId: "evt_1", type: "payment.paid", paymentId: "pay_1", paymentIntentId: "pi_1",
-  status: "paid", metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
+  status: "paid", amountCentavos: 85000, currency: "PHP",
+  metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
 };
 
 describe("applyWebhookToIntentDoc", () => {
@@ -64,6 +65,24 @@ describe("applyWebhookToIntentDoc", () => {
     const res = applyWebhookToIntentDoc(paid, failed);
     expect(res.next.status).toBe("paid");
     expect(res.changed).toBe(false);
+  });
+
+  it.each([
+    ["another intent", { paymentIntentId: "pi_other" }, "intent_mismatch"],
+    ["a different amount", { amountCentavos: 85001 }, "amount_mismatch"],
+    ["no amount", { amountCentavos: null }, "amount_missing"],
+    ["another currency", { currency: "USD" }, "currency_mismatch"],
+    ["no currency", { currency: null }, "currency_missing"],
+  ] as const)("B24: a paid event for %s does not settle and is not marked processed", (_l, over, reason) => {
+    const res = applyWebhookToIntentDoc(baseDoc(), { ...paidEvent, ...over });
+    expect(res.changed).toBe(false);
+    expect(res.rejected).toBe(reason);
+    expect(res.next.status).toBe("awaiting_payment");
+    expect(res.next.processedEventIds).toEqual([]);
+  });
+
+  it("accepts a lower-case currency code", () => {
+    expect(applyWebhookToIntentDoc(baseDoc(), { ...paidEvent, currency: "php" }).next.status).toBe("paid");
   });
 
   it("maps a failed event on an awaiting doc to failed", () => {

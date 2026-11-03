@@ -32,8 +32,7 @@ function makeDb() {
   };
   return {
     doc: (path: string) => ref(path),
-    collection: (path: string) => ({ doc: (id?: string) => ref(`${path}/${id ?? `auto_${++autoId}`}`) }),
-    batch: () => {
+    collection: (path: string) => ({ doc: (id?: string) => ref(`${path}/${id ?? `auto_${++autoId}`}`) }),    batch: () => {
       const ops: Array<() => void> = [];
       return {
         set: (r: any, data: any, opts?: { merge?: boolean }) => ops.push(() => write(r.path, data, opts)),
@@ -65,7 +64,7 @@ vi.mock("@/lib/payments/paymongo/qrph.server", async (orig) => {
   const actual = await orig<typeof import("@/lib/payments/paymongo/qrph.server")>();
   return {
     ...actual,
-    createQrPaymentViaApi: (...a: any[]) => createQr(...a),
+    createOrResumeQrViaApi: async (...a: any[]) => ({ kind: "qr", parsed: await createQr(...a), attachNo: 0, paymentMethodId: "pm_1" }),
     getPaymentIntentViaApi: (...a: any[]) => getIntent(...a),
   };
 });
@@ -212,7 +211,7 @@ describe("B02: status authorization and session binding", () => {
 
   it("polls for the matching session", async () => {
     const intentDocId = await seedIntent();
-    getIntent.mockResolvedValue({ status: "succeeded", latestPaymentId: "pay_1", metadata: {} });
+    getIntent.mockResolvedValue({ status: "succeeded", latestPaymentId: "pay_1", metadata: {}, amountCentavos: 50000, currency: "PHP" });
     const res = await statusPOST(req("http://x/api/pos/paymongo/status", { storeId: STORE, sessionId: SESSION, intentDocId }));
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe("paid");
@@ -224,7 +223,7 @@ describe("B24: webhook does not drop an event whose index is missing", () => {
     JSON.stringify({
       data: {
         id: "evt_1",
-        attributes: { type: "payment.paid", data: { id: "pay_9", attributes: { payment_intent_id: pi, status: "paid" } } },
+        attributes: { type: "payment.paid", data: { id: "pay_9", attributes: { payment_intent_id: pi, status: "paid", amount: 50000, currency: "PHP" } } },
       },
     });
   const hook = (body: string) =>
@@ -242,7 +241,7 @@ describe("B24: webhook does not drop an event whose index is missing", () => {
 
   it("repairs the index and applies the event when the bridge exists", async () => {
     docs[`stores/${STORE}/paymentIntents/b1`] = {
-      id: "b1", storeId: STORE, sessionId: SESSION, paymongoIntentId: "pi_x", status: "awaiting_payment", processedEventIds: [],
+      id: "b1", storeId: STORE, sessionId: SESSION, paymongoIntentId: "pi_x", amountCentavos: 50000, status: "awaiting_payment", processedEventIds: [],
     };
     getIntent.mockResolvedValue({ status: "succeeded", latestPaymentId: "pay_9", metadata: { kind: "pos_session", storeId: STORE, intentDocId: "b1" } });
     const res = await hook(event("pi_x"));

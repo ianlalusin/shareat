@@ -89,3 +89,24 @@ export function serverClockOffsetMs(dateHeader: string | null | undefined, local
 export function shouldListenForPayment(intentDocId: string | null, paidSeen: boolean): boolean {
   return !!intentDocId && !paidSeen;
 }
+
+/**
+ * B24/P4: one client tender request id per tender (store/session/method/amount)
+ * for the life of the page, so a re-mounted QR view or a retry after a lost
+ * response sends the same operation id. The server dedupes on the tender
+ * itself; this id is the correlation it records on the attempt and bridge.
+ */
+const tenderRequestIds = new Map<string, string>();
+
+export function tenderRequestIdFor(storeId: string, sessionId: string, methodId: string, amount: number): string {
+  const key = `${storeId}\n${sessionId}\n${methodId}\n${Math.round(amount * 100)}`;
+  let id = tenderRequestIds.get(key);
+  if (!id) {
+    const rand = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    id = `tr_${rand}`;
+    tenderRequestIds.set(key, id);
+  }
+  return id;
+}

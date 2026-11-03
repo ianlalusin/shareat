@@ -70,12 +70,27 @@ export async function POST(req: NextRequest) {
   // Note: doc.status is already narrowed to non-terminal statuses here (paid/failed
   // returned above), so it can never already be "paid" — this only ever flips forward.
   if (mapped === "paid") {
-    await ref.set({
-      ...doc,
-      status: "paid",
-      paymongoPaymentId: remote.latestPaymentId ?? doc.paymongoPaymentId,
+    // Same guard as the webhook (B24): only settle when PayMongo's own amount
+    // and currency for this intent equal what the bridge stored.
+    if (remote.amountCentavos !== doc.amountCentavos || remote.currency !== "PHP") {
+      console.error(`[paymongo/status] ${storeId}/${intentDocId} succeeded at PayMongo with ${remote.amountCentavos} ${remote.currency}; bridge expects ${doc.amountCentavos} PHP. Not settling.`);
+      return NextResponse.json({ status: doc.status, review: "amount_or_currency_mismatch" });
+    }
+    // Conditional transition: re-read inside a transaction and only flip a doc
+    // that is still the same, still-unsettled intent. A concurrent webhook,
+    // QR recovery or cancellation is never overwritten with this stale copy.
+    const settled = await adminDb.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      if (!cur.exists) return null;
+      const now = cur.data() as PosPaymentIntentDoc;
+      if (now.status === "paid") return "paid" as const;
+      if (now.status !== "awaiting_payment" || now.paymongoIntentId !== doc.paymongoIntentId || now.amountCentavos !== doc.amountCentavos) {
+        return now.status;
+      }
+      tx.set(ref, { status: "paid", paymongoPaymentId: remote.latestPaymentId ?? now.paymongoPaymentId }, { merge: true });
+      return "paid" as const;
     });
-    return NextResponse.json({ status: "paid" });
+    return NextResponse.json({ status: settled ?? doc.status });
   }
   return NextResponse.json({ status: doc.status });
 }

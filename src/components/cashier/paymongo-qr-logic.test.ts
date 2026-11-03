@@ -4,7 +4,18 @@ import {
   expiryVerdict,
   serverClockOffsetMs,
   shouldListenForPayment,
+  tenderRequestIdFor,
 } from "./paymongo-qr-logic";
+
+describe("B24: tender request id", () => {
+  it("is stable for the same tender and differs per amount", () => {
+    const a = tenderRequestIdFor("st", "s1", "m", 500);
+    expect(tenderRequestIdFor("st", "s1", "m", 500)).toBe(a);
+    expect(tenderRequestIdFor("st", "s1", "m", 300)).not.toBe(a);
+    expect(a).toMatch(/^tr_[A-Za-z0-9-]+$/);
+    expect(a.length).toBeLessThanOrEqual(128);
+  });
+});
 
 const body = { storeId: "a", sessionId: "s", intentDocId: "i" };
 const reply = (status: number, json: unknown) => async () => ({ ok: status >= 200 && status < 300, status, json: async () => json });
