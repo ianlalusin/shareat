@@ -386,14 +386,13 @@ service cloud.firestore {
         && request.resource.data.get('loyaltyRedemptions', []).size() == 0
         && (isPricingRole() || (
           request.resource.data.get('billDiscount', null) == null
-          && request.resource.data.get('customAdjustments', []).size() == 0
-          && request.resource.data.get('reservationId', null) == null));
+          && request.resource.data.get('customAdjustments', []).size() == 0));
       // Bill-level discounts / custom adjustments are a cashier+ decision (audit
       // P1 follow-up); loyaltyRedemptions is written only by the loyalty server
       // routes and is never client-editable (review #1).
       function billDiscountsUnchangedOrPricingRole() {
         return isPricingRole()
-          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['billDiscount', 'customAdjustments', 'reservationId']);
+          || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['billDiscount', 'customAdjustments']);
       }
       allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk()
         && settlementFieldsUnchanged() && billDiscountsUnchangedOrPricingRole()
@@ -442,9 +441,8 @@ service cloud.firestore {
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
             'unitPrice', 'modifiersTotal', 'priceOverride', 'lineAdjustments', 'freeQty',
             'discountType', 'discountValue', 'discountQty', 'discountId', 'itemId', 'type'])
-          // Re-review D: no line's quantity (package heads included) goes down
-          // without a cashier+.
-          && request.resource.data.get('qtyOrdered', 0) >= resource.data.get('qtyOrdered', 0)
+          && (resource.data.get('type', '') == 'package'
+              || request.resource.data.get('qtyOrdered', 0) >= resource.data.get('qtyOrdered', 0))
           // Review #3: server / kitchen voids only through the kitchen cancel
           // flow, which moves voidedQty and kitchenVoidedQty by the same amount;
           // checkout bounds kitchenVoidedQty by cancelled kitchen tickets.
@@ -453,21 +451,8 @@ service cloud.firestore {
           && request.resource.data.get('kitchenVoidedQty', 0) >= resource.data.get('kitchenVoidedQty', 0)
         ));
       }
-      // Re-review #3: kitchen tickets back kitchen voids at checkout, so a
-      // server / kitchen account cannot create an already-cancelled ticket or
-      // change a ticket's quantity / bill line / bill-on-serve flag later;
-      // cancelling is only a status transition of an existing ticket.
-      function ticketCreateOk() {
-        return subcoll != 'kitchentickets' || canSetPrices()
-          || request.resource.data.get('status', '') != 'cancelled';
-      }
-      function ticketUpdateOk() {
-        return subcoll != 'kitchentickets' || canSetPrices()
-          || !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['qty', 'qtyOrdered', 'billLineId', 'billOnServe', 'sessionId']);
-      }
-      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments' && lineCreateOk() && ticketCreateOk();
-      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']) && lineUpdateOk() && ticketUpdateOk();
+      allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments' && lineCreateOk();
+      allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && !(subcoll in ['activityLogs', 'payments']) && lineUpdateOk();
       allow delete: if hasStoreAccess(storeId) && !(subcoll in ['activityLogs', 'payments'])
         && (subcoll != 'sessionBillLines' || canSetPrices());
     }
@@ -606,20 +591,7 @@ service cloud.firestore {
     // server-only (its payloads include customer PINs). All three are excluded
     // from the catch-all below.
     match /stores/{storeId}/posCommands/{opId} {
-      // Re-review #7 / A: only roles that settle bills record commands, and the
-      // shape is fixed so a malformed doc cannot be planted.
       allow create: if hasStoreAccess(storeId)
-        && (isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier'))
-        && request.resource.data.keys().hasOnly(['schema', 'opId', 'kind', 'storeId', 'sessionId', 'terminalId',
-             'createdByUid', 'clientCreatedAtMs', 'operatorSessionToken', 'expected', 'payload', 'resolved'])
-        && request.resource.data.sessionId is string && request.resource.data.sessionId.size() > 0
-        && request.resource.data.sessionId.size() <= 128
-        && request.resource.data.terminalId is string && request.resource.data.terminalId.size() <= 64
-        && request.resource.data.clientCreatedAtMs is int
-        && (request.resource.data.get('operatorSessionToken', null) == null
-            || (request.resource.data.operatorSessionToken is string && request.resource.data.operatorSessionToken.size() <= 2048))
-        && request.resource.data.expected is map
-        && request.resource.data.payload is map
         && request.resource.data.schema == 1
         && request.resource.data.opId == opId
         && request.resource.data.storeId == storeId
@@ -631,25 +603,6 @@ service cloud.firestore {
     }
     match /stores/{storeId}/posCommandResults/{opId} {
       allow read: if hasStoreAccess(storeId);
-    }
-
-    // Reservations (audit P1 re-review #2): a reservation's deposit records
-    // (`payments`) and `paymentsAppliedToSessionId` stand for money already
-    // taken, so only cashier / manager / admin accounts may write them; other
-    // reservation fields stay open to the shift. Excluded from the catch-all.
-    match /stores/{storeId}/reservations/{resId} {
-      function canTakeMoney() {
-        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier');
-      }
-      allow create: if hasStoreAccess(storeId) && (canTakeMoney() || (
-        request.resource.data.get('payments', []).size() == 0
-        && request.resource.data.get('paymentsAppliedToSessionId', null) == null));
-      allow update: if hasStoreAccess(storeId) && (canTakeMoney()
-        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['payments', 'paymentsAppliedToSessionId']));
-      allow delete: if hasStoreAccess(storeId);
-    }
-    match /stores/{storeId}/reservations/{resId}/{sub}/{subPath=**} {
-      allow create, update, delete: if hasStoreAccess(storeId);
     }
 
     // Activity / audit logs are append-only: the only client writers
@@ -762,8 +715,6 @@ service cloud.firestore {
         // Offline POS commands (create-only block above) and their server-only
         // results / effects outbox (audit P1).
         && !(coll in ['posCommands', 'posCommandResults', 'posEffects', 'tenderConsumptions'])
-        // reservations: dedicated block above (deposit fields cashier+).
-        && coll != 'reservations'
         // paymentConversions: written only by /api/analytics/payment-conversion
         // (audit P1 final).
         && coll != 'paymentConversions'
