@@ -33,6 +33,11 @@ const nextConfig = {
         async headers() {
           return [
             {
+              // Staff app: keep every page, font and file out of Google (audit, Nov 2026).
+              source: "/:path*",
+              headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+            },
+            {
               source: "/sw.js",
               headers: [
                 { key: "Content-Type", value: "application/javascript; charset=utf-8" },
