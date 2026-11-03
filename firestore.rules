@@ -429,6 +429,31 @@ service cloud.firestore {
         && (!('seq' in resource.data) || request.resource.data.get('seq', null) == resource.data.seq + 1);
     }
 
+    // -----------------------------
+    // OFFLINE POS COMMANDS (audit P1: B16/B17, 2026-11-03)
+    // -----------------------------
+    // An offline till records each sale / void as an immutable command that
+    // the server applies on reconnect (/api/pos/commands/reconcile and the
+    // reconcile-pos-commands cron). Clients may only CREATE their own command:
+    // no read (it carries the operator's signed session token, which a
+    // colleague could otherwise replay), no update, no delete. A second setDoc
+    // on the same id is an update and is denied, so a command cannot be
+    // rewritten after the fact. Outcomes live in posCommandResults
+    // (server-written, staff-readable); the effects outbox posEffects is
+    // server-only (its payloads include customer PINs). All three are excluded
+    // from the catch-all below.
+    match /stores/{storeId}/posCommands/{opId} {
+      allow create: if hasStoreAccess(storeId)
+        && request.resource.data.schema == 1
+        && request.resource.data.opId == opId
+        && request.resource.data.storeId == storeId
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.kind in ['checkout', 'voidSession'];
+    }
+    match /stores/{storeId}/posCommandResults/{opId} {
+      allow read: if hasStoreAccess(storeId);
+    }
+
     // Activity / audit logs are append-only: the only client writers
     // (writeActivityLog, lib/firebase/activity-log.ts) only create. Without
     // this any shift role could rewrite or erase the record of a void.
@@ -508,7 +533,9 @@ service cloud.firestore {
     // and writes it through the Admin SDK.
     match /stores/{storeId}/{coll}/{docPath=**} {
       allow read: if hasStoreAccess(storeId)
-        && coll != 'serverProfileSecrets';
+        && coll != 'serverProfileSecrets'
+        // posCommands / posEffects: see OFFLINE POS COMMANDS above.
+        && !(coll in ['posCommands', 'posEffects']);
       allow write, delete: if hasStoreAccess(storeId)
         && coll != 'activeSessions'
         // sessions has a dedicated block above (link-field guard); see its comment.
@@ -534,6 +561,9 @@ service cloud.firestore {
         // (no delete, offline overwrite guard), tables (offline release guard),
         // counters (monotonic), activity logs (append-only).
         && !(coll in ['receipts', 'tables', 'counters', 'activityLogs', 'activityLogsByDay'])
+        // Offline POS commands (create-only block above) and their server-only
+        // results / effects outbox (audit P1).
+        && !(coll in ['posCommands', 'posCommandResults', 'posEffects'])
         // catalogCache (CUSTOMER app menu/price cache, written by
         // rebuildCustomerCatalog) and inventoryCache (the internal shared
         // inventory-scan cache both rebuildCustomerCatalog and
