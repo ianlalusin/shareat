@@ -277,6 +277,22 @@ session header (body `actorName` ignored).
    to another store cannot be retried (operator check fails); a manager
    dismisses it.
 
+## 9b. Independent review fixes (2026-11-03)
+
+| # | Finding | Resolution |
+|---|---|---|
+| 1 | session `loyaltyRedemptions` / create-time discounts / delete+recreate | Checkout prices rewards only from `loyaltyRedemptions/{id}` server records (applied, this store+session, not consumed elsewhere). Rules: `loyaltyRedemptions` is never client-written (create or update); server/kitchen cannot set `billDiscount`/`customAdjustments` on create or update; session create must be open, unpaid, revision 1 (or absent); client session delete denied (no client caller found). |
+| 2 | reservation deposits | Scan-to-pay deposit rows refused at checkout (**decision: QR Ph deposits must be taken through the bridge flow**). Manual deposits deduped (client + server) and consumed once in server-only `tenderConsumptions/res_{reservationId}__{paymentId}`. A manual deposit is equivalent to a typed manual tender (cashier-trusted), so reservations stay staff-writable. |
+| 3 | kitchen `voidedQty` | Kitchen voids also increment `kitchenVoidedQty` (rules require the same delta and forbid other void changes by server/kitchen); checkout rejects a line whose kitchen-voided qty exceeds its cancelled kitchen tickets. **Decision: kitchen keeps its cancel flow; anything beyond cancelled tickets needs a cashier.** Residual: ticket docs are client-written. |
+| 4 | name vs itemId | Receipt lines and sales analytics use the catalog name (`orderedItemName` keeps what was typed). |
+| 5 | void reversal ids | Only redemptions the server applied to this bill are reversed (existing `reverseLoyaltyRedeem` already refused ids from paid bills; this also blocks ids from other open bills). |
+| 6 | rejected offline sale unrecoverable | Manager action `accept-recorded` writes receipt `offline_{opId}` from the command's own lines/tenders/total with approver + note (no session/table change; scan-to-pay/deposit tenders refused). `RejectedOfflineSalesCard` on both receipts pages lists rejected commands with Retry / Accept as recorded / Dismiss. |
+| 7 | sweep blind spot | Commands carry `resolved:false` (required by rules at create); server sets `resolved:true` on any terminal outcome; sweep queries `resolved == false` (single-field, automatic index) and uses server write time for its grace period. |
+| 8 | backdated offline time | Command time must be ≥ session start − 5 min and ≤ server now + 5 min, and ≥ token iat. No closed/posted business day exists in this codebase; if one is added, check it here. |
+| 9 | void after partial refund | Cash paid on void nets out `refundedMop` cash. |
+| 10 | opId reuse | Result docs store kind, session and a payload fingerprint; mismatch → 409 `command_conflict`. |
+| 11 | effect double-run | Effects are leased (`leaseId`, `leaseUntilMs`, 2 min) in a transaction before running; only the lease holder marks done. |
+
 ## 10. Implementation map
 
 | Piece | Files |
