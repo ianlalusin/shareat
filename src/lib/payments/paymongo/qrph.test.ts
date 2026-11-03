@@ -165,6 +165,8 @@ describe("parseWebhookEvent", () => {
             attributes: {
               status: "paid",
               payment_intent_id: "pi_abc",
+              amount: 85000,
+              currency: "PHP",
               metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
             },
           },
@@ -177,6 +179,8 @@ describe("parseWebhookEvent", () => {
       paymentId: "pay_1",
       paymentIntentId: "pi_abc",
       status: "paid",
+      amountCentavos: 85000,
+      currency: "PHP",
       metadata: { storeId: "SHT", sessionId: "sess_1", intentDocId: "d1", kind: "pos_session" },
     });
   });
@@ -194,5 +198,8 @@ describe("parseWebhookEvent", () => {
     const parsed = parseWebhookEvent(evt);
     expect(parsed.paymentIntentId).toBe("pi_xyz");
     expect(parsed.metadata).toEqual({});
+    // Absent amount/currency parse as null (and therefore never settle, B24).
+    expect(parsed.amountCentavos).toBeNull();
+    expect(parsed.currency).toBeNull();
   });
 });

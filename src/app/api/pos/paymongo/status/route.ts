@@ -70,6 +70,12 @@ export async function POST(req: NextRequest) {
   // Note: doc.status is already narrowed to non-terminal statuses here (paid/failed
   // returned above), so it can never already be "paid" — this only ever flips forward.
   if (mapped === "paid") {
+    // Same guard as the webhook (B24): only settle when PayMongo's own amount
+    // and currency for this intent equal what the bridge stored.
+    if (remote.amountCentavos !== doc.amountCentavos || remote.currency !== "PHP") {
+      console.error(`[paymongo/status] ${storeId}/${intentDocId} succeeded at PayMongo with ${remote.amountCentavos} ${remote.currency}; bridge expects ${doc.amountCentavos} PHP. Not settling.`);
+      return NextResponse.json({ status: doc.status, review: "amount_or_currency_mismatch" });
+    }
     await ref.set({
       ...doc,
       status: "paid",

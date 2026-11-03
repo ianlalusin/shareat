@@ -84,12 +84,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: true }, { status: 200 });
   }
   const ref = adminDb.doc(`stores/${storeId}/paymentIntents/${intentDocId}`);
-  await adminDb.runTransaction(async (tx) => {
+  const outcome = await adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists) return;
-    const { changed, next } = applyWebhookToIntentDoc(snap.data() as PosPaymentIntentDoc, ev);
+    // An index without its bridge must not be acknowledged: that would drop a
+    // possibly-paid event for good (B24). Ask PayMongo to redeliver.
+    if (!snap.exists) return { kind: "missing" as const };
+    const doc = snap.data() as PosPaymentIntentDoc;
+    const { changed, next, rejected } = applyWebhookToIntentDoc(doc, ev);
+    if (rejected) {
+      // Signed but does not match the stored bridge (intent/amount/currency).
+      // Never settle; keep a durable record for review. The subcollection sits
+      // under paymentIntents, which firestore.rules keeps server-write-only.
+      const reviewId = isSafeDocId(ev.eventId) ? ev.eventId : `pay_${ev.paymentId ?? "unknown"}`;
+      tx.set(ref.collection("webhookReviews").doc(reviewId), {
+        reason: rejected,
+        eventId: ev.eventId || null,
+        type: ev.type,
+        paymentId: ev.paymentId,
+        paymongoIntentId: ev.paymentIntentId,
+        amountCentavos: ev.amountCentavos,
+        currency: ev.currency,
+        expectedPaymongoIntentId: doc.paymongoIntentId,
+        expectedAmountCentavos: doc.amountCentavos,
+        expectedCurrency: "PHP",
+        bridgeStatus: doc.status,
+        receivedAtMs: Date.now(),
+      }, { merge: true });
+      return { kind: "rejected" as const, reason: rejected };
+    }
     if (changed) tx.set(ref, next);
+    return { kind: "ok" as const };
   });
 
+  if (outcome.kind === "missing") {
+    console.warn(`[paymongo/webhook] index for ${ev.paymentIntentId} points at a missing bridge; asking for redelivery`);
+    return NextResponse.json({ ok: false, retry: true }, { status: 503 });
+  }
+  if (outcome.kind === "rejected") {
+    // Not acknowledged: PayMongo keeps redelivering while a person reviews the
+    // stored record (stores/{storeId}/paymentIntents/{id}/webhookReviews).
+    console.error(`[paymongo/webhook] paid event ${ev.eventId} rejected for ${storeId}/${intentDocId}: ${outcome.reason}`);
+    return NextResponse.json({ ok: false, retry: true, review: outcome.reason }, { status: 503 });
+  }
   return NextResponse.json({ ok: true }, { status: 200 });
 }
