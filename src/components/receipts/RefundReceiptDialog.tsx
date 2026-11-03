@@ -14,7 +14,7 @@ import type { Receipt, SessionBillLine, ModeOfPayment } from "@/lib/types";
 import type { AppUser } from "@/context/auth-context";
 import { createRefundReceipt } from "@/components/cashier/firestore";
 import { reverseReceiptLoyalty } from "@/lib/loyalty/reverse-receipt-client";
-import { previewLineRefund, previewRefundTotal, remainingRefundableQty } from "@/lib/analytics/refund-quote";
+import { normalizeQty, previewLineRefund, previewRefundTotal, remainingRefundableQty } from "@/lib/analytics/refund-quote";
 import { v4 as uuidv4 } from "uuid";
 
 interface RefundReceiptDialogProps {
@@ -52,7 +52,8 @@ function RefundContent({
   const getRefundQty = (id: string) => refundQtys[id] ?? 0;
 
   const setQty = (id: string, val: number, max: number) => {
-    const clamped = Math.max(0, Math.min(max, isNaN(val) ? 0 : val));
+    // Fractions are valid for kg / lit / gal lines; keep 3 decimal places.
+    const clamped = Math.max(0, Math.min(max, isNaN(val) ? 0 : normalizeQty(val)));
     setRefundQtys(cur => ({ ...cur, [id]: clamped }));
   };
 
@@ -145,11 +146,12 @@ function RefundContent({
                   <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setQty(line.id, qty - 1, max)} disabled={qty <= 0}>−</Button>
                   <Input
                     type="number"
+                    step="any"
                     className="w-14 h-7 text-center p-1"
                     value={qty}
                     min={0}
                     max={max}
-                    onChange={e => setQty(line.id, parseInt(e.target.value), max)}
+                    onChange={e => setQty(line.id, parseFloat(e.target.value), max)}
                   />
                   <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setQty(line.id, qty + 1, max)} disabled={qty >= max}>+</Button>
                   <span className="text-sm w-20 text-right">₱{previewLineRefund(receipt as any, line.id, qty).toFixed(2)}</span>

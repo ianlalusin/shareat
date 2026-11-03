@@ -64,7 +64,7 @@ import { bundleExtraPax } from '@/lib/billing/bundle';
 import { v4 as uuidv4 } from 'uuid';
 import { applyAnalyticsDeltaV2 } from '@/lib/analytics/applyAnalyticsDeltaV2';
 import { applyReceiptDeltaServerFirst } from '@/lib/analytics/applyReceiptDeltaServerFirst';
-import { quoteRefund } from '@/lib/analytics/refund-quote';
+import { quoteRefund, normalizeQty } from '@/lib/analytics/refund-quote';
 import { lineItemAmounts } from '@/lib/analytics/line-amounts';
 import { applyKdsTicketDelta } from '@/lib/analytics/applyKdsTicketDelta';
 import { applyKdsDeltaServerFirst } from '@/lib/analytics/applyKdsDeltaServerFirst';
@@ -1573,7 +1573,7 @@ export async function createRefundReceipt(
     // Parent counters are rewritten whole (not dotted increments) from the
     // values read in this transaction — line ids / tender names are arbitrary.
     const refundedQtys: Record<string, number> = { ...(parent.refundedQtys || {}) };
-    for (const q of quote.lines) refundedQtys[q.lineId] = (Number(refundedQtys[q.lineId]) || 0) + q.qty;
+    for (const q of quote.lines) refundedQtys[q.lineId] = normalizeQty((Number(refundedQtys[q.lineId]) || 0) + q.qty);
     const refundedMop: Record<string, number> = { ...(parent.refundedMop || {}) };
     for (const [name, cents] of Object.entries(quote.mopCents)) {
       refundedMop[name] = (Math.round((Number(refundedMop[name]) || 0) * 100) + cents) / 100;

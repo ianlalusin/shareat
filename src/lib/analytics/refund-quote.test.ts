@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { quoteRefund, allocateCents } from "@/lib/analytics/refund-quote";
+import { quoteRefund, allocateCents, previewRefundTotal, remainingRefundableQty } from "@/lib/analytics/refund-quote";
 import { getPaymentContribution, getSalesContribution } from "@/lib/analytics/daily";
 import { aggregateSoldItems } from "@/lib/analytics/sold-items-core";
 import { lineItemAmounts } from "@/lib/analytics/line-amounts";
@@ -66,6 +66,83 @@ describe("quoteRefund — values refunds from what was paid (B11)", () => {
   it("allocateCents is exact", () => {
     expect(allocateCents(100, [1, 1, 1]).reduce((a, b) => a + b, 0)).toBe(100);
     expect(allocateCents(0, [1, 2])).toEqual([0, 0]);
+  });
+});
+
+// Fractional kg / lit / gal quantities (edit-billable-item-dialog allows 0.1 steps).
+// Refund quantities must be checked in fixed units, not whole numbers, and the
+// repeated-partial-refund running total must not drift on float error.
+describe("quoteRefund — fractional quantities", () => {
+  // 0.5 kg at 100/kg, paid 50 in cash.
+  function halfKilo(extra: Record<string, any> = {}) {
+    return discountedSale({
+      total: 50,
+      lines: [{ id: "L1", type: "addon", itemName: "Rice by kg", qtyOrdered: 0.5, unitPrice: 100 }],
+      analytics: { v: 2, mop: { Cash: 50 } },
+      ...extra,
+    });
+  }
+
+  it("fully refunds 0.5 kg for exactly the 50 paid", () => {
+    const q = quoteRefund(halfKilo(), { L1: 0.5 });
+    expect(q.totalCents).toBe(5000);
+    expect(q.lines[0].qty).toBe(0.5);
+    expect(q.mopCents).toEqual({ Cash: 5000 });
+  });
+
+  it("the dialog preview shows the full amount, not zero", () => {
+    expect(previewRefundTotal(halfKilo(), { L1: 0.5 })).toBe(50);
+  });
+
+  it("repeated partial refunds of 0.1 + 0.2 + 0.2 sum exactly to the paid amount and cannot exceed the line", () => {
+    let receipt = halfKilo();
+    let refundedCents = 0;
+    for (const qty of [0.1, 0.2, 0.2]) {
+      const q = quoteRefund(receipt, { L1: qty });
+      refundedCents += q.totalCents;
+      // createRefundReceipt adds quantities and rounds to 3 places.
+      const done = Math.round(((receipt.refundedQtys?.L1 ?? 0) + qty) * 1000) / 1000;
+      receipt = { ...receipt, refundedQtys: { L1: done }, totalRefunded: refundedCents / 100 };
+    }
+    expect(refundedCents).toBe(5000);
+    expect(remainingRefundableQty(receipt, receipt.lines[0])).toBe(0);
+    expect(() => quoteRefund(receipt, { L1: 0.1 })).toThrow(/can still be refunded/);
+  });
+
+  it("is not tripped by float error in the refunded quantity already stored", () => {
+    // 0.1 + 0.2 stored the naive way is 0.30000000000000004; 0.2 is still left of 0.5.
+    const r = halfKilo({ refundedQtys: { L1: 0.1 + 0.2 }, totalRefunded: 30 });
+    expect(remainingRefundableQty(r, r.lines[0])).toBe(0.2);
+    expect(quoteRefund(r, { L1: 0.2 }).totalCents).toBe(2000);
+    expect(() => quoteRefund(r, { L1: 0.3 })).toThrow(/can still be refunded/);
+  });
+
+  it("allows a fraction of a multi-kilo line and keeps the sum exact", () => {
+    const r = discountedSale({
+      total: 250,
+      lines: [{ id: "L1", type: "addon", itemName: "Rice by kg", qtyOrdered: 2.5, unitPrice: 100 }],
+      analytics: { v: 2, mop: { Cash: 250 } },
+    });
+    expect(quoteRefund(r, { L1: 1.5 }).totalCents).toBe(15000);
+  });
+
+  it("whole-number refunds still behave as before", () => {
+    const r = discountedSale({
+      total: 300,
+      lines: [{ id: "L1", type: "addon", itemName: "X", qtyOrdered: 3, unitPrice: 100 }],
+      analytics: { v: 2, mop: { Cash: 300 } },
+    });
+    expect(quoteRefund(r, { L1: 2 }).totalCents).toBe(20000);
+  });
+
+  it("rejects negative, non-finite and over-precise quantities", () => {
+    expect(() => quoteRefund(halfKilo(), { L1: -0.1 })).toThrow(/positive/);
+    expect(() => quoteRefund(halfKilo(), { L1: Infinity })).toThrow(/positive/);
+    expect(() => quoteRefund(halfKilo(), { L1: 0.1234 })).toThrow(/3 decimal/);
+  });
+
+  it("ignores a zero or empty quantity and still needs at least one item", () => {
+    expect(() => quoteRefund(halfKilo(), { L1: 0 })).toThrow(/at least one/i);
   });
 });
 

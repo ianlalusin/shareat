@@ -76,6 +76,16 @@ export function allocateCents(total: number, weights: number[]): number[] {
 
 const cum = (cents: number, n: number, of: number) => (of > 0 ? Math.round((cents * n) / of) : 0);
 
+// Quantities (kg / lit / gal can be fractional) are compared in fixed units of
+// 1/QTY_SCALE so that float error (0.3 - 0.1 = 0.19999999999999998) can never make
+// a legitimate refund look like it exceeds what is left, nor let one slip past.
+export const QTY_SCALE = 1000;
+const qtyUnits = (n: unknown): number => Math.round((Number(n) || 0) * QTY_SCALE);
+/** Rounds a quantity to the supported precision (3 decimal places). */
+export function normalizeQty(n: unknown): number {
+  return qtyUnits(n) / QTY_SCALE;
+}
+
 /** Centavos actually paid on the receipt (tenders net of change). */
 export function receiptPaidCents(r: RefundableReceipt): number {
   const mop = r.analytics?.mop;
@@ -105,8 +115,8 @@ export function lineAllocations(r: RefundableReceipt): Map<string, { billableQty
 
 /** Units of a line still refundable. */
 export function remainingRefundableQty(r: RefundableReceipt, line: LineLite & { id?: string | null }): number {
-  const done = Number(r.refundedQtys?.[String(line.id)] ?? 0) || 0;
-  return Math.max(0, lineBillableQty(line) - done);
+  const done = qtyUnits(r.refundedQtys?.[String(line.id)]);
+  return Math.max(0, qtyUnits(lineBillableQty(line)) - done) / QTY_SCALE;
 }
 
 /**
@@ -127,19 +137,22 @@ export function quoteRefund(r: RefundableReceipt, qtys: Record<string, number>):
   for (const [lineId, rawQty] of Object.entries(qtys)) {
     const qty = Number(rawQty);
     if (!qty) continue;
-    if (!Number.isInteger(qty) || qty < 0) throw new Error("Refund quantities must be whole numbers.");
+    if (!Number.isFinite(qty) || qty < 0) throw new Error("Refund quantities must be positive numbers.");
+    const units = qtyUnits(qty);
+    if (Math.abs(qty * QTY_SCALE - units) > 1e-6) throw new Error("Refund quantities can have at most 3 decimal places.");
     const line = byId.get(lineId);
     const a = alloc.get(lineId);
     if (!line || !a) throw new Error("Refund line not found on the receipt.");
-    const done = Number(r.refundedQtys?.[lineId] ?? 0) || 0;
-    if (qty > a.billableQty - done) {
-      throw new Error(`Only ${Math.max(0, a.billableQty - done)} unit(s) of this item can still be refunded.`);
+    const doneUnits = qtyUnits(r.refundedQtys?.[lineId]);
+    const billUnits = qtyUnits(a.billableQty);
+    if (units > billUnits - doneUnits) {
+      throw new Error(`Only ${Math.max(0, billUnits - doneUnits) / QTY_SCALE} unit(s) of this item can still be refunded.`);
     }
     lines.push({
       lineId,
-      qty,
-      paidCents: cum(a.paidCents, done + qty, a.billableQty) - cum(a.paidCents, done, a.billableQty),
-      salesCents: cum(a.salesCents, done + qty, a.billableQty) - cum(a.salesCents, done, a.billableQty),
+      qty: units / QTY_SCALE,
+      paidCents: cum(a.paidCents, doneUnits + units, billUnits) - cum(a.paidCents, doneUnits, billUnits),
+      salesCents: cum(a.salesCents, doneUnits + units, billUnits) - cum(a.salesCents, doneUnits, billUnits),
     });
   }
   if (lines.length === 0) throw new Error("Select at least one item to refund.");
