@@ -293,6 +293,21 @@ session header (body `actorName` ignored).
 | 10 | opId reuse | Result docs store kind, session and a payload fingerprint; mismatch → 409 `command_conflict`. |
 | 11 | effect double-run | Effects are leased (`leaseId`, `leaseUntilMs`, 2 min) in a transaction before running; only the lease holder marks done. |
 
+## 9c. Re-review fixes (2026-11-03)
+
+| # | Resolution |
+|---|---|
+| 2 | Deposit consumption keyed by reservation (`tenderConsumptions/res_{reservationId}`): one reservation's deposits back one receipt. Rules: reservation `payments` / `paymentsAppliedToSessionId` and `sessions.reservationId` are cashier+ only. |
+| 3 | Rules: server/kitchen cannot create a cancelled ticket or change ticket qty / bill line. Checkout distrusts kitchen voids on a line whose (non-bill-on-serve) tickets exceed its ordered qty. |
+| 7 | Malformed stored commands are recorded `rejected` (`malformed:true`) and resolved; the sweep pages until no progress; rules fix the command key set and types and allow only cashier+ creators. |
+| 8 | Offline time window is bounded by the session doc's Firestore `createTime` on checkout, void and accept-as-recorded. |
+| 11 | Lease time is real time at claim. |
+| A | Accept-as-recorded requires a recorder who was cashier+ with a VERIFIED operator session at record time; otherwise a rejected command can only be dismissed. |
+| B/C | Accept-as-recorded runs the normal checkout transaction on the current session: prices/catalog/overrides, rewards, tenders and time window validated, server receipt number (the till's OL number kept as `offlineReceiptNumber`), session closed and table released atomically, refused if the session was settled since. Approver must be a different account AND local profile; approval written to `activityLogs/accept_{opId}`. |
+| D | Rules: no line quantity decrease (package heads included) below cashier+. The server page only ever raises the package line. **Decision: a lower verified headcount is a cashier correction.** |
+
+Rules tightening now spans FOUR final commits (parts 1–4); deploy all together, last.
+
 ## 10. Implementation map
 
 | Piece | Files |
