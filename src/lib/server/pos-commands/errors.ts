@@ -34,6 +34,7 @@ export const TERMINAL_CONFLICT_CODES = new Set([
   "loyalty_invalid",
   "command_time_invalid",
   "command_conflict",
+  "receipt_number_duplicate",
 ]);
 
 export function isTerminalConflict(e: unknown): boolean {

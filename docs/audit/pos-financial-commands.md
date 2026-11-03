@@ -212,9 +212,9 @@ Final commit (deploy ONLY after every device runs the new APK):
   `status: available` on a seated table (managers keep the projection rebuild
   via the storeConfig catch-all — existing residual).
 
-The tightening is split across TWO final commits (both deploy-after-APK):
-the money-docs commit and the bill-line / session-discount commit added in the
-follow-up. Deploy them together, last.
+The tightening is split across FIVE final commits (parts 1-5, all
+deploy-after-APK): money docs, bill lines, session guards, reservations /
+tickets / command schema, and the final-state fixes. Deploy them together, last.
 
 `/api/analytics/payment-conversion` names its actor from the same operator
 session header (body `actorName` ignored).
@@ -282,11 +282,11 @@ session header (body `actorName` ignored).
 | # | Finding | Resolution |
 |---|---|---|
 | 1 | session `loyaltyRedemptions` / create-time discounts / delete+recreate | Checkout prices rewards only from `loyaltyRedemptions/{id}` server records (applied, this store+session, not consumed elsewhere). Rules: `loyaltyRedemptions` is never client-written (create or update); server/kitchen cannot set `billDiscount`/`customAdjustments` on create or update; session create must be open, unpaid, revision 1 (or absent); client session delete denied (no client caller found). |
-| 2 | reservation deposits | Scan-to-pay deposit rows refused at checkout (**decision: QR Ph deposits must be taken through the bridge flow**). Manual deposits deduped (client + server) and consumed once in server-only `tenderConsumptions/res_{reservationId}__{paymentId}`. A manual deposit is equivalent to a typed manual tender (cashier-trusted), so reservations stay staff-writable. |
+| 2 | reservation deposits | Scan-to-pay deposit rows refused at checkout (**decision: QR Ph deposits must be taken through the bridge flow**). Manual deposits deduped (client + server). *Superseded by §9c #2:* consumption is keyed per reservation (`tenderConsumptions/res_{reservationId}`) and deposit fields are cashier+ only. |
 | 3 | kitchen `voidedQty` | Kitchen voids also increment `kitchenVoidedQty` (rules require the same delta and forbid other void changes by server/kitchen); checkout rejects a line whose kitchen-voided qty exceeds its cancelled kitchen tickets. **Decision: kitchen keeps its cancel flow; anything beyond cancelled tickets needs a cashier.** Residual: ticket docs are client-written. |
 | 4 | name vs itemId | Receipt lines and sales analytics use the catalog name (`orderedItemName` keeps what was typed). |
 | 5 | void reversal ids | Only redemptions the server applied to this bill are reversed (existing `reverseLoyaltyRedeem` already refused ids from paid bills; this also blocks ids from other open bills). |
-| 6 | rejected offline sale unrecoverable | Manager action `accept-recorded` writes receipt `offline_{opId}` from the command's own lines/tenders/total with approver + note (no session/table change; scan-to-pay/deposit tenders refused). `RejectedOfflineSalesCard` on both receipts pages lists rejected commands with Retry / Accept as recorded / Dismiss. |
+| 6 | rejected offline sale unrecoverable | `RejectedOfflineSalesCard` on both receipts pages lists rejected commands with Retry / Accept as recorded / Dismiss. *Superseded by §9c B/C:* `accept-recorded` settles the current session through the checkout transaction (receipt id = session id, server receipt number), not a separate `offline_{opId}` receipt. |
 | 7 | sweep blind spot | Commands carry `resolved:false` (required by rules at create); server sets `resolved:true` on any terminal outcome; sweep queries `resolved == false` (single-field, automatic index) and uses server write time for its grace period. |
 | 8 | backdated offline time | Command time must be ≥ session start − 5 min and ≤ server now + 5 min, and ≥ token iat. No closed/posted business day exists in this codebase; if one is added, check it here. |
 | 9 | void after partial refund | Cash paid on void nets out `refundedMop` cash. |
@@ -306,7 +306,19 @@ session header (body `actorName` ignored).
 | B/C | Accept-as-recorded runs the normal checkout transaction on the current session: prices/catalog/overrides, rewards, tenders and time window validated, server receipt number (the till's OL number kept as `offlineReceiptNumber`), session closed and table released atomically, refused if the session was settled since. Approver must be a different account AND local profile; approval written to `activityLogs/accept_{opId}`. |
 | D | Rules: no line quantity decrease (package heads included) below cashier+. The server page only ever raises the package line. **Decision: a lower verified headcount is a cashier correction.** |
 
-Rules tightening now spans FOUR final commits (parts 1–4); deploy all together, last.
+Rules tightening spans FIVE final commits (parts 1–5); deploy all together, last.
+
+## 9d. Final-state review fixes (2026-11-03)
+
+| # | Resolution |
+|---|---|
+| 1 | Checkout keys bill lines on the doc id (a written `id` field is ignored); kitchen voids are valid only on add-on lines and are bounded by each ticket's `qtyCancelled` (whole ticket only for a legacy cancelled ticket), and only when the line's tickets do not exceed its ordered qty. Rules: kitchen accounts cannot create tickets; server accounts cannot cancel tickets or set `qtyCancelled`; served/cancelled tickets are final for both; `qtyCancelled + qtyServed <= qty`; only kitchen accounts may raise `kitchenVoidedQty`, and only on add-on lines; line `id` is immutable for server/kitchen. **Residual (separation of duties):** a server and a kitchen account colluding can still void add-on quantity they ordered and cancelled; every step is attributed. |
+| 2 | Online checkout / void refuse an opId that already has a `posCommands` doc; online results always carry a fingerprint and a result without one can only be continued by the offline reconcile path. |
+| 3 | The kitchen full-cancel path now voids only the unserved quantity (`qtyCancelled`), matching the partial-cancel path; checkout counts `qtyCancelled` on any status. |
+| 4 | PIN archive only retires a `pinRegistry` entry whose storeId and sessionId match. |
+| 5 | Till-minted OL receipt numbers are checked for uniqueness in the store; a duplicate is rejected (`receipt_number_duplicate`) and can be settled with a server number via accept-as-recorded. **Owner / BIR decision:** OL numbers are chosen by the till (device tag + time + daily sequence), so gaps and, in principle, collisions are possible. Options: (a) server renumbers every offline sale on acceptance into the main sequence, keeping `offlineReceiptNumber` for the printed slip; (b) reserve per-terminal number ranges from the server while online; (c) keep OL numbering as a separate registered series. Current code = (c) plus the uniqueness check. |
+| 6 | Refund receipt ids are `refund_{requestId}`, so they can never collide with a session's receipt id. |
+| 7 | Rules: print audit requires `lastPrintedByUid == request.auth.uid`. |
 
 ## 10. Implementation map
 

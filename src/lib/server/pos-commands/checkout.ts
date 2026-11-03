@@ -171,10 +171,16 @@ export async function checkoutInTx(
   const counterRef = db.doc(`${base}/counters/receipts`);
   const activeRef = db.doc(`${base}/activeSessions/${sessionId}`);
   const configRef = db.doc(`${base}/storeConfig/current`);
+  const commandRef = db.doc(`${base}/posCommands/${opId}`);
 
   // ---------- READS ----------
-  const [resultSnap, sessionSnap, receiptSnap, storeSnap, settingsSnap, counterSnap, activeSnap, configSnap] =
-    (await Promise.all([resultRef, sessionRef, receiptRef, storeRef, settingsRef, counterRef, activeRef, configRef].map((r) => tx.get(r)))) as unknown as Snap[];
+  const [resultSnap, sessionSnap, receiptSnap, storeSnap, settingsSnap, counterSnap, activeSnap, configSnap, commandSnap] =
+    (await Promise.all([resultRef, sessionRef, receiptRef, storeRef, settingsRef, counterRef, activeRef, configRef, commandRef].map((r) => tx.get(r)))) as unknown as Snap[];
+  // An online command may never reuse an offline command's id (final review
+  // #2): that would overwrite / "replay" the offline sale's outcome.
+  if (!input.offline && commandSnap.exists) {
+    throw new PosCommandError("command_conflict", "This payment id belongs to an offline sale.", 409);
+  }
 
   const replayFrom = (r: any): CheckoutOutcome => ({
     status: "accepted",
@@ -188,7 +194,10 @@ export async function checkoutInTx(
   const fingerprint = checkoutFingerprint(input);
   if (resultSnap.exists) {
     const r = resultSnap.data();
-    if (r?.kind !== "checkout" || r?.sessionId !== sessionId || (r?.fingerprint && r.fingerprint !== fingerprint)) {
+    // Online results always carry a fingerprint; only the offline reconcile
+    // path may continue from a rejected result written without one.
+    const fpOk = r?.fingerprint ? r.fingerprint === fingerprint : !!input.offline && r?.status !== "accepted";
+    if (r?.kind !== "checkout" || r?.sessionId !== sessionId || !fpOk) {
       throw new PosCommandError("command_conflict", "This payment id was already used for a different payment.", 409);
     }
     if (r?.status === "accepted") return replayFrom(r);
@@ -221,7 +230,9 @@ export async function checkoutInTx(
   }
 
   const linesSnap = await tx.get(db.collection(`${base}/sessions/${sessionId}/sessionBillLines`).orderBy("createdAt", "asc") as any) as any;
-  const billLines = linesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as SessionBillLine[];
+  // Keyed by the DOC id: a client-written `id` field must not rename a line
+  // (final review #1).
+  const billLines = linesSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as SessionBillLine[];
   const ticketsSnap = await tx.get(db.collection(`${base}/sessions/${sessionId}/kitchentickets`) as any) as any;
   const tableId: string | null = session.tableId && session.tableId !== "alacarte" ? String(session.tableId) : null;
   const tableRef = tableId ? db.doc(`${base}/tables/${tableId}`) : null;
@@ -488,6 +499,12 @@ export async function checkoutInTx(
   let receiptSeq: number;
   let receiptNoFormat: string;
   if (input.offline && !input.acceptRecorded) {
+    // Till-minted OL numbers must still be unique in the store (final review
+    // #5): a duplicate is refused and can be accepted with a server number.
+    const dup = (await tx.get(db.collection(`${base}/receipts`).where("receiptNumber", "==", input.offline.receiptNumber).limit(2) as any)) as any;
+    if (dup.docs.some((d: any) => d.id !== sessionId)) {
+      throw new PosCommandError("receipt_number_duplicate", `Receipt number ${input.offline.receiptNumber} is already used in this store.`, 409);
+    }
     receiptNumber = input.offline.receiptNumber;
     receiptSeq = input.offline.receiptSeq;
     receiptNoFormat = "OL";

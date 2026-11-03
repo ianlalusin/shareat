@@ -616,11 +616,13 @@ export default function KitchenPage() {
                 if (voidLineId) {
                     const billLineRef = doc(db, "stores", activeStore.id, "sessions", sessionId, "sessionBillLines", voidLineId);
                     const sessionRef = doc(db, "stores", activeStore.id, "sessions", sessionId);
-                    const ticketQty = oldTicketState.qty || 1;
+                    // Void only what was cancelled unserved (= qtyCancelled above);
+                    // served portions stay billed. Audit P1: kitchen voids are also
+                    // tracked in kitchenVoidedQty so checkout can bound them by the
+                    // tickets' qtyCancelled (rules require the same delta).
+                    const ticketQty = updatePayload.qtyCancelled;
                     transaction.update(billLineRef, {
                         voidedQty: increment(ticketQty),
-                        // Audit P1: kitchen voids are tracked separately so checkout can
-                        // bound them by cancelled tickets (rules require the same delta).
                         kitchenVoidedQty: increment(ticketQty),
                         voidReason: "kitchen_cancel",
                         voidNote: "Cancelled by kitchen: " + (reason || ""),

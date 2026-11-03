@@ -316,7 +316,9 @@ export function parseRefundInput(body: any): RefundInput {
     if (!isSafeId(k, 200) || typeof v !== "number" || !Number.isFinite(v) || v < 0) invalid("Invalid refund quantity.");
     refundQtys[k] = v as number;
   }
-  return { storeId: body.storeId, parentReceiptId: body.parentReceiptId, refundId: body.requestId, refundQtys, reason: reasonOf(body.reason) };
+  // Prefixed so a refund request id can never take a session's receipt id
+  // (receipts/{sessionId}) and block that bill's checkout (final review #6).
+  return { storeId: body.storeId, parentReceiptId: body.parentReceiptId, refundId: `refund_${body.requestId}`, refundQtys, reason: reasonOf(body.reason) };
 }
 
 /** Port of the pre-P1 createRefundReceipt transaction (same quoteRefund math). */

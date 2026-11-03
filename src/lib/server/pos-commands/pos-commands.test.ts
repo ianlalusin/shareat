@@ -9,7 +9,7 @@ import { runVoidSession } from "./void-session";
 import { resolveOperator, type Operator } from "./operator";
 import { processEffects, queueEffectsInTx } from "./effects";
 import { reconcileCommand, sweepStore, type OfflineCommand } from "./reconcile";
-import { runReceiptEdit, runReceiptVoid, runRefund } from "./receipt-commands";
+import { parseRefundInput, runReceiptEdit, runReceiptVoid, runRefund } from "./receipt-commands";
 import { PosCommandError } from "./errors";
 import { issueProfileSession } from "../server-profile-session";
 
@@ -637,5 +637,50 @@ describe("re-review fixes (audit P1 re-review 2026-11-03)", () => {
     let seen: any = null;
     await processEffects(D(), S, [out.effectIds[0]], async () => { seen = db.data(`stores/${S}/posEffects/${out.effectIds[0]}`); }, 1);
     expect(seen.leaseUntilMs).toBeGreaterThan(Date.now());
+  });
+});
+
+describe("final-state review fixes (audit P1, 2026-11-03)", () => {
+  const LINE = `stores/${S}/sessions/s1/sessionBillLines/addon_coke_60.5`;
+  const PKG = `stores/${S}/sessions/s1/sessionBillLines/package_pk1`;
+  const T = (id: string, d: Record<string, unknown>) => db.seed(`stores/${S}/sessions/s1/kitchentickets/${id}`, { billLineId: "addon_coke_60.5", ...d });
+
+  it("#1 kitchen voids on a package line are refused", async () => {
+    db.seed(`stores/${S}/sessions/s1/kitchentickets/kp`, { billLineId: "package_pk1", status: "cancelled", qty: 2 });
+    db.seed(PKG, { ...db.data(PKG), voidedQty: 2, kitchenVoidedQty: 2 });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 6050 }), CASHIER, NOW), "line_void_invalid");
+  });
+
+  it("#1 a client-written line `id` cannot rename the line to escape the ticket check", async () => {
+    T("fake", { status: "cancelled", qty: 5 });
+    db.seed(LINE, { ...db.data(LINE), id: "other", voidedQty: 1, kitchenVoidedQty: 1 });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 100000 }), CASHIER, NOW), "line_void_invalid");
+  });
+
+  it("#1/#3 served tickets count only their qtyCancelled (partial kitchen cancel settles)", async () => {
+    T("k1", { status: "served", qty: 1, qtyServed: 1 });
+    db.seed(LINE, { ...db.data(LINE), qtyOrdered: 2, voidedQty: 1, kitchenVoidedQty: 1 });
+    db.seed(LINE, { ...db.data(LINE) });
+    await expectCode(runCheckout(D(), input({ expectedTotalCents: 106050 }), CASHIER, NOW), "line_void_invalid");
+    T("k2", { status: "served", qty: 1, qtyServed: 0, qtyCancelled: 1 }); // partial cancel path
+    await expect(runCheckout(D(), input({ expectedTotalCents: 106050 }), CASHIER, NOW)).resolves.toMatchObject({ status: "accepted" });
+  });
+
+  it("#2 an online command cannot reuse an offline command's id", async () => {
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand({ expected: { sessionRevision: 1, billingRevision: 2, tableId: "t1", totalCents: 106050 } }));
+    await reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY });
+    await expectCode(runCheckout(D(), input({ opId: "off1", payments: [{ methodId: "gcash", amount: 1060.5, reference: "card" }] }), CASHIER, NOW), "command_conflict");
+    await expectCode(runVoidSession(D(), { storeId: S, sessionId: "s1", opId: "off1", reason: "x" }, CASHIER, NOW), "command_conflict");
+    expect(db.data(`stores/${S}/posCommandResults/off1`).status).toBe("rejected");
+  });
+
+  it("#5 a duplicate offline receipt number is refused (recoverable via accept-as-recorded)", async () => {
+    db.seed(`stores/${S}/receipts/other`, { receiptNumber: "SHT-OL-AB12-0320-001", status: "final" });
+    db.seed(`stores/${S}/posCommands/off1`, offlineCommand());
+    await expect(reconcileCommand(D(), { storeId: S, opId: "off1", caller: staffCaller }, { now: NOW, key: KEY })).resolves.toMatchObject({ code: "receipt_number_duplicate" });
+  });
+
+  it("#6 refund receipt ids are prefixed so they cannot take a bill's receipt id", () => {
+    expect(parseRefundInput({ storeId: S, parentReceiptId: "s1", requestId: "s2", refundQtys: { a: 1 }, reason: "x" }).refundId).toBe("refund_s2");
   });
 });

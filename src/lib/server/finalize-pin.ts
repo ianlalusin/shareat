@@ -74,7 +74,12 @@ export async function finalizePinCore(params: {
       const pinRef = adminDb.doc(`pinRegistry/${currentPin}`);
       const pinSnap = await tx.get(pinRef);
 
-      if (pinSnap.exists) {
+      // The pin comes from client-writable session data: only archive a
+      // registry entry that belongs to THIS store and session (audit P1
+      // hardening), so one bill cannot retire another bill's live PIN.
+      const pinData = pinSnap.exists ? (pinSnap.data() as any) : null;
+      const pinBelongsHere = !!pinData && pinData.storeId === storeId && pinData.sessionId === sessionId;
+      if (pinSnap.exists && pinBelongsHere) {
         tx.set(
           adminDb.doc(`stores/${storeId}/pinArchiveByDay/${dayId}/pins/${currentPin}`),
           {

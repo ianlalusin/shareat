@@ -44,7 +44,11 @@ export async function voidSessionInTx(
   const sessionRef = db.doc(`${base}/sessions/${sessionId}`);
   const activeRef = db.doc(`${base}/activeSessions/${sessionId}`);
 
-  const [resultSnap, sessionSnap, activeSnap] = (await Promise.all([resultRef, sessionRef, activeRef].map((r) => tx.get(r)))) as any[];
+  const commandRef = db.doc(`${base}/posCommands/${opId}`);
+  const [resultSnap, sessionSnap, activeSnap, commandSnap] = (await Promise.all([resultRef, sessionRef, activeRef, commandRef].map((r) => tx.get(r)))) as any[];
+  if (!input.offline && commandSnap.exists) {
+    throw new PosCommandError("command_conflict", "This command id belongs to an offline record.", 409);
+  }
   if (resultSnap.exists) {
     const r = resultSnap.data();
     // An opId is bound to one command (audit P1 review #10).

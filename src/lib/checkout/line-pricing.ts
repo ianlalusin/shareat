@@ -97,6 +97,11 @@ export function kitchenVoidProblems(
     const kv = Number((line as any).kitchenVoidedQty || 0);
     if (!(kv > 0)) continue;
     const lineId = String((line as any).id ?? "");
+    // The kitchen cancel flow only voids add-on lines (final review #1).
+    if (line.type !== "addon" || lineId.startsWith("bundleextra_")) {
+      out.push({ lineId, itemName: String(line.itemName ?? lineId), reason: "kitchen voids are only valid on add-on items" });
+      continue;
+    }
     const qtyOf = (t: Record<string, any>) => Math.max(0, Number(t.qty ?? t.qtyOrdered ?? 1));
     const lineTickets = tickets.filter((t) => t?.billLineId === lineId && t?.billOnServe !== true);
     // Tickets are client-written (re-review #3). Real kitchen tickets for a line
@@ -107,8 +112,12 @@ export function kitchenVoidProblems(
       out.push({ lineId, itemName: String(line.itemName ?? lineId), reason: `kitchen tickets (${ticketed}) exceed the ordered quantity` });
       continue;
     }
-    // Full ticket quantity: the kitchen cancel flow voids the whole ticket qty.
-    const allowed = lineTickets.filter((t) => t?.status === "cancelled").reduce((s, t) => s + qtyOf(t), 0);
+    // Cancelled quantity per ticket: `qtyCancelled` (set by both the full and
+    // the partial kitchen cancel, whatever the final status), else the whole
+    // ticket for a legacy cancelled ticket; never more than the ticket's qty.
+    const cancelledOf = (t: Record<string, any>) =>
+      Math.min(qtyOf(t), Math.max(0, Number(t.qtyCancelled ?? (t.status === "cancelled" ? qtyOf(t) : 0))));
+    const allowed = lineTickets.reduce((s, t) => s + cancelledOf(t), 0);
     if (kv > allowed + 1e-9) {
       out.push({ lineId, itemName: String(line.itemName ?? lineId), reason: `kitchen voided ${kv} but cancelled kitchen tickets cover only ${allowed}` });
     }
