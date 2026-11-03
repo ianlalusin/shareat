@@ -549,8 +549,10 @@ describe("§5 Sharelebrator link fields cannot be written by clients", () => {
       );
     });
 
-    it(`allows a cashier to delete a linked ${coll} doc (payment / void path)`, async () => {
-      await assertSucceeds(deleteDoc(doc(db("cashier"), "stores", STORE_A, coll, "linked1")));
+    it(`delete of a linked ${coll} doc: activeSessions yes (payment / void path), sessions never (audit P1 review #1)`, async () => {
+      const del = deleteDoc(doc(db("cashier"), "stores", STORE_A, coll, "linked1"));
+      if (coll === "sessions") await assertFails(del);
+      else await assertSucceeds(del);
     });
   }
 
@@ -626,7 +628,8 @@ describe("§5 Sharelebrator link fields cannot be written by clients", () => {
 });
 
 describe("deletes on operational collections stay open", () => {
-  for (const coll of ["sessions", "waitlist", "reservations", "rtKdsTickets", "closedSessions"] as const) {
+  // sessions left this list in audit P1 review #1 (no client deletes a session).
+  for (const coll of ["waitlist", "reservations", "rtKdsTickets", "closedSessions"] as const) {
     it(`allows a cashier to delete from ${coll}`, async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore() as any, "stores", STORE_A, coll, "d1"), { v: 1 });

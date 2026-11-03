@@ -336,18 +336,33 @@ service cloud.firestore {
               || (!(request.resource.data.get('status', '') in ['closed', 'voided'])
                   && !(resource.data.get('status', '') in ['closed', 'voided'])));
       }
+      function isPricingRole() {
+        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier');
+      }
+      // Review #1: a new session starts open, unpaid, at ownership revision 1,
+      // with no loyalty rewards (server-only, below) and — unless a cashier+
+      // creates it — no bill discount or custom adjustments.
       allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged()
         && !(request.resource.data.get('status', '') in ['closed', 'voided'])
-        && request.resource.data.get('isPaid', false) != true;
+        && request.resource.data.get('isPaid', false) != true
+        && request.resource.data.get('revision', 1) == 1
+        && request.resource.data.get('loyaltyRedemptions', []).size() == 0
+        && (isPricingRole() || (
+          request.resource.data.get('billDiscount', null) == null
+          && request.resource.data.get('customAdjustments', []).size() == 0));
       // Bill-level discounts / custom adjustments are a cashier+ decision (audit
-      // P1 follow-up); server / kitchen accounts keep every other session write.
+      // P1 follow-up); loyaltyRedemptions is written only by the loyalty server
+      // routes and is never client-editable (review #1).
       function billDiscountsUnchangedOrPricingRole() {
-        return isManagerOrAdmin() || (isActiveStaff() && staffData().role == 'cashier')
+        return isPricingRole()
           || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['billDiscount', 'customAdjustments']);
       }
       allow update: if hasStoreAccess(storeId) && linkFieldsUnchanged() && offlineSessionWriteOk()
-        && settlementFieldsUnchanged() && billDiscountsUnchangedOrPricingRole();
-      allow delete: if hasStoreAccess(storeId);
+        && settlementFieldsUnchanged() && billDiscountsUnchangedOrPricingRole()
+        && request.resource.data.get('loyaltyRedemptions', null) == resource.data.get('loyaltyRedemptions', null);
+      // No client deletes a session (review #1: delete + recreate would reset
+      // revision and discounts while the bill lines survive).
+      allow delete: if false;
     }
     // Every doc under a session (billLines, payments, kitchentickets, ...).
     // activityLogs is append-only: the timeline and loss-prevention review read
@@ -380,6 +395,8 @@ service cloud.firestore {
           && request.resource.data.get('freeQty', 0) == 0
           && request.resource.data.get('discountValue', 0) == 0
           && request.resource.data.get('discountQty', 0) == 0
+          && request.resource.data.get('voidedQty', 0) == 0
+          && request.resource.data.get('kitchenVoidedQty', 0) == 0
         ));
       }
       function lineUpdateOk() {
@@ -389,6 +406,12 @@ service cloud.firestore {
             'discountType', 'discountValue', 'discountQty', 'discountId', 'itemId', 'type'])
           && (resource.data.get('type', '') == 'package'
               || request.resource.data.get('qtyOrdered', 0) >= resource.data.get('qtyOrdered', 0))
+          // Review #3: server / kitchen voids only through the kitchen cancel
+          // flow, which moves voidedQty and kitchenVoidedQty by the same amount;
+          // checkout bounds kitchenVoidedQty by cancelled kitchen tickets.
+          && request.resource.data.get('voidedQty', 0) - resource.data.get('voidedQty', 0)
+             == request.resource.data.get('kitchenVoidedQty', 0) - resource.data.get('kitchenVoidedQty', 0)
+          && request.resource.data.get('kitchenVoidedQty', 0) >= resource.data.get('kitchenVoidedQty', 0)
         ));
       }
       allow create: if hasStoreAccess(storeId) && linkFieldsUnchanged() && subcoll != 'payments' && lineCreateOk();
@@ -536,7 +559,10 @@ service cloud.firestore {
         && request.resource.data.opId == opId
         && request.resource.data.storeId == storeId
         && request.resource.data.createdByUid == request.auth.uid
-        && request.resource.data.kind in ['checkout', 'voidSession'];
+        && request.resource.data.kind in ['checkout', 'voidSession']
+        // Review #7: the server sweep indexes unresolved commands; a client may
+        // not create one pre-resolved to hide it from the sweep.
+        && request.resource.data.resolved == false;
     }
     match /stores/{storeId}/posCommandResults/{opId} {
       allow read: if hasStoreAccess(storeId);
@@ -651,7 +677,7 @@ service cloud.firestore {
         && !(coll in ['receipts', 'tables', 'counters', 'activityLogs', 'activityLogsByDay'])
         // Offline POS commands (create-only block above) and their server-only
         // results / effects outbox (audit P1).
-        && !(coll in ['posCommands', 'posCommandResults', 'posEffects'])
+        && !(coll in ['posCommands', 'posCommandResults', 'posEffects', 'tenderConsumptions'])
         // paymentConversions: written only by /api/analytics/payment-conversion
         // (audit P1 final).
         && coll != 'paymentConversions'
