@@ -26,7 +26,9 @@ function corsHeaders(origin: string): Record<string, string> {
     "Access-Control-Allow-Origin": origin,
     Vary: "Origin",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    // x-pos-operator-session: signed local-user token on the financial commands; a header
+    // missing from this list fails the preflight and the APK just reports "Failed to fetch".
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-pos-operator-session",
     "Access-Control-Max-Age": "86400",
   };
 }
