@@ -159,3 +159,18 @@
     
 
     
+
+/* Letters-only keyboard (LetterKeyboardHost) is open: dialogs and drawers stay above it,
+   the way they stay above the tablet keyboard under adjustResize. */
+body.lkb-open {
+  padding-bottom: var(--lkb-h, 0px);
+}
+body.lkb-open [role="dialog"][data-state="open"]:not([data-vaul-drawer]),
+body.lkb-open [role="alertdialog"][data-state="open"] {
+  max-height: calc(100dvh - var(--lkb-h, 0px) - 0.5rem) !important;
+  top: calc((100dvh - var(--lkb-h, 0px)) / 2) !important;
+}
+body.lkb-open [data-vaul-drawer] {
+  bottom: var(--lkb-h, 0px) !important;
+  max-height: calc(100dvh - var(--lkb-h, 0px)) !important;
+}

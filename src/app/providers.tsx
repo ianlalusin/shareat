@@ -12,6 +12,7 @@ import ThermalPrinter from '@/lib/printing/thermalPrinter';
 import { AndroidBackHandler } from '@/components/shared/AndroidBackHandler';
 import { ProofOutboxSync } from '@/components/shared/ProofOutboxSync';
 import { installApiBaseFetch } from '@/lib/api-base';
+import { LetterKeyboardHost } from '@/components/shared/LetterKeyboardHost';
 
 export function Providers({ children }: { children: React.ReactNode }) {
     useEffect(() => {
@@ -58,6 +59,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
                         <QrWalletProvider>
                             <AndroidBackHandler />
                             <ProofOutboxSync />
+                            <LetterKeyboardHost />
                             {children}
                         </QrWalletProvider>
                     </LocalProfileProvider>
