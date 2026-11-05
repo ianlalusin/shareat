@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { Button } from "@/components/ui/button";
 import { LetterKeyboard } from "./LetterKeyboard";
 import { editField, wantsLettersKeyboard, type FieldLike } from "@/lib/letter-keyboard/edit";
 
@@ -17,6 +18,8 @@ function isEnabled(): boolean {
   } catch {}
   return Capacitor.isNativePlatform();
 }
+
+const stopEv = (e: Event) => e.stopPropagation();
 
 const isField = (n: unknown): n is Field => n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement;
 
@@ -53,12 +56,43 @@ function setValue(el: Field, value: string) {
  * keyboard. Opt a box out with data-no-letter-kb.
  */
 export function LetterKeyboardHost() {
-  const [enabled, setEnabled] = useState(false);
+  const [available, setAvailable] = useState(false); // tablet app (or forced on)
+  const [enabled, setEnabled] = useState(false); // available and not switched off with ON
   const [active, setActive] = useState<Field | null>(null);
+  const [offField, setOffField] = useState<Field | null>(null); // while off: the text box that gets the ABC button
   const panelRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => setEnabled(isEnabled()), []);
+  useEffect(() => {
+    const a = isEnabled();
+    setAvailable(a);
+    setEnabled(a);
+  }, []);
+
+  // Switched off: watch for text boxes so a small ABC button can turn the keyboard back on.
+  useEffect(() => {
+    if (!available || enabled) return;
+    let t: ReturnType<typeof setTimeout>;
+    const eligible = (n: unknown): n is Field => isField(n) && wantsLettersKeyboard(fieldLike(n));
+    const onIn = (e: FocusEvent) => {
+      clearTimeout(t);
+      setOffField(eligible(e.target) ? e.target : null);
+    };
+    const onOut = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        if (!eligible(document.activeElement)) setOffField(null);
+      }, 200);
+    };
+    document.addEventListener("focusin", onIn);
+    document.addEventListener("focusout", onOut);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("focusin", onIn);
+      document.removeEventListener("focusout", onOut);
+      setOffField(null);
+    };
+  }, [available, enabled]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -114,12 +148,11 @@ export function LetterKeyboardHost() {
     // Native, not React's onPointerDown: Next's React root is `document`, the same node Radix
     // listens on for "pointer down outside", and stopPropagation does not stop a sibling
     // listener on the same node. Stopping at the panel keeps a key tap from closing a pop-up.
-    const stop = (e: Event) => e.stopPropagation();
-    panel.addEventListener("pointerdown", stop);
+    panel.addEventListener("pointerdown", stopEv);
     const t = setTimeout(() => active.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
     return () => {
       clearTimeout(t);
-      panel.removeEventListener("pointerdown", stop);
+      panel.removeEventListener("pointerdown", stopEv);
       ro.disconnect();
       document.body.classList.remove("lkb-open");
       document.documentElement.style.removeProperty("--lkb-h");
@@ -163,6 +196,32 @@ export function LetterKeyboardHost() {
     el.blur();
     setTimeout(() => el.focus(), 100); // after the effect cleanup freed the box, so the tablet keyboard opens
   }, [active]);
+
+  const onSwitchOn = () => {
+    const el = offField;
+    document.querySelectorAll<Field>("[data-lkb-off]").forEach((f) => delete f.dataset.lkbOff); // undo any "123" hand-backs
+    setOffField(null);
+    setEnabled(true);
+    if (!el) return;
+    el.blur();
+    setTimeout(() => el.focus(), 100); // after the boxes are re-marked, so our keyboard opens instead
+  };
+
+  if (available && !enabled && offField) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        className="pointer-events-auto fixed bottom-2 right-2 z-[100] h-10 px-4 shadow-lg"
+        aria-label="Switch the letters keyboard back on"
+        ref={(n) => n?.addEventListener("pointerdown", stopEv)} // same reason as the panel: never an "outside" tap
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onSwitchOn}
+      >
+        ABC
+      </Button>
+    );
+  }
 
   if (!enabled || !active) return null;
   return (
