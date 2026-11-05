@@ -92,6 +92,11 @@ export function LetterKeyboardHost() {
       mo.disconnect();
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("focusout", onFocusOut);
+      // Switched off: give every box back to the tablet keyboard.
+      document.querySelectorAll<Field>("[data-lkb]").forEach((el) => {
+        el.removeAttribute("inputmode");
+        delete el.dataset.lkb;
+      });
     };
   }, [enabled]);
 
@@ -106,9 +111,15 @@ export function LetterKeyboardHost() {
     document.body.classList.add("lkb-open");
     const ro = new ResizeObserver(setH);
     ro.observe(panel);
+    // Native, not React's onPointerDown: Next's React root is `document`, the same node Radix
+    // listens on for "pointer down outside", and stopPropagation does not stop a sibling
+    // listener on the same node. Stopping at the panel keeps a key tap from closing a pop-up.
+    const stop = (e: Event) => e.stopPropagation();
+    panel.addEventListener("pointerdown", stop);
     const t = setTimeout(() => active.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
     return () => {
       clearTimeout(t);
+      panel.removeEventListener("pointerdown", stop);
       ro.disconnect();
       document.body.classList.remove("lkb-open");
       document.documentElement.style.removeProperty("--lkb-h");
@@ -143,20 +154,30 @@ export function LetterKeyboardHost() {
     setTimeout(() => el.focus(), 50); // refocus so the tablet keyboard opens
   }, [active]);
 
+  // shortcut: off only until the app is reopened (not saved), so staff are never stuck without it.
+  const onSwitchOff = useCallback(() => {
+    const el = active;
+    setActive(null);
+    setEnabled(false);
+    if (!el) return;
+    el.blur();
+    setTimeout(() => el.focus(), 100); // after the effect cleanup freed the box, so the tablet keyboard opens
+  }, [active]);
+
   if (!enabled || !active) return null;
   return (
     <div
       ref={panelRef}
       // The keyboard sits outside any open dialog: pointer-events-auto because modal dialogs
-      // disable the rest of the page, stopPropagation so they don't read a key tap as an outside click.
+      // disable the rest of the page; the effect above stops pointerdown so a key tap is not an outside click.
       className="pointer-events-auto fixed inset-x-0 bottom-0 z-[100] border-t bg-background p-1.5 shadow-lg"
-      onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.preventDefault()} // keep focus (and the caret) in the field
     >
       <LetterKeyboard
         onKey={onKey}
         onDone={() => active.blur()}
         onTabletKeyboard={onTabletKeyboard}
+        onSwitchOff={onSwitchOff}
         showEnter={active instanceof HTMLTextAreaElement}
       />
     </div>

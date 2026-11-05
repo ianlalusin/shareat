@@ -14,11 +14,13 @@ export function LetterKeyboard({
   onKey,
   onDone,
   onTabletKeyboard,
+  onSwitchOff,
   showEnter,
 }: {
   onKey: (key: string) => void;
   onDone: () => void;
   onTabletKeyboard: () => void;
+  onSwitchOff: () => void;
   showEnter: boolean;
 }) {
   return (
@@ -54,6 +56,14 @@ export function LetterKeyboard({
         )}
         <Button type="button" className="h-11 flex-1 px-0" onClick={onDone}>
           Done
+        </Button>
+        <Button
+          type="button"
+          className="h-11 flex-1 bg-green-600 px-0 text-white hover:bg-green-700"
+          aria-label="Letters keyboard is on. Tap to switch it off and use the tablet keyboard"
+          onClick={onSwitchOff}
+        >
+          ON
         </Button>
       </div>
     </div>
