@@ -17,9 +17,10 @@ const updates: Array<{ path: string; data: any }> = [];
 let targetDoc: Record<string, any>;
 let firebaseValidAfter: string | undefined;
 let failUpdate = false;
+let failPasswordChange = false;
 
 vi.mock("firebase-admin/firestore", () => ({
-  FieldValue: { serverTimestamp: () => ({ __sentinel: "serverTimestamp" }) },
+  FieldValue: { serverTimestamp: () => ({ __sentinel: "serverTimestamp" }), delete: () => ({ __sentinel: "delete" }) },
 }));
 
 vi.mock("@/lib/server/active-staff-check", () => ({
@@ -45,6 +46,7 @@ vi.mock("@/lib/firebase/admin", () => ({
     },
     updateUser: async () => {
       calls.push("updateUser");
+      if (failPasswordChange) throw new Error("PASSWORD_DOES_NOT_MEET_REQUIREMENTS");
     },
     revokeRefreshTokens: async () => {
       calls.push("revoke");
@@ -76,6 +78,7 @@ beforeEach(() => {
   calls.length = 0;
   updates.length = 0;
   failUpdate = false;
+  failPasswordChange = false;
   targetDoc = { role: "cashier", status: "active", name: "Ana" };
   firebaseValidAfter = new Date(Math.floor(RESET_AT_MS / 1000) * 1000).toUTCString();
   vi.useFakeTimers();
@@ -87,6 +90,21 @@ afterEach(() => {
 });
 
 describe("POST /api/admin/users/reset-password — B22 revocation boundary", () => {
+  it("removes the new boundary when the password change fails (nothing was reset)", async () => {
+    failPasswordChange = true;
+    const res = await POST(req());
+    expect(res.status).toBe(500);
+    expect(updates.at(-1)!.data).toEqual({ tokensValidAfter: { __sentinel: "delete" } });
+    expect(calls).not.toContain("revoke");
+  });
+
+  it("restores an earlier boundary when the password change fails", async () => {
+    failPasswordChange = true;
+    targetDoc = { ...targetDoc, tokensValidAfter: 1000 };
+    await POST(req());
+    expect(updates.at(-1)!.data).toEqual({ tokensValidAfter: 1000 });
+  });
+
   it("verifies the caller with checkRevoked", async () => {
     await POST(req());
     expect(calls[0]).toBe("verify:true");

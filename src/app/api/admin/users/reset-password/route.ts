@@ -111,7 +111,16 @@ export async function POST(req: Request) {
 
     const tempPassword = generateTempPassword();
 
-    await getAdminAuth().updateUser(uid, { password: tempPassword });
+    try {
+      await getAdminAuth().updateUser(uid, { password: tempPassword });
+    } catch (e) {
+      // Nothing was reset, so lift the fence again: otherwise a failed reset
+      // locks the user's still-valid devices out of store data.
+      await db.doc(`staff/${uid}`).update({
+        tokensValidAfter: typeof target?.tokensValidAfter === "number" ? target.tokensValidAfter : FieldValue.delete(),
+      });
+      throw e;
+    }
 
     // Kick every existing session. Without this, a reset prompted by a
     // suspected compromise would leave the intruder signed in — changing the
