@@ -20,9 +20,14 @@ describe("generateTempPassword", () => {
     }
   });
 
-  it("uses only alphanumerics, so it survives being read aloud or pasted", () => {
-    for (let i = 0; i < 50; i++) {
-      expect(generateTempPassword()).toMatch(/^[A-Za-z0-9]+$/);
+  it("always has an upper, lower, digit and one easy symbol (Firebase password policy)", () => {
+    for (let i = 0; i < 200; i++) {
+      const pw = generateTempPassword();
+      expect(pw).toMatch(/^[A-Za-z0-9#$%&*+=?@]+$/);
+      expect(pw).toMatch(/[A-Z]/);
+      expect(pw).toMatch(/[a-z]/);
+      expect(pw).toMatch(/[0-9]/);
+      expect(pw).toMatch(/[#$%&*+=?@]/);
     }
   });
 
@@ -39,7 +44,7 @@ describe("generateTempPassword", () => {
     for (let i = 0; i < 300; i++) {
       for (const ch of generateTempPassword()) chars.add(ch);
     }
-    // 47-character alphabet; 4200 draws should cover essentially all of it.
+    // 48-character alphabet + 9 symbols; 4200 draws should cover nearly all of it.
     expect(chars.size).toBeGreaterThanOrEqual(44);
   });
 });
