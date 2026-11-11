@@ -421,7 +421,35 @@ export function EditBillableItemDialog({
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <FormField name="discountType" control={control} render={({ field }) => (
-                                                    <FormItem><FormLabel>Type</FormLabel><Select onValueChange={field.onChange} value={field.value || ""} disabled={isLocked}><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="fixed">₱</SelectItem><SelectItem value="percent">%</SelectItem></SelectContent></Select></FormItem>
+                                                    <FormItem>
+                                                        <FormLabel>Type</FormLabel>
+                                                        <FormControl>
+                                                            <div role="group" aria-label="Discount type" className="grid grid-cols-2 gap-2">
+                                                                <Button
+                                                                    type="button"
+                                                                    variant={field.value === "fixed" ? "default" : "outline"}
+                                                                    className="h-11 min-w-11 rounded-full px-3 text-lg"
+                                                                    aria-label="Peso discount"
+                                                                    aria-pressed={field.value === "fixed"}
+                                                                    onClick={() => field.onChange("fixed")}
+                                                                    disabled={isLocked}
+                                                                >
+                                                                    ₱
+                                                                </Button>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant={field.value === "percent" ? "default" : "outline"}
+                                                                    className="h-11 min-w-11 rounded-full px-3 text-lg"
+                                                                    aria-label="Percentage discount"
+                                                                    aria-pressed={field.value === "percent"}
+                                                                    onClick={() => field.onChange("percent")}
+                                                                    disabled={isLocked}
+                                                                >
+                                                                    %
+                                                                </Button>
+                                                            </div>
+                                                        </FormControl>
+                                                    </FormItem>
                                                 )} />
                                                 <FormField name="discountValue" control={control} render={({ field }) => (
                                                     <FormItem><FormLabel>Value</FormLabel><FormControl><Input type="number" inputMode="decimal" step="0.01" min={0} max={watchedValues.discountType === 'percent' ? 100 : undefined} {...field} disabled={watchedValues.discountId !== 'custom'}/></FormControl><FormMessage/></FormItem>
