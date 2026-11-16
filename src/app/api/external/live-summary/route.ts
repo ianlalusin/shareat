@@ -62,9 +62,10 @@ export async function GET(request: Request) {
       guestsServed: Number(today.guests?.guestCountFinalTotal ?? 0),
       activeSessions: activeSnap.size,
       activeGuests,
-      // Both sides count sales by session start hour, so they compare like for like.
-      todaySalesByThisHour: salesThroughHour(today.sales?.salesAmountByHour, hour),
-      lastWeekSalesByThisHour: salesThroughHour(lastWeek.sales?.salesAmountByHour, hour),
+      // Both sides count sales by session start hour, through the last finished hour only:
+      // the current hour is still filling up today but complete last week.
+      todaySalesByThisHour: salesThroughHour(today.sales?.salesAmountByHour, hour - 1),
+      lastWeekSalesByThisHour: salesThroughHour(lastWeek.sales?.salesAmountByHour, hour - 1),
     });
   } catch (err: any) {
     console.error("[external/live-summary] failed:", err);
