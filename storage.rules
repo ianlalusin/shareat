@@ -200,6 +200,20 @@ service firebase.storage {
         && isImageUnder(6);
     }
 
+    // -- Set-reservation payment screenshots --
+    // Staff attach a transfer screenshot to a website set reservation. Reservations are
+    // placed weeks before delivery, so unlike paymentProofs/ these objects are NOT covered
+    // by the 15-day lifecycle rule (storage-lifecycle.json matches only paymentProofs/).
+    // Create-only (no overwrite/delete), private (no list), staff of THAT store only.
+    match /reservationProofs/{storeId}/{orderId}/{fileName} {
+      allow get: if request.auth != null
+        && hasStoreAccess(request.auth.uid, storeId);
+      allow create: if request.auth != null
+        && resource == null
+        && hasStoreAccess(request.auth.uid, storeId)
+        && isImageUnder(6);
+    }
+
     // -- Store logos --
     // PRE-EXISTING BUG, fixed here because we are already in this file: there
     // was no rule matching stores/{storeId}/*, so uploadStoreLogo() and

@@ -29,6 +29,8 @@ import { normalizePhone } from "@/lib/phone";
 import { paymentLabel } from "@/lib/payment-label";
 import { useOnlineOrdersFeed, useOrderById } from "@/components/admin/online-orders/useOnlineOrdersFeed";
 import { useConfirmedRemoteValue } from "@/components/admin/online-orders/useConfirmedRemoteValue";
+import { ReservationPanel, reservationWhen } from "@/components/admin/online-orders/ReservationPanel";
+import { reservationBadge, type ReservationPayment } from "@/lib/online-orders/reservation";
 
 type Modifier = { groupName?: string; valueName?: string; priceDelta?: number };
 type OrderLine = {
@@ -66,6 +68,13 @@ type OnlineOrder = {
   };
   receiptNumber?: string;
   statusHistory?: any[];
+  // Website set reservations (kind === "set_reservation")
+  kind?: string;
+  payments?: ReservationPayment[];
+  scheduledAtMs?: number;
+  releaseAtMs?: number;
+  deliveryFeeTbd?: boolean;
+  kitchenReleasedAtMs?: number;
 };
 
 const NO_AVAIL: OnlineAvailabilityInput = {};
@@ -611,6 +620,32 @@ export default function OnlineOrdersClient() {
     }
   };
 
+  // Set-reservation ops (record-payment, set-delivery-fee, remove-last-payment). Same
+  // fetch/Bearer/toast pattern as transition(); resolves true when the server accepted it.
+  const reservationOp = async (payload: Record<string, unknown>): Promise<boolean> => {
+    if (busy) return false;
+    setBusy(true);
+    try {
+      const u = user || getAuth().currentUser;
+      if (!u) throw new Error("Not signed in.");
+      const idToken = await u.getIdToken();
+      const res = await fetch("/api/admin/online-orders", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId, ...payload }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Update failed (${res.status})`);
+      toast({ title: json.status === "accepted" && payload.op === "record-payment" ? "Payment recorded. Order confirmed." : "Saved" });
+      return true;
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Could not save", description: e?.message });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <RoleGuard allow={["admin", "manager", "cashier"]}>
       <div className="container mx-auto py-6 space-y-6">
@@ -697,6 +732,15 @@ export default function OnlineOrdersClient() {
                             <Badge variant="destructive" className="inline-flex items-center gap-1">
                               <MessageCircle className="h-3 w-3" /> {unreadByOrderId[o.id]}
                             </Badge>
+                          )}
+                          {o.kind === "set_reservation" && (
+                            <>
+                              <Badge variant="outline">Reservation · {reservationWhen(o.scheduledAtMs)}</Badge>
+                              {(() => {
+                                const b = reservationBadge({ ...o, grandTotal: o.grandTotal || 0 }, Date.now());
+                                return <Badge variant={b.tone === "red" ? "destructive" : b.tone === "green" ? "default" : b.tone === "amber" ? "secondary" : "outline"}>{b.label}</Badge>;
+                              })()}
+                            </>
                           )}
                           {o.fulfillment?.type === "delivery" ? (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Truck className="h-3 w-3" /> Delivery</span>
@@ -797,6 +841,10 @@ export default function OnlineOrdersClient() {
                   <div className="flex justify-between font-semibold text-base"><span>Total</span><span>{peso(selected.grandTotal || 0)}</span></div>
                 </div>
 
+                {selected.kind === "set_reservation" && (
+                  <ReservationPanel order={selected} storeId={storeId} call={reservationOp} busy={busy} />
+                )}
+                {selected.kind !== "set_reservation" && (
                 <div className="rounded-md border p-3 space-y-2">
                   {selected.payment?.paid === true ? (
                     <>
@@ -904,6 +952,7 @@ export default function OnlineOrdersClient() {
                     </>
                   )}
                 </div>
+                )}
 
                 <div className="space-y-1.5">
                   <div className="text-sm font-medium">Conversation</div>

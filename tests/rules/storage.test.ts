@@ -169,4 +169,25 @@ describe.skipIf(!hasStorageEmulator)("storage rules", () => {
       await assertFails(storageAs("managerA").ref(`productPhotos/p1/${STORE_A}/photo1.webp`).delete());
     });
   });
+
+  describe("set-reservation payment screenshots", () => {
+    const path = (store: string, name: string) => `reservationProofs/${store}/order1/${name}`;
+
+    it("lets a cashier of the store upload a new screenshot and read it back", async () => {
+      await assertSucceeds(put(storageAs("cashierA").ref(path(STORE_A, "s1.jpg"))));
+      await assertSucceeds(storageAs("cashierA").ref(path(STORE_A, "s1.jpg")).getMetadata());
+    });
+
+    it("denies another store's cashier, anonymous users and listing", async () => {
+      await assertFails(put(storageAs("cashierB").ref(path(STORE_A, "s2.jpg"))));
+      await assertFails(put(storageAs("anon").ref(path(STORE_A, "s3.jpg"))));
+      await assertFails(storageAs("cashierA").ref(`reservationProofs/${STORE_A}/order1`).listAll());
+    });
+
+    it("denies overwriting or deleting an existing screenshot", async () => {
+      await seed(path(STORE_A, "s4.jpg"));
+      await assertFails(put(storageAs("cashierA").ref(path(STORE_A, "s4.jpg"))));
+      await assertFails(storageAs("cashierA").ref(path(STORE_A, "s4.jpg")).delete());
+    });
+  });
 });
