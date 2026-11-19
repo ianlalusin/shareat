@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Image as ImageIcon, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -71,6 +72,7 @@ export function ReservationPanel({
   const [uploadError, setUploadError] = useState("");
   const [removing, setRemoving] = useState(false);
   const [removeReason, setRemoveReason] = useState("");
+  const [proofView, setProofView] = useState<string | null>(null); // screenshot shown in an in-app window
 
   const submitPayment = async () => {
     setUploadError("");
@@ -140,9 +142,9 @@ export function ReservationPanel({
                 {peso(p.amount)} · {p.methodLabel}{p.reference ? ` · ref ${p.reference}` : ""} · {p.byName}
               </span>
               {p.proofUrl && (
-                <a href={p.proofUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary underline">
-                  Screenshot <ExternalLink className="h-3 w-3" />
-                </a>
+                <button type="button" onClick={() => setProofView(p.proofUrl)} className="inline-flex items-center gap-1 text-primary underline">
+                  Screenshot <ImageIcon className="h-3 w-3" />
+                </button>
               )}
             </li>
           ))}
@@ -194,6 +196,15 @@ export function ReservationPanel({
           <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" onClick={() => setRemoving(true)}>Remove last payment</button>
         )
       )}
+
+      <Dialog open={!!proofView} onOpenChange={(open) => !open && setProofView(null)}>
+        <DialogContent className="sm:max-w-xl max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Payment screenshot</DialogTitle>
+          </DialogHeader>
+          {proofView && <img src={proofView} alt="Payment screenshot" className="max-h-[70dvh] w-full rounded-md border object-contain" />}
+        </DialogContent>
+      </Dialog>
 
       {paid > 0 && !closed && (
         <p className="border-t pt-2 text-xs text-amber-700">If you cancel this order, {peso(paid)} was already received. Refund it to the customer yourself; the POS does not do it.</p>
