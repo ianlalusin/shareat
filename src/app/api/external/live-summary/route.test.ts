@@ -54,7 +54,7 @@ describe("GET /api/external/live-summary", () => {
     expect((await GET(get("storeId=sto"))).status).toBe(403);
   });
 
-  it("returns today's totals, active sessions and last-week comparison through this hour", async () => {
+  it("returns totals, active sessions and last-week comparison through the last finished hour", async () => {
     docs["stores/lipa/analytics/20261029"] = {
       payments: { totalGross: 25000, txCount: 18 },
       guests: { guestCountFinalTotal: 52 },
@@ -76,8 +76,8 @@ describe("GET /api/external/live-summary", () => {
       guestsServed: 52,
       activeSessions: 4,
       activeGuests: 9,
-      todaySalesByThisHour: 25000,
-      lastWeekSalesByThisHour: 20000,
+      todaySalesByThisHour: 19000, // hours 0-13 only: 14:00 is still running
+      lastWeekSalesByThisHour: 20000, // 11 + 13; the 16:00 sale is later in the day
     });
     expect(lastStatusFilter).toEqual(["active", "pending_verification"]);
   });
