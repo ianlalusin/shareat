@@ -151,7 +151,17 @@ export function buildTrustSignal(input: {
 }
 
 // Available forward actions given the current status + fulfillment type.
-function actionsFor(order: OnlineOrder): Array<{ to: string; label: string; needsReason?: boolean; variant?: "default" | "destructive" | "outline" }> {
+type OrderAction = { to: string; label: string; needsReason?: boolean; variant?: "default" | "destructive" | "outline" };
+
+// Set reservations are confirmed by recording a payment (>= 50%) and reach the kitchen
+// automatically 2 hours ahead, so the normal Accept / Start preparing buttons are not offered.
+function actionsFor(order: OnlineOrder): OrderAction[] {
+  const actions = baseActionsFor(order);
+  if (order.kind !== "set_reservation") return actions;
+  return actions.filter((a) => a.to !== "accepted" && !(a.to === "preparing" && !order.kitchenReleasedAtMs));
+}
+
+function baseActionsFor(order: OnlineOrder): OrderAction[] {
   const isDelivery = order.fulfillment?.type === "delivery";
   switch (order.status) {
     case "pending":
@@ -970,7 +980,7 @@ export default function OnlineOrdersClient() {
                 {trustSignal && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
                     <span>{trustSignal}</span>
-                    {selected.status === "pending" && selected.payment?.paid !== true && (
+                    {selected.status === "pending" && selected.payment?.paid !== true && selected.kind !== "set_reservation" && (
                       <Button
                         size="sm"
                         variant="outline"

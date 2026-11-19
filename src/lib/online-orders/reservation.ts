@@ -98,10 +98,11 @@ export function reservationBadge(
   const payments = order.payments || [];
   const paid = paidAmount(payments);
   if (paid > 0 && balanceOf(order.grandTotal, payments) === 0) return { label: "Paid", tone: "green" };
-  if (paid === 0) {
-    const due = order.status === "pending" && typeof order.releaseAtMs === "number" && order.releaseAtMs < nowMs;
-    return due ? { label: "Unpaid, due", tone: "red" } : { label: "Unpaid", tone: "gray" };
+  // A pending order past its release time is silently not cooked, so it is red whatever was paid.
+  const due = order.status === "pending" && typeof order.releaseAtMs === "number" && order.releaseAtMs < nowMs;
+  if (paid === 0) return due ? { label: "Unpaid, due", tone: "red" } : { label: "Unpaid", tone: "gray" };
+  if (!meetsDeposit(order.grandTotal, payments)) {
+    return due ? { label: "Deposit below 50%, due", tone: "red" } : { label: "Deposit below 50%", tone: "amber" };
   }
-  if (!meetsDeposit(order.grandTotal, payments)) return { label: "Deposit below 50%", tone: "amber" };
   return { label: `Partial ${peso(paid)} of ${peso(order.grandTotal)}`, tone: "amber" };
 }

@@ -61,6 +61,7 @@ export function ReservationPanel({
   const toReach50 = Math.max(0, Math.round((total * DEPOSIT_RATIO - paid) * 100) / 100);
 
   const [fee, setFee] = useState("");
+  const validFee = fee.trim() !== "" && Number.isFinite(Number(fee));
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<string>(DEPOSIT_METHODS[0]);
   const [reference, setReference] = useState("");
@@ -96,7 +97,7 @@ export function ReservationPanel({
     <div className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">Reservation · {reservationWhen(order.scheduledAtMs)}</Badge>
-        <Badge variant={TONE_VARIANT[badge.tone]}>{badge.label}{badge.label === "Unpaid, due" ? ` ${reservationWhen(order.releaseAtMs)}` : ""}</Badge>
+        <Badge variant={TONE_VARIANT[badge.tone]}>{badge.label}{badge.label.endsWith(", due") ? ` ${reservationWhen(order.releaseAtMs)}` : ""}</Badge>
       </div>
       {order.status === "pending" && (
         <p className="text-xs text-muted-foreground">
@@ -109,7 +110,7 @@ export function ReservationPanel({
           <Label className="text-xs">Delivery fee: set it from the distance (usually ₱100 to ₱200) before taking payment</Label>
           <div className="flex gap-2">
             <Input inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="₱" className="max-w-[8rem]" />
-            <Button size="sm" disabled={busy || !fee} onClick={async () => { if (await call({ op: "set-delivery-fee", orderId: order.id, fee: Number(fee) })) setFee(""); }}>Set fee</Button>
+            <Button size="sm" disabled={busy || !validFee} onClick={async () => { if (await call({ op: "set-delivery-fee", orderId: order.id, fee: Number(fee) })) setFee(""); }}>Set fee</Button>
           </div>
         </div>
       )}
@@ -118,7 +119,7 @@ export function ReservationPanel({
           Free delivery applied. If the address is outside the free area, set a fee:
           <div className="mt-1 flex gap-2">
             <Input inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="₱" className="max-w-[8rem]" />
-            <Button size="sm" variant="outline" disabled={busy || !fee} onClick={async () => { if (await call({ op: "set-delivery-fee", orderId: order.id, fee: Number(fee) })) setFee(""); }}>Set fee</Button>
+            <Button size="sm" variant="outline" disabled={busy || !validFee} onClick={async () => { if (await call({ op: "set-delivery-fee", orderId: order.id, fee: Number(fee) })) setFee(""); }}>Set fee</Button>
           </div>
         </div>
       )}

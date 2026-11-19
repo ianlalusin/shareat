@@ -26,7 +26,9 @@ export async function releaseSetReservationsForStore(
     const orderId = doc.id;
     const orderRef = db.doc(`stores/${storeId}/onlineOrders/${orderId}`);
 
-    const didRelease = await db.runTransaction(async (tx) => {
+    let didRelease = false;
+    try {
+    didRelease = await db.runTransaction(async (tx) => {
       const fresh = await tx.get(orderRef);
       const order = fresh.exists ? (fresh.data() as any) : null;
       if (!order || !isReleaseDue(order, nowMs)) return false;
@@ -58,6 +60,12 @@ export async function releaseSetReservationsForStore(
         locationByInvId,
         nowMs,
       });
+      // Nothing could be sent to a kitchen screen (no station mapped, or the lookup failed):
+      // leave the order as it is so the next run retries, and say so loudly.
+      if (built.ticketsCreated === 0) {
+        console.error(`[release-set-reservations] order ${orderId} produced 0 kitchen tickets; will retry (check each set's kitchen station).`);
+        return false;
+      }
       for (const w of built.writes) {
         const ref = db.doc(w.path);
         if (w.merge) tx.set(ref, w.data, { merge: true });
@@ -79,6 +87,10 @@ export async function releaseSetReservationsForStore(
       });
       return true;
     });
+    } catch (e) {
+      // One bad order must not stop the others (or the other stores) in this run.
+      console.error(`[release-set-reservations] order ${orderId} failed; will retry:`, e);
+    }
 
     if (didRelease) released += 1;
     else skipped += 1;

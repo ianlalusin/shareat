@@ -981,7 +981,7 @@ describe("op: remove-last-payment", () => {
 
 describe("set reservations and the kitchen", () => {
   it("accepting a reservation creates NO kitchen tickets", async () => {
-    seedWithInventory(reservation(), { v1: { kitchenLocationId: "grill", kitchenLocationName: "Grill" } });
+    seedWithInventory(reservation({ payments: [{ ...P1, amount: 1700 }] }), { v1: { kitchenLocationId: "grill", kitchenLocationName: "Grill" } });
     const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
     const json = await res.json();
     expect(res.status).toBe(200);
@@ -1009,5 +1009,62 @@ describe("completing a set reservation", () => {
     expect(res.status).toBe(200);
     const receipt = harness.sets.find((s) => s.path === RECEIPT_PATH)!.data;
     expect(receipt.analytics.mop).toEqual({ GCash: 3333 });
+  });
+});
+
+// --- reviewer findings: staff buttons must not bypass the reservation rules ---
+
+describe("set reservations: the normal buttons cannot bypass the deposit and kitchen rules", () => {
+  const move = (toStatus: string) => ({ op: "transition", storeId: STORE, orderId: ORDER, toStatus });
+
+  it("refuses to accept an unpaid reservation", async () => {
+    seed(reservation());
+    const res = await post(move("accepted"));
+    expect(res.status).toBe(400);
+    expect(orderUpdate()).toBeNull();
+  });
+
+  it("refuses to accept a reservation whose deposit is under 50%", async () => {
+    seed(reservation({ payments: [{ ...P1, amount: 1000 }] }));
+    expect((await post(move("accepted"))).status).toBe(400);
+  });
+
+  it("accepts a reservation once the deposit is in", async () => {
+    seed(reservation({ payments: [{ ...P1, amount: 1700 }] }));
+    expect((await post(move("accepted"))).status).toBe(200);
+  });
+
+  it("refuses accepted -> preparing before the kitchen job has released it", async () => {
+    seed(reservation({ status: "accepted", payments: [{ ...P1, amount: 1700 }] }));
+    expect((await post(move("preparing"))).status).toBe(400);
+  });
+
+  it("allows preparing -> ready once the kitchen job released it", async () => {
+    seed(reservation({ status: "preparing", kitchenReleasedAtMs: 5, payments: [{ ...P1, amount: 1700 }] }));
+    expect((await post(move("ready"))).status).toBe(200);
+  });
+
+  it("removing the last payment sends a confirmed order back to pending when it drops under 50%", async () => {
+    seed(reservation({ status: "accepted", payments: [{ ...P1, amount: 1700 }] }));
+    const res = await post({ op: "remove-last-payment", storeId: STORE, orderId: ORDER, reason: "wrong entry" });
+    expect(res.status).toBe(200);
+    const u = orderUpdate();
+    expect(u.status).toBe("pending");
+    expect(historyEntries(u).map((h) => h.type)).toEqual(["payment_removed", "transition"]);
+  });
+
+  it("removing a payment keeps the order confirmed while the deposit is still met", async () => {
+    seed(reservation({ status: "accepted", payments: [{ ...P1, amount: 2000 }, { ...P1, amount: 700 }] }));
+    await post({ op: "remove-last-payment", storeId: STORE, orderId: ORDER, reason: "typo" });
+    expect(orderUpdate().status).toBeUndefined();
+  });
+
+  it("a delivery fee that is not a number is refused, not saved as 0", async () => {
+    seed(reservation({ fulfillment: { type: "delivery" }, deliveryFeeTbd: true }));
+    for (const fee of [null, "", "abc", undefined]) {
+      const res = await post({ op: "set-delivery-fee", storeId: STORE, orderId: ORDER, fee });
+      expect(res.status).toBe(400);
+    }
+    expect(orderUpdate()).toBeNull();
   });
 });

@@ -98,8 +98,9 @@ describe("reservationBadge", () => {
   it("pending, unpaid, before release time is gray", () => {
     expect(reservationBadge(order({}), 5_000)).toEqual({ label: "Unpaid", tone: "gray" });
   });
-  it("a deposit under 50% is amber", () => {
+  it("a deposit under 50% is amber before the release time and red once it is past", () => {
     expect(reservationBadge(order({ payments: [pay(1000)] }), 5_000)).toEqual({ label: "Deposit below 50%", tone: "amber" });
+    expect(reservationBadge(order({ payments: [pay(500)] }), 20_000)).toEqual({ label: "Deposit below 50%, due", tone: "red" });
   });
   it("50% or more but not full is amber Partial", () => {
     expect(reservationBadge(order({ status: "accepted", payments: [pay(2000)] }), 5_000)).toEqual({ label: "Partial ₱2,000.00 of ₱3,333.00", tone: "amber" });

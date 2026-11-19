@@ -93,11 +93,33 @@ describe("releaseSetReservationsForStore", () => {
     expect(h.docs[ordPath("P")].status).toBe("pending");
   });
 
-  it("still marks the order preparing when no line has a kitchen location (0 tickets)", async () => {
+  it("does NOT mark the order released when no ticket could be built, so the next run retries", async () => {
     const h = harness({ A: base() }, {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await releaseSetReservationsForStore(h.db, STORE, NOW);
+    expect(r).toEqual({ released: 0, skipped: 1 });
+    expect(h.sets).toHaveLength(0);
+    expect(h.docs[ordPath("A")].status).toBe("accepted");
+    expect(h.docs[ordPath("A")].kitchenReleasedAtMs).toBeUndefined();
+    expect(err).toHaveBeenCalled();
+    // once the kitchen station exists, the next run releases it
+    h.docs[`stores/${STORE}/inventory/v1`] = { kitchenLocationId: "grill", kitchenLocationName: "Grill" };
+    expect(await releaseSetReservationsForStore(h.db, STORE, NOW + 600_000)).toEqual({ released: 1, skipped: 0 });
+    err.mockRestore();
+  });
+
+  it("one order that throws does not stop the others", async () => {
+    const h = harness({ A: base(), B: base() });
+    const real = h.db.runTransaction;
+    let calls = 0;
+    h.db.runTransaction = async (fn: any) => {
+      if (++calls === 1) throw new Error("boom");
+      return real(fn);
+    };
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await releaseSetReservationsForStore(h.db, STORE, NOW);
     expect(r.released).toBe(1);
-    expect(h.sets.filter((s) => s.path.includes("/kitchentickets/"))).toHaveLength(0);
-    expect(h.docs[ordPath("A")].status).toBe("preparing");
+    expect(r.skipped).toBe(1);
+    err.mockRestore();
   });
 });

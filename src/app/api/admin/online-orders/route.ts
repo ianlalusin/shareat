@@ -258,8 +258,9 @@ export async function POST(req: Request) {
         const base = { at: Timestamp.now(), atClientMs: nowMs, from: current, to: current, byUid: actorUid, byName: actorName };
 
         if (op === "set-delivery-fee") {
-          const fee = Math.round(Number(body?.fee) * 100) / 100;
-          if (!Number.isFinite(fee) || fee < 0 || fee > 1000) throw new OpError("Delivery fee must be between ₱0 and ₱1,000.");
+          if (typeof body?.fee !== "number" || !Number.isFinite(body.fee)) throw new OpError("Enter the delivery fee as a number.");
+          const fee = Math.round(body.fee * 100) / 100;
+          if (fee < 0 || fee > 1000) throw new OpError("Delivery fee must be between ₱0 and ₱1,000.");
           if (order?.fulfillment?.type !== "delivery") throw new OpError("Only delivery orders have a delivery fee.");
           if (payments.length > 0) throw new OpError("The delivery fee cannot change after a payment is recorded.");
           const newTotal = Math.round((Number(order.subtotal || 0) + fee) * 100) / 100;
@@ -278,13 +279,19 @@ export async function POST(req: Request) {
           if (!reason) throw new OpError("A reason is required to remove a payment.");
           if (payments.length === 0) throw new OpError("There is no payment to remove.");
           const next = payments.slice(0, -1);
-          tx.update(orderRef, {
+          // A confirmed order whose deposit is no longer met goes back to pending, so it is not cooked unpaid.
+          const dropsBack = current === "accepted" && !order.kitchenReleasedAtMs && !meetsDeposit(grandTotal, next);
+          const entries: any[] = [{ ...base, type: "payment_removed", reason }];
+          if (dropsBack) entries.push({ ...base, to: "pending", type: "transition", reason: "Deposit no longer met" });
+          const update: any = {
             updatedAt: FieldValue.serverTimestamp(),
             payments: next,
             "payment.paidAmount": paidAmount(next),
             "payment.paid": false,
-            statusHistory: FieldValue.arrayUnion({ ...base, type: "payment_removed", reason }),
-          });
+            statusHistory: FieldValue.arrayUnion(...entries),
+          };
+          if (dropsBack) update.status = "pending";
+          tx.update(orderRef, update);
           result = { paidAmount: paidAmount(next), balance: balanceOf(grandTotal, next) };
           return;
         }
@@ -434,6 +441,14 @@ export async function POST(req: Request) {
       const allowed = NEXT_STATES[current] || [];
       if (!allowed.includes(toStatus)) {
         throw new Error(`Cannot move order from "${current}" to "${toStatus}".`);
+      }
+      if (order.kind === "set_reservation") {
+        if (current === "pending" && toStatus === "accepted" && !meetsDeposit(Number(order.grandTotal || 0), Array.isArray(order.payments) ? order.payments : [])) {
+          throw new OpError("Record a payment of at least 50% to confirm this reservation.");
+        }
+        if (current === "accepted" && toStatus === "preparing" && !order.kitchenReleasedAtMs) {
+          throw new OpError("The kitchen receives this order automatically 2 hours before its time.");
+        }
       }
       // Fulfillment-specific guards.
       if (toStatus === "ready_for_pickup" && order?.fulfillment?.type !== "pickup") {
