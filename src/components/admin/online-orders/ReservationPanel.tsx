@@ -54,8 +54,12 @@ export function ReservationPanel({
 }) {
   const payments = order.payments || [];
   const total = Number(order.grandTotal || 0);
-  const paid = paidAmount(payments);
-  const balance = balanceOf(total, payments);
+  const completed = order.status === "completed";
+  const recorded = paidAmount(payments);
+  // Completed: the balance was collected at hand-over, so the whole total is received.
+  const paid = completed ? total : recorded;
+  const balance = completed ? 0 : balanceOf(total, payments);
+  const handOver = completed ? Math.max(0, Math.round((total - recorded) * 100) / 100) : 0;
   const badge = reservationBadge({ ...order, grandTotal: total }, Date.now());
   const closed = ["completed", "cancelled", "rejected"].includes(order.status) || !!order.receiptNumber;
   const isDelivery = order.fulfillment?.type === "delivery";
@@ -131,7 +135,8 @@ export function ReservationPanel({
       <div className="space-y-1 border-t pt-2 text-sm">
         <div className="flex justify-between"><span className="text-muted-foreground">Total</span><span>{peso(total)}</span></div>
         <div className="flex justify-between"><span className="text-muted-foreground">Received</span><span>{peso(paid)}</span></div>
-        <div className="flex justify-between font-medium"><span>Balance (collect at hand-over)</span><span>{peso(balance)}</span></div>
+        <div className="flex justify-between font-medium"><span>{completed ? "Balance" : "Balance (collect at hand-over)"}</span><span>{peso(balance)}</span></div>
+        {handOver > 0 && <div className="flex justify-between text-xs text-muted-foreground"><span>Collected at hand-over</span><span>{peso(handOver)}</span></div>}
       </div>
 
       {payments.length > 0 && (

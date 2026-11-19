@@ -118,3 +118,18 @@ describe("reservationRowPaymentText", () => {
     expect(reservationRowPaymentText({ grandTotal: 3333, payments: [pay(3333)] })).toBe("Paid in full");
   });
 });
+
+describe("completed reservations read as paid in full", () => {
+  it("row text says Paid in full once the order is completed, even if only a deposit was recorded online", () => {
+    expect(reservationRowPaymentText({ status: "completed", grandTotal: 3333, payments: [pay(1700)] })).toBe("Paid in full");
+    expect(reservationRowPaymentText({ status: "ready", grandTotal: 3333, payments: [pay(1700)] })).toBe("Received ₱1,700.00 of ₱3,333.00");
+  });
+  it("badge is green Paid in full for a completed order, whatever was recorded online", () => {
+    const done = { status: "completed", grandTotal: 3333, payments: [pay(1700)], releaseAtMs: 10_000 };
+    expect(reservationBadge(done, 20_000)).toEqual({ label: "Paid in full", tone: "green" });
+    expect(reservationBadge({ ...done, payments: [] }, 20_000)).toEqual({ label: "Paid in full", tone: "green" });
+  });
+  it("a cancelled order is not shown as paid in full", () => {
+    expect(reservationBadge({ status: "cancelled", grandTotal: 3333, payments: [pay(1700)], releaseAtMs: 10_000 }, 5_000).label).toBe("Partial ₱1,700.00 of ₱3,333.00");
+  });
+});

@@ -85,7 +85,9 @@ export function receiptMop(
 }
 
 /** Payment line for an inbox row: reservations are paid by phone, not "on delivery". */
-export function reservationRowPaymentText(order: { grandTotal: number; payments?: ReservationPayment[] }): string {
+export function reservationRowPaymentText(order: { status?: string; grandTotal: number; payments?: ReservationPayment[] }): string {
+  // A completed order had its balance collected at hand-over, so it is paid in full.
+  if (order.status === "completed") return "Paid in full";
   const payments = order.payments || [];
   const paid = paidAmount(payments);
   if (paid === 0) return "Payment arranged by phone";
@@ -104,6 +106,7 @@ export function reservationBadge(
   order: BadgeOrder,
   nowMs: number,
 ): { label: string; tone: "red" | "amber" | "green" | "gray" } {
+  if (order.status === "completed") return { label: "Paid in full", tone: "green" };
   const payments = order.payments || [];
   const paid = paidAmount(payments);
   if (paid > 0 && balanceOf(order.grandTotal, payments) === 0) return { label: "Paid", tone: "green" };
