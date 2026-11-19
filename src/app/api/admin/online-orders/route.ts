@@ -12,6 +12,14 @@ import type { Receipt, ReceiptAnalyticsV2, SessionBillLine } from "@/lib/types";
 import { paymentLabel } from "@/lib/payment-label";
 import { buildOnlineOrderKitchenTicketWrites, resolveInventoryLookupId } from "@/lib/kitchen/online-order-tickets";
 import { getDayIdFromTimestamp } from "@/lib/analytics/daily";
+import {
+  balanceOf,
+  meetsDeposit,
+  paidAmount,
+  receiptMop,
+  validatePayment,
+  type ReservationPayment,
+} from "@/lib/online-orders/reservation";
 
 export const runtime = "nodejs";
 
@@ -71,7 +79,8 @@ export async function POST(req: Request) {
     const toStatus = body?.toStatus ? String(body.toStatus) : "";
     const reason = body?.reason ? String(body.reason).slice(0, 300) : "";
 
-    if (op !== "transition" && op !== "confirm-payment" && op !== "unconfirm-payment" && op !== "kitchen-ticket-status") {
+    const OPS = ["transition", "confirm-payment", "unconfirm-payment", "kitchen-ticket-status", "record-payment", "remove-last-payment", "set-delivery-fee"];
+    if (!OPS.includes(op)) {
       return bad(`Unknown op: ${op}`, 400);
     }
     // The kitchen role is only on this route to serve/cancel its own kitchen
@@ -225,6 +234,94 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, paid: false });
     }
 
+    // --- set reservations: record-payment / remove-last-payment / set-delivery-fee ---
+    // Website set reservations (kind "set_reservation") are paid by hand: staff call
+    // the customer and record each payment here. Recorded payments reaching 50% of
+    // the total confirm (accept) the reservation. The money enters analytics only at
+    // completion, through the receipt (see receiptMop below) — same as every order.
+    if (op === "record-payment" || op === "remove-last-payment" || op === "set-delivery-fee") {
+      const FINAL = ["completed", "cancelled", "rejected"];
+      let result: Record<string, unknown> = {};
+
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(orderRef);
+        if (!snap.exists) throw new OpError("Order not found.");
+        const order = snap.data() as any;
+        if (order?.kind !== "set_reservation") throw new OpError("This is only for set reservations.");
+        if (order?.receiptId) throw new OpError("This order already has a receipt.");
+        const current = String(order?.status || "");
+        if (FINAL.includes(current)) throw new OpError(`Cannot change payment on a ${current} order.`);
+
+        const payments: ReservationPayment[] = Array.isArray(order.payments) ? order.payments : [];
+        const grandTotal = Number(order.grandTotal || 0);
+        const nowMs = Date.now();
+        const base = { at: Timestamp.now(), atClientMs: nowMs, from: current, to: current, byUid: actorUid, byName: actorName };
+
+        if (op === "set-delivery-fee") {
+          const fee = Math.round(Number(body?.fee) * 100) / 100;
+          if (!Number.isFinite(fee) || fee < 0 || fee > 1000) throw new OpError("Delivery fee must be between ₱0 and ₱1,000.");
+          if (order?.fulfillment?.type !== "delivery") throw new OpError("Only delivery orders have a delivery fee.");
+          if (payments.length > 0) throw new OpError("The delivery fee cannot change after a payment is recorded.");
+          const newTotal = Math.round((Number(order.subtotal || 0) + fee) * 100) / 100;
+          tx.update(orderRef, {
+            updatedAt: FieldValue.serverTimestamp(),
+            deliveryFee: fee,
+            deliveryFeeTbd: false,
+            grandTotal: newTotal,
+            statusHistory: FieldValue.arrayUnion({ ...base, type: "delivery_fee_set", note: `Delivery fee ₱${fee}` }),
+          });
+          result = { deliveryFee: fee, grandTotal: newTotal };
+          return;
+        }
+
+        if (op === "remove-last-payment") {
+          if (!reason) throw new OpError("A reason is required to remove a payment.");
+          if (payments.length === 0) throw new OpError("There is no payment to remove.");
+          const next = payments.slice(0, -1);
+          tx.update(orderRef, {
+            updatedAt: FieldValue.serverTimestamp(),
+            payments: next,
+            "payment.paidAmount": paidAmount(next),
+            "payment.paid": false,
+            statusHistory: FieldValue.arrayUnion({ ...base, type: "payment_removed", reason }),
+          });
+          result = { paidAmount: paidAmount(next), balance: balanceOf(grandTotal, next) };
+          return;
+        }
+
+        // record-payment
+        if (order.deliveryFeeTbd === true) throw new OpError("Set the delivery fee before recording a payment.");
+        const v = validatePayment(
+          { amount: body?.amount, methodLabel: body?.methodLabel, reference: body?.reference, proofUrl: body?.proofUrl },
+          grandTotal,
+          payments,
+        );
+        if (!v.ok) throw new OpError(v.error);
+        // A screenshot must be one uploaded for THIS order (download URLs encode "/" as %2F).
+        if (v.value.proofUrl && !v.value.proofUrl.includes(encodeURIComponent(`reservationProofs/${storeId}/${orderId}/`))) {
+          throw new OpError("Upload the screenshot with the Record payment form.");
+        }
+        const next = [...payments, { ...v.value, atMs: nowMs, byUid: actorUid, byName: actorName }];
+        const balance = balanceOf(grandTotal, next);
+        const confirms = current === "pending" && meetsDeposit(grandTotal, next);
+        const entries: any[] = [{ ...base, type: "payment_recorded", note: `₱${v.value.amount} via ${v.value.methodLabel}` }];
+        if (confirms) entries.push({ ...base, to: "accepted", type: "transition", reason: "Deposit received" });
+        const update: any = {
+          updatedAt: FieldValue.serverTimestamp(),
+          payments: next,
+          "payment.paidAmount": paidAmount(next),
+          "payment.paid": balance === 0,
+          statusHistory: FieldValue.arrayUnion(...entries),
+        };
+        if (balance === 0) update["payment.settledAtMs"] = nowMs;
+        if (confirms) update.status = "accepted";
+        tx.update(orderRef, update);
+        result = { status: confirms ? "accepted" : current, paidAmount: paidAmount(next), balance };
+      });
+
+      return NextResponse.json({ ok: true, ...result });
+    }
+
     // --- op: kitchen-ticket-status ------------------------------------------
     // Kitchen staff serve/cancel a ticket created for an accepted online order.
     // This MUST stay server-side: firestore.rules deliberately keeps `onlineOrders`
@@ -347,7 +444,9 @@ export async function POST(req: Request) {
       }
 
       // --- more reads: resolve each line's kitchen location, only when accepting ---
-      const accepting = toStatus === "accepted";
+      // A set reservation is accepted days ahead; its kitchen tickets are created
+      // by the release-set-reservations cron 2 hours before the requested time.
+      const accepting = toStatus === "accepted" && order.kind !== "set_reservation";
       const orderLines: any[] = Array.isArray(order.lines) ? order.lines : [];
       const locationByInvId = new Map<string, { kitchenLocationId: string; kitchenLocationName?: string | null }>();
       if (accepting) {
@@ -470,6 +569,8 @@ export async function POST(req: Request) {
           order.grandTotal ?? (Number(order.subtotal || 0) + deliveryFee)
         );
         const label = paymentLabel(order);
+        const isReservationOrder = order.kind === "set_reservation";
+        const reservationPayments: ReservationPayment[] = isReservationOrder && Array.isArray(order.payments) ? order.payments : [];
 
         // salesByItem / salesByCategory (no discounts/tax on online v1 → net=gross).
         const salesByItem: NonNullable<ReceiptAnalyticsV2["salesByItem"]> = {};
@@ -498,7 +599,9 @@ export async function POST(req: Request) {
           grandTotal,
           totalPaid: grandTotal,
           change: 0,
-          mop: { [label]: grandTotal },
+          // A reservation lists each recorded payment under its own label plus the balance
+          // collected at hand-over; the rows always sum to grandTotal.
+          mop: isReservationOrder ? receiptMop({ grandTotal, payments: reservationPayments }, label) : { [label]: grandTotal },
           salesByItem,
           salesByCategory,
         };
@@ -543,6 +646,7 @@ export async function POST(req: Request) {
           settledAtMs: alreadyPaid ? Number(order?.payment?.settledAtMs ?? nowMs) : nowMs,
           byUid: alreadyPaid ? (order?.payment?.confirmedByUid ?? null) : actorUid,
         };
+        if (isReservationOrder) (receipt as any).settlement.payments = reservationPayments;
 
         tx.set(counterRef, { seq: nextSeq, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
         tx.set(db.doc(`stores/${storeId}/receipts/${orderId}`), receipt);
@@ -559,7 +663,7 @@ export async function POST(req: Request) {
           orderUpdate["payment.paid"] = true;
           orderUpdate["payment.settledAtMs"] = nowMs;
           orderUpdate["payment.collectedVia"] = "cash_on_completion";
-          orderUpdate["payment.collectedAmount"] = grandTotal;
+          orderUpdate["payment.collectedAmount"] = isReservationOrder ? balanceOf(grandTotal, reservationPayments) : grandTotal;
           orderUpdate["payment.collectedByUid"] = actorUid;
           orderUpdate["payment.collectedByName"] = actorName;
         }

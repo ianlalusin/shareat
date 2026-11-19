@@ -830,3 +830,184 @@ describe("transition: accepted creates kitchen tickets", () => {
     }
   });
 });
+
+// --- website set reservations ----------------------------------------------
+
+const PROOF_OK = `https://firebasestorage.googleapis.com/v0/b/x/o/${encodeURIComponent(`reservationProofs/${STORE}/${ORDER}/a.jpg`)}?alt=media`;
+
+function reservation(over: Record<string, any> = {}) {
+  return baseOrder({
+    kind: "set_reservation",
+    status: "pending",
+    subtotal: 3333,
+    grandTotal: 3333,
+    deliveryFee: 0,
+    deliveryFeeTbd: false,
+    payments: [],
+    payment: { method: "manual", paid: false, paidAmount: 0 },
+    lines: [{ lineId: "l1", productId: "grp", variantId: "v1", name: "Sharing Set - Set 3", unitPrice: 3333, qty: 1 }],
+    ...over,
+  });
+}
+
+const payBody = (over: Record<string, any> = {}) => ({
+  op: "record-payment",
+  storeId: STORE,
+  orderId: ORDER,
+  amount: 1666.5,
+  methodLabel: "GCash",
+  reference: "R1",
+  ...over,
+});
+
+const P1 = { amount: 1000, methodLabel: "GCash", reference: "R1", proofUrl: null, atMs: 1, byUid: "u", byName: "A" };
+
+describe("op: record-payment", () => {
+  it("50% confirms a pending reservation and stores the payment", async () => {
+    seed(reservation());
+    const res = await post(payBody());
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ ok: true, status: "accepted", paidAmount: 1666.5, balance: 1666.5 });
+    const u = orderUpdate();
+    expect(u.status).toBe("accepted");
+    expect(u.payments).toHaveLength(1);
+    expect(u.payments[0]).toMatchObject({ amount: 1666.5, methodLabel: "GCash", reference: "R1", byUid: ACTOR_UID });
+    expect(u["payment.paidAmount"]).toBe(1666.5);
+    expect(u["payment.paid"]).toBe(false);
+    expect(historyEntries(u).map((h) => h.type)).toEqual(["payment_recorded", "transition"]);
+  });
+
+  it("a deposit under 50% is recorded but the order stays pending", async () => {
+    seed(reservation());
+    const res = await post(payBody({ amount: 1000 }));
+    expect(res.status).toBe(200);
+    const u = orderUpdate();
+    expect(u.status).toBeUndefined();
+    expect(u.payments).toHaveLength(1);
+  });
+
+  it("paying the full balance marks the payment paid", async () => {
+    seed(reservation({ status: "accepted", payments: [{ ...P1, amount: 1700 }], payment: { method: "manual", paid: false, paidAmount: 1700 } }));
+    const res = await post(payBody({ amount: 1633 }));
+    expect(res.status).toBe(200);
+    const u = orderUpdate();
+    expect(u["payment.paid"]).toBe(true);
+    expect(u.payments).toHaveLength(2);
+    expect(u.status).toBeUndefined();
+  });
+
+  it("400s and writes nothing when the amount exceeds the balance", async () => {
+    seed(reservation({ payments: [{ ...P1, amount: 3000 }] }));
+    const res = await post(payBody({ amount: 400 }));
+    expect(res.status).toBe(400);
+    expect(orderUpdate()).toBeNull();
+  });
+
+  it("refuses a screenshot link that is not this order's uploaded proof", async () => {
+    seed(reservation());
+    const res = await post(payBody({ reference: "", proofUrl: "https://evil.example/x.jpg" }));
+    expect(res.status).toBe(400);
+    const ok = await post(payBody({ reference: "", proofUrl: PROOF_OK }));
+    expect(ok.status).toBe(200);
+  });
+
+  it("refuses while the delivery fee is still to be set", async () => {
+    seed(reservation({ fulfillment: { type: "delivery" }, deliveryFeeTbd: true }));
+    const res = await post(payBody());
+    expect(res.status).toBe(400);
+    expect(orderUpdate()).toBeNull();
+  });
+
+  it("refuses an order that is not a set reservation", async () => {
+    seed(baseOrder());
+    expect((await post(payBody())).status).toBe(400);
+  });
+
+  it("refuses a kitchen-role staffer", async () => {
+    seed(reservation());
+    mockStaffRole = "kitchen";
+    expect((await post(payBody())).status).toBe(403);
+  });
+});
+
+describe("op: set-delivery-fee", () => {
+  const feeBody = (fee: unknown) => ({ op: "set-delivery-fee", storeId: STORE, orderId: ORDER, fee });
+
+  it("sets the fee, clears the to-be-set flag and recomputes the total", async () => {
+    seed(reservation({ subtotal: 2222, grandTotal: 2222, fulfillment: { type: "delivery" }, deliveryFeeTbd: true }));
+    const res = await post(feeBody(150));
+    expect(res.status).toBe(200);
+    expect(orderUpdate()).toMatchObject({ deliveryFee: 150, deliveryFeeTbd: false, grandTotal: 2372 });
+  });
+
+  it("refuses once a payment exists, for pickup orders, and for absurd fees", async () => {
+    seed(reservation({ fulfillment: { type: "delivery" }, payments: [P1] }));
+    expect((await post(feeBody(150))).status).toBe(400);
+    seed(reservation({ fulfillment: { type: "pickup" } }));
+    expect((await post(feeBody(150))).status).toBe(400);
+    seed(reservation({ fulfillment: { type: "delivery" } }));
+    expect((await post(feeBody(5000))).status).toBe(400);
+    expect((await post(feeBody(-1))).status).toBe(400);
+  });
+});
+
+describe("op: remove-last-payment", () => {
+  const rm = (reason?: string) => ({ op: "remove-last-payment", storeId: STORE, orderId: ORDER, reason });
+  const P2 = { ...P1, amount: 700, reference: "R2" };
+
+  it("requires a reason", async () => {
+    seed(reservation({ payments: [P1] }));
+    expect((await post(rm())).status).toBe(400);
+  });
+
+  it("removes only the last payment and recomputes", async () => {
+    seed(reservation({ payments: [P1, P2], payment: { method: "manual", paid: false, paidAmount: 1700 } }));
+    const res = await post(rm("typo"));
+    expect(res.status).toBe(200);
+    const u = orderUpdate();
+    expect(u.payments).toEqual([P1]);
+    expect(u["payment.paidAmount"]).toBe(1000);
+    expect(u["payment.paid"]).toBe(false);
+    expect(historyEntries(u)[0]).toMatchObject({ type: "payment_removed", reason: "typo" });
+  });
+
+  it("refuses after the receipt exists and when there is nothing to remove", async () => {
+    seed(reservation({ payments: [P1], receiptId: "r1" }));
+    expect((await post(rm("x"))).status).toBe(400);
+    seed(reservation());
+    expect((await post(rm("x"))).status).toBe(400);
+  });
+});
+
+describe("set reservations and the kitchen", () => {
+  it("accepting a reservation creates NO kitchen tickets", async () => {
+    seedWithInventory(reservation(), { v1: { kitchenLocationId: "grill", kitchenLocationName: "Grill" } });
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "accepted" });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ticketsCreated).toBe(0);
+    expect(harness.sets.filter((s) => s.path.includes("/kitchentickets/") || s.path.includes("/rtKdsTickets/"))).toHaveLength(0);
+  });
+});
+
+describe("completing a set reservation", () => {
+  it("receipt mop lists the deposit and the balance and sums to the total", async () => {
+    seed(reservation({ status: "ready", payments: [{ ...P1, amount: 1700 }], payment: { method: "manual", paid: false, paidAmount: 1700 } }));
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "completed" });
+    expect(res.status).toBe(200);
+    const receipt = harness.sets.find((s) => s.path === RECEIPT_PATH)!.data;
+    expect(receipt.analytics.mop).toEqual({ GCash: 1700, "Pay at Counter": 1633 });
+    expect(Object.values(receipt.analytics.mop).reduce((a: number, b: any) => a + b, 0)).toBe(3333);
+    expect(receipt.total).toBe(3333);
+    expect(receipt.settlement.payments).toHaveLength(1);
+    expect(orderUpdate()["payment.collectedAmount"]).toBe(1633);
+  });
+
+  it("a fully paid reservation has no cash row", async () => {
+    seed(reservation({ status: "ready", payments: [{ ...P1, amount: 3333 }], payment: { method: "manual", paid: true, paidAmount: 3333 } }));
+    const res = await post({ op: "transition", storeId: STORE, orderId: ORDER, toStatus: "completed" });
+    expect(res.status).toBe(200);
+    const receipt = harness.sets.find((s) => s.path === RECEIPT_PATH)!.data;
+    expect(receipt.analytics.mop).toEqual({ GCash: 3333 });
+  });
+});
