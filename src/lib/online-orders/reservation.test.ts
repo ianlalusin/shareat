@@ -7,6 +7,7 @@ import {
   paidAmount,
   receiptMop,
   reservationBadge,
+  reservationRowPaymentText,
   validatePayment,
   type ReservationPayment,
 } from "./reservation";
@@ -107,5 +108,13 @@ describe("reservationBadge", () => {
   });
   it("fully paid is green", () => {
     expect(reservationBadge(order({ status: "accepted", payments: [pay(3333)] }), 5_000)).toEqual({ label: "Paid", tone: "green" });
+  });
+});
+
+describe("reservationRowPaymentText", () => {
+  it("says payment is arranged by phone until something is received, then shows what was received", () => {
+    expect(reservationRowPaymentText({ grandTotal: 3333, payments: [] })).toBe("Payment arranged by phone");
+    expect(reservationRowPaymentText({ grandTotal: 3333, payments: [pay(1700)] })).toBe("Received ₱1,700.00 of ₱3,333.00");
+    expect(reservationRowPaymentText({ grandTotal: 3333, payments: [pay(3333)] })).toBe("Paid in full");
   });
 });

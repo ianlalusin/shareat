@@ -30,7 +30,7 @@ import { paymentLabel } from "@/lib/payment-label";
 import { useOnlineOrdersFeed, useOrderById } from "@/components/admin/online-orders/useOnlineOrdersFeed";
 import { useConfirmedRemoteValue } from "@/components/admin/online-orders/useConfirmedRemoteValue";
 import { ReservationPanel, reservationWhen } from "@/components/admin/online-orders/ReservationPanel";
-import { reservationBadge, type ReservationPayment } from "@/lib/online-orders/reservation";
+import { reservationBadge, reservationRowPaymentText, type ReservationPayment } from "@/lib/online-orders/reservation";
 
 type Modifier = { groupName?: string; valueName?: string; priceDelta?: number };
 type OrderLine = {
@@ -760,7 +760,7 @@ export default function OnlineOrdersClient() {
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {(o.lines?.length || 0)} item{(o.lines?.length || 0) === 1 ? "" : "s"}
-                          {" · "}{o.payment?.paid ? `Paid · ${paymentLabel(o)}` : o.payment?.method === "paymongo" ? "Online (unpaid)" : "Pay on " + (o.fulfillment?.type === "delivery" ? "delivery" : "pickup")}
+                          {" · "}{o.kind === "set_reservation" ? reservationRowPaymentText({ ...o, grandTotal: o.grandTotal || 0 }) : o.payment?.paid ? `Paid · ${paymentLabel(o)}` : o.payment?.method === "paymongo" ? "Online (unpaid)" : "Pay on " + (o.fulfillment?.type === "delivery" ? "delivery" : "pickup")}
                           {o.createdAtClientMs ? ` · ${new Date(o.createdAtClientMs).toLocaleString("en-PH")}` : ""}
                         </div>
                       </div>

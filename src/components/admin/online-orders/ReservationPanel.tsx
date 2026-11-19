@@ -66,6 +66,7 @@ export function ReservationPanel({
   const [method, setMethod] = useState<string>(DEPOSIT_METHODS[0]);
   const [reference, setReference] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0); // remounts the file input so the old file name disappears
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [removing, setRemoving] = useState(false);
@@ -90,6 +91,7 @@ export function ReservationPanel({
       setAmount("");
       setReference("");
       setFile(null);
+      setFileKey((k) => k + 1);
     }
   };
 
@@ -168,7 +170,7 @@ export function ReservationPanel({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Screenshot</Label>
-            <Input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <Input key={fileKey} type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
           </div>
           <div className="flex justify-end">

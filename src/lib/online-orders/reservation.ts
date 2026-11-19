@@ -84,6 +84,15 @@ export function receiptMop(
   return mop;
 }
 
+/** Payment line for an inbox row: reservations are paid by phone, not "on delivery". */
+export function reservationRowPaymentText(order: { grandTotal: number; payments?: ReservationPayment[] }): string {
+  const payments = order.payments || [];
+  const paid = paidAmount(payments);
+  if (paid === 0) return "Payment arranged by phone";
+  if (balanceOf(order.grandTotal, payments) === 0) return "Paid in full";
+  return `Received ${peso(paid)} of ${peso(order.grandTotal)}`;
+}
+
 type BadgeOrder = {
   status?: string;
   grandTotal: number;
