@@ -157,6 +157,19 @@ service firebase.storage {
         && isImageUnder(6);
     }
 
+    // -- TV ads (SharEat Ads TV app) --
+    // Uploaded by admins on CUSTOMER /admin/tv-ads; the TVs download them via the
+    // tokened URL that /api/external/tv-ads hands out. Videos MP4 up to 50 MB,
+    // pictures/GIFs up to 10 MB (the page enforces 60 s per video).
+    match /tvAds/{adId}/{fileName} {
+      allow get;
+      allow create, update: if request.auth != null && isAdmin(request.auth.uid)
+        && (isImageUnder(10)
+          || (request.resource.contentType == 'video/mp4'
+            && request.resource.size < 50 * 1024 * 1024));
+      allow delete: if request.auth != null && isAdmin(request.auth.uid);
+    }
+
     // -- Flash ad images (CUSTOMER app promo overlay) --
     // Uploaded by FlashAdsPanel, shared by /admin/flash-ads (admin) and
     // /manager/ads (branch manager) in the CUSTOMER repo. This path had no
