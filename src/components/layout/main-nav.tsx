@@ -39,6 +39,7 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
   const accessibleLinks = role ? navLinks.filter(link => link.roles.includes(role)) : []
   const showReservations = accessibleLinks.some(link => link.href === '/reservations')
   const showOnlineOrders = accessibleLinks.some(link => link.href === '/admin/online-orders')
+  const showPins = accessibleLinks.some(link => link.href === '/pins')
 
   // Live count of PENDING bookings (status "booked" — not yet confirmed,
   // cancelled/rejected, handled, etc.) across all upcoming dates, so future
@@ -99,6 +100,25 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
     return () => unsub()
   }, [showOnlineOrders, activeStoreId])
 
+  // Capture & Share photos waiting at the cashier (PIN page, Photo prints tab).
+  // Single-field query; today's only, so a request left from yesterday does not
+  // keep the link blinking. Same 3-colour blink as reservations.
+  const [waitingPrints, setWaitingPrints] = useState(0)
+  useEffect(() => {
+    if (!showPins || !activeStoreId) {
+      setWaitingPrints(0)
+      return
+    }
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.now())
+    const q = query(collection(db, 'stores', activeStoreId, 'photoPrintRequests'), where('status', '==', 'queued'))
+    const unsub = onSnapshot(
+      q,
+      (snap) => setWaitingPrints(snap.docs.filter(d => (d.data() as any).dayKey === today).length),
+      () => setWaitingPrints(0),
+    )
+    return () => unsub()
+  }, [showPins, activeStoreId])
+
   if (!role) return null;
 
   return (
@@ -117,6 +137,10 @@ export function MainNav({ role, isMobile = false }: MainNavProps) {
           badgeCount = pendingReservationCount
           blink = pendingReservationCount > 0
           title = blink ? `${pendingReservationCount} pending reservation${pendingReservationCount > 1 ? 's' : ''} awaiting confirmation` : undefined
+        } else if (href === '/pins') {
+          badgeCount = waitingPrints
+          blink = waitingPrints > 0
+          title = blink ? `${waitingPrints} photo print${waitingPrints > 1 ? 's' : ''} waiting` : undefined
         } else if (href === '/admin/online-orders') {
           badgeCount = openOnlineCount
           blink = newOnlineCount > 0
