@@ -16,6 +16,34 @@ export function printerDots(widthMm: 58 | 80): number {
 }
 
 /**
+ * Atkinson dither (what most thermal printing apps use). It spreads only 6/8 of
+ * each pixel's error, so mid-tones come out lighter with crisper edges and far
+ * fewer black dots than Floyd–Steinberg — dense rows make cheap printers slow
+ * down and stall, which shows as lines across the photo. Same contract as below.
+ */
+export function atkinson(gray: Float32Array, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h);
+  const spread = (x: number, y: number, e: number) => {
+    if (x >= 0 && x < w && y < h) gray[y * w + x] += e;
+  };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const black = gray[i] < 128;
+      out[i] = black ? 1 : 0;
+      const e = (gray[i] - (black ? 0 : 255)) / 8;
+      spread(x + 1, y, e);
+      spread(x + 2, y, e);
+      spread(x - 1, y + 1, e);
+      spread(x, y + 1, e);
+      spread(x + 1, y + 1, e);
+      spread(x, y + 2, e);
+    }
+  }
+  return out;
+}
+
+/**
  * Error-diffusion dither. `gray` is 0 (black) … 255 (white), row-major, and is
  * consumed. Returns one byte per pixel: 1 = print a black dot, 0 = paper.
  */
@@ -65,9 +93,9 @@ export async function ditherForThermal(imageBase64: string, widthPx: number): Pr
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) {
     const l = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
-    gray[i] = Math.min(255, Math.max(0, (l - 128) * 1.15 + 128 + 18));
+    gray[i] = Math.min(255, Math.max(0, (l - 128) * 1.15 + 128 + 24));
   }
-  const dots = floydSteinberg(gray, w, h);
+  const dots = atkinson(gray, w, h);
   for (let i = 0; i < w * h; i++) {
     const v = dots[i] ? 0 : 255;
     px[i * 4] = px[i * 4 + 1] = px[i * 4 + 2] = v;
