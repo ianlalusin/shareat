@@ -118,3 +118,31 @@ export function reservationBadge(
   }
   return { label: `Partial ${peso(paid)} of ${peso(order.grandTotal)}`, tone: "amber" };
 }
+
+/**
+ * Whether a proof-of-payment link is a Firebase Storage download URL for an object
+ * inside this order's `reservationProofs/{storeId}/{orderId}/` folder. Parsed, not a
+ * substring test, so the folder name hidden in a query string or another host does
+ * not pass (audit POS-03).
+ */
+export function isProofUrlForOrder(url: string, storeId: string, orderId: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:" || u.hostname !== "firebasestorage.googleapis.com") return false;
+  // /v0/b/<bucket>/o/<object path, "/" encoded as %2F>
+  const m = u.pathname.match(/^\/v0\/b\/[^/]+\/o\/([^/]+)$/);
+  if (!m) return false;
+  let objectPath: string;
+  try {
+    objectPath = decodeURIComponent(m[1]);
+  } catch {
+    return false;
+  }
+  const folder = `reservationProofs/${storeId}/${orderId}/`;
+  const rest = objectPath.slice(folder.length);
+  return objectPath.startsWith(folder) && rest.length > 0 && !rest.includes("/") && !rest.includes("..");
+}

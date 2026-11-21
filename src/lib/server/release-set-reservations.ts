@@ -16,8 +16,14 @@ export async function releaseSetReservationsForStore(
   storeId: string,
   nowMs: number,
 ): Promise<{ released: number; skipped: number }> {
-  // Single-field query on purpose (no composite index); the rest is filtered in memory.
-  const snap = await db.collection(`stores/${storeId}/onlineOrders`).where("status", "==", "accepted").get();
+  // Equality filters only, so Firestore serves it from its single-field indexes (no
+  // composite index needed); only accepted SET RESERVATIONS are read, not every accepted
+  // online order (audit POS-04). Release timing is still checked in memory.
+  const snap = await db
+    .collection(`stores/${storeId}/onlineOrders`)
+    .where("status", "==", "accepted")
+    .where("kind", "==", "set_reservation")
+    .get();
   let released = 0;
   let skipped = 0;
 
