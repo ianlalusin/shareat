@@ -42,7 +42,7 @@ const LOGO_URL_PREFIX = 'logoCacheUrl:';
 /**
  * Fetches an image URL and returns its base64 (without data URI prefix).
  */
-async function fetchImageAsBase64(url: string): Promise<string | null> {
+export async function fetchImageAsBase64(url: string): Promise<string | null> {
   try {
     // Native (Capacitor) build: fetch through the native HTTP client, which is
     // NOT subject to the WebView's CORS policy. A Storage image read as a blob
@@ -209,6 +209,32 @@ export async function printViaNativeBluetooth(
   }
 }
 
+
+/**
+ * A guest's Capture & Share photo (PIN page, Photo prints tab). `pngBase64` must
+ * already be dithered to the printer's dot width (photoDither.ts) so the
+ * plugin's threshold keeps the dot pattern; widthPct 100 stops it rescaling.
+ */
+export async function printPhotoViaNativeBluetooth(
+  pngBase64: string,
+  widthMm: 58 | 80,
+  footer: string,
+  address: string | null = getLastPrinterAddress(),
+) {
+  if (!Capacitor.isNativePlatform()) {
+    throw new Error('Photo printing works in the POS Android app with the Bluetooth printer.');
+  }
+  if (!address) throw new Error('No printer connected. Please configure printer in Settings.');
+
+  await ThermalPrinter.connectBluetoothPrinter({ address });
+  try {
+    await ThermalPrinter.printImage({ base64: pngBase64, widthMm, align: 'center', widthPct: 100 });
+    await ThermalPrinter.printReceipt({ text: footer, widthMm, cut: true, beep: false, encoding: 'CP437', skipInit: true, font: 'small' });
+  } finally {
+    // Release the socket, as every other print does, so other apps can print.
+    try { await ThermalPrinter.disconnectBluetoothPrinter(); } catch {}
+  }
+}
 
 /**
  * Central print function for WebUSB (browser-to-USB).

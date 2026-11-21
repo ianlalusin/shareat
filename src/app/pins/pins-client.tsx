@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/global/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PhotoPrints, usePhotoPrintRequests } from "@/components/pins/photo-prints";
 import { CustomersAdmin } from "@/components/pins/customers-admin";
 import { ChatInbox } from "@/components/cashier/ChatInbox";
 
@@ -110,6 +111,9 @@ export default function PinsClient() {
   const { toast } = useToast();
 
   const storeId = activeStore?.id;
+  // Listened here, not in the tab, so the waiting badge shows while the PINs tab is open.
+  const photoRows = usePhotoPrintRequests(storeId);
+  const photoWaiting = (photoRows ?? []).filter((r) => r.status === "queued").length;
   const targetSessionId = searchParams.get("sessionId");
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -378,13 +382,23 @@ export default function PinsClient() {
           <div className="text-sm opacity-70">No store selected.</div>
         ) : (
           <Tabs defaultValue="pins" className="w-full">
-            <TabsList className="grid w-full max-w-md grid-cols-2 mb-4">
+            <TabsList className="grid w-full max-w-lg grid-cols-3 mb-4">
               <TabsTrigger value="pins">PINs</TabsTrigger>
               <TabsTrigger value="customers">Customers</TabsTrigger>
+              <TabsTrigger value="photos">
+                Photo prints
+                {photoWaiting > 0 && (
+                  <span className="ml-1.5 rounded-full bg-red-600 px-1.5 text-[11px] font-bold leading-5 text-white">{photoWaiting}</span>
+                )}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="customers">
               <CustomersAdmin storeId={storeId} />
+            </TabsContent>
+
+            <TabsContent value="photos">
+              <PhotoPrints storeId={storeId} rows={photoRows} />
             </TabsContent>
 
             <TabsContent value="pins" className="space-y-4">
