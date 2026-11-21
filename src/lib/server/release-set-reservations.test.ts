@@ -27,19 +27,26 @@ function harness(orders: Record<string, any>, inventory: Record<string, any> = {
   for (const [id, o] of Object.entries(orders)) docs[`stores/${STORE}/onlineOrders/${id}`] = o;
   for (const [id, i] of Object.entries(inventory)) docs[`stores/${STORE}/inventory/${id}`] = i;
   const sets: { path: string; data: any }[] = [];
+  const queries: [string, string][][] = [];
   const ref = (path: string) => ({ path, id: path.split("/").pop()! });
   const snapOf = (r: any) => ({ exists: docs[r.path] !== undefined, data: () => docs[r.path], id: r.id });
   const db: any = {
     doc: ref,
-    collection: (path: string) => ({
-      where: (_f: string, _op: string, value: string) => ({
-        get: async () => ({
-          docs: Object.keys(docs)
-            .filter((p) => p.startsWith(`${path}/`) && docs[p].status === value)
-            .map((p) => ({ id: p.split("/").pop()!, data: () => docs[p] })),
-        }),
-      }),
-    }),
+    collection: (path: string) => {
+      // Chainable where(field, "==", value), recording each filter so tests can assert the query.
+      const query = (filters: [string, string][]) => ({
+        where: (f: string, _op: string, value: string) => query([...filters, [f, value]]),
+        get: async () => {
+          queries.push(filters);
+          return {
+            docs: Object.keys(docs)
+              .filter((p) => p.startsWith(`${path}/`) && filters.every(([f, v]) => docs[p][f] === v))
+              .map((p) => ({ id: p.split("/").pop()!, data: () => docs[p] })),
+          };
+        },
+      });
+      return query([]);
+    },
     runTransaction: async (fn: any) =>
       fn({
         get: async (r: any) => snapOf(r),
@@ -52,12 +59,21 @@ function harness(orders: Record<string, any>, inventory: Record<string, any> = {
         },
       }),
   };
-  return { db, docs, sets };
+  return { db, docs, sets, queries };
 }
 
 const ordPath = (id: string) => `stores/${STORE}/onlineOrders/${id}`;
 
 describe("releaseSetReservationsForStore", () => {
+  it("queries only accepted set reservations, not every accepted online order (audit POS-04)", async () => {
+    const h = harness({ A: base(), W: base({ kind: "website" }) });
+    await releaseSetReservationsForStore(h.db, STORE, NOW);
+    expect(h.queries[0]).toEqual([
+      ["status", "accepted"],
+      ["kind", "set_reservation"],
+    ]);
+  });
+
   it("sends a due, confirmed reservation to the kitchen and marks it preparing", async () => {
     const h = harness({ A: base() });
     const r = await releaseSetReservationsForStore(h.db, STORE, NOW);
