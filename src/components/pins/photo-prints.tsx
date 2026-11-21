@@ -61,12 +61,18 @@ export function PhotoPrints({ storeId, rows }: { storeId: string; rows: PhotoPri
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [paper, setPaper] = useState<58 | 80>(80);
+  // Rows per printer band for photos; tunable per branch (receiptSettings/main.photoBandRows) without an APK.
+  const [bandRows, setBandRows] = useState(120);
   const { confirm, Dialog } = useConfirmDialog();
   const summary = useMemo(() => summarizePrints(rows ?? []), [rows]);
 
   useEffect(() => {
     getDoc(doc(db, `stores/${storeId}/receiptSettings`, 'main'))
-      .then((s) => setPaper(s.data()?.paperWidth === '58mm' ? 58 : 80))
+      .then((s) => {
+        setPaper(s.data()?.paperWidth === '58mm' ? 58 : 80);
+        const rows = Number(s.data()?.photoBandRows);
+        if (Number.isFinite(rows) && rows >= 8) setBandRows(Math.min(255, Math.round(rows)));
+      })
       .catch(() => {});
   }, [storeId]);
 
@@ -87,7 +93,7 @@ export function PhotoPrints({ storeId, rows }: { storeId: string; rows: PhotoPri
       const jpeg = await fetchImageAsBase64(row.imageUrl);
       if (!jpeg) throw new Error('Could not download the photo. Check the internet connection.');
       const png = await ditherForThermal(jpeg, printerDots(paper));
-      await printPhotoViaNativeBluetooth(png, paper, `${row.tableDisplayName || ''}\n${FOOTER}`);
+      await printPhotoViaNativeBluetooth(png, paper, `${row.tableDisplayName || ''}\n${FOOTER}`, bandRows);
       await updateDoc(doc(db, `stores/${storeId}/photoPrintRequests`, row.id), {
         status: 'printed',
         ...(reprint ? { reprintCount: increment(1) } : { printCount: increment(1) }),

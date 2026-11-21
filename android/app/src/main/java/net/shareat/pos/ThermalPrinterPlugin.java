@@ -386,6 +386,10 @@ public class ThermalPrinterPlugin extends Plugin {
         int widthMm = call.getInt("widthMm", 80);
         String align = call.getString("align", "center");
         int widthPct = call.getInt("widthPct", 0); // receipt "logo width %" (20-100); 0 = unset
+        // Rows per GS v 0 band. Logos keep the proven 24. Photos pass more: every band
+        // boundary is a feed stop/start, which a full-page photo shows as a thin line
+        // every ~3mm. Clamped so a band always fits a cheap printer's input buffer.
+        int bandRows = Math.max(8, Math.min(255, call.getInt("bandRows", 24)));
 
         if (outputStream == null) {
             call.reject("Printer not connected.");
@@ -454,7 +458,7 @@ public class ThermalPrinterPlugin extends Plugin {
                 opaque.recycle();
 
                 // Build ESC/POS raster data
-                byte[] rasterData = bitmapToEscPosRaster(mono, maxWidthPx);
+                byte[] rasterData = bitmapToEscPosRasterInBands(mono, maxWidthPx, bandRows);
                 mono.recycle();
                 writeDarkness(darknessFor(connectedAddress));
 
@@ -929,21 +933,31 @@ public class ThermalPrinterPlugin extends Plugin {
      * full dot width (maxWidthPx).
      */
     private byte[] bitmapToEscPosRaster(Bitmap mono, int maxWidthPx) {
+        return bitmapToEscPosRasterInBands(mono, maxWidthPx, 24);
+    }
+
+    /** As above, with the rows per GS v 0 band chosen by the caller (printImage's bandRows). */
+    private byte[] bitmapToEscPosRasterInBands(Bitmap mono, int maxWidthPx, int bandRows) {
         // Bytes per row — must cover full printer width for proper centering
         int bytesPerRow = (maxWidthPx + 7) / 8;
         int imgBytesPerRow = (mono.getWidth() + 7) / 8;
         int leftPadBytes = (bytesPerRow - imgBytesPerRow) / 2;
         if (leftPadBytes < 0) leftPadBytes = 0;
-        return bitmapToEscPosRaster(mono, bytesPerRow, leftPadBytes);
+        return bitmapToEscPosRaster(mono, bytesPerRow, leftPadBytes, bandRows);
     }
 
     /** As above, with the row width and left padding (both in bytes) chosen by the caller. */
     private byte[] bitmapToEscPosRaster(Bitmap mono, int bytesPerRow, int leftPadBytes) {
+        return bitmapToEscPosRaster(mono, bytesPerRow, leftPadBytes, 24);
+    }
+
+    private byte[] bitmapToEscPosRaster(Bitmap mono, int bytesPerRow, int leftPadBytes, int bandRowsIn) {
         int imgWidth = mono.getWidth();
         int imgHeight = mono.getHeight();
 
-        // Rows per GS v 0 command. Small bands print reliably on cheap printers.
-        final int BAND_ROWS = 24;
+        // Rows per GS v 0 command. Small bands (24) print reliably on cheap printers;
+        // photos ask for more so the feed stops less often.
+        final int BAND_ROWS = bandRowsIn;
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         int[] rowPixels = new int[imgWidth];

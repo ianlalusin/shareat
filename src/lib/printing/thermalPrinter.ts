@@ -64,6 +64,12 @@ export interface ThermalPrinterPlugin {
     align?: 'left' | 'center' | 'right';
     /** Logo width as a % of paper width (20-100). Omit to use the default. */
     widthPct?: number;
+    /**
+     * Rows per GS v 0 band (8-255, default 24). Photos pass more: each band
+     * boundary is a paper-feed stop, which a full photo shows as a thin line.
+     * Older APKs ignore it (and keep 24).
+     */
+    bandRows?: number;
   }): Promise<void>;
 }
 
