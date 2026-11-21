@@ -709,6 +709,13 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // TV ads for the SharEat Ads TV app: admins manage them from CUSTOMER
+    // /admin/tv-ads; TVs read them only through /api/external/tv-ads (Admin SDK).
+    // Other staff can still read through the /{collection}/{docId} catch-all; fine, ad URLs aren't secret.
+    match /tvAds/{adId} {
+      allow read, list, create, update, delete: if isAdmin();
+    }
+
     // Redemption records / vouchers — created, validated, and applied
     // server-side via the Admin SDK only.
     match /loyaltyRedemptions/{id} {
