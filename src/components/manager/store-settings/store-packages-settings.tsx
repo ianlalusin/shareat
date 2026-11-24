@@ -163,9 +163,13 @@ export function StorePackagesSettings({ store }: { store: Store }) {
         if (!(await confirm({ title: `${newStatus ? 'Enable' : 'Disable'} ${pkg.packageName}?` }))) return;
 
         const docRef = doc(db, "stores", store.id, "storePackages", pkg.packageId);
-        await updateDoc(docRef, { isEnabled: newStatus, updatedAt: serverTimestamp() });
-        await syncConfigCache();
-        toast({ title: "Status Updated" });
+        try {
+            await updateDoc(docRef, { isEnabled: newStatus, updatedAt: serverTimestamp() });
+            await syncConfigCache();
+            toast({ title: "Status Updated" });
+        } catch (error: any) {
+            toast({ variant: "destructive", title: "Update Failed", description: error.message });
+        }
     };
 
     const handleAddPackage = async (gPackage: Package) => {

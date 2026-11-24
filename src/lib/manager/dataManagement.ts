@@ -13,6 +13,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { globallyInactiveFlavorIds } from "@/lib/flavor-visibility";
 
 /**
  * Fetches all documents from a given collection path.
@@ -60,6 +61,7 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
     modesOfPayment,
     globalDiscounts,
     globalCharges,
+    globalFlavors,
   ] = await Promise.all([
     fetchCollection(db, `stores/${storeId}/tables`),
     fetchCollection(db, `stores/${storeId}/storePackages`),
@@ -70,6 +72,7 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
     fetchCollection(db, `stores/${storeId}/storeModesOfPayment`),
     fetchApplicableGlobals(db, "globalDiscounts", storeId),
     fetchApplicableGlobals(db, "globalCharges", storeId),
+    fetchCollection(db, "flavors"),
   ]);
 
   // --- 2. Merge store-scoped + global collections ---
@@ -93,6 +96,12 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
 
   const mergedDiscounts = [...effectiveStoreDiscounts, ...taggedGlobalDiscounts];
   const mergedCharges = [...effectiveStoreCharges, ...taggedGlobalCharges];
+  const inactiveGlobalFlavorIds = globallyInactiveFlavorIds(
+    globalFlavors as Array<{ id: string; isActive?: boolean }>
+  );
+  const flavorsByGlobalStatus = flavors.filter(
+    (flavor: any) => !inactiveGlobalFlavorIds.has(flavor.flavorId)
+  );
 
   // --- 3. Prepare the new config document data ---
   const configDocRef = doc(db, `stores/${storeId}/storeConfig/current`);
@@ -103,7 +112,7 @@ export async function rebuildStoreConfig(db: Firestore, storeId: string) {
       updatedAt: serverTimestamp(),
     },
     packages: storePackages,
-    flavors: flavors,
+    flavors: flavorsByGlobalStatus,
     schedules: schedules,
     discounts: mergedDiscounts,
     charges: mergedCharges,

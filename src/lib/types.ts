@@ -332,6 +332,7 @@ export type Flavor = {
   id: string;
   name: string;
   isActive: boolean;
+  isArchived?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -341,6 +342,7 @@ export type Package = {
   name: string;
   allowedRefillIds?: string[];
   isActive: boolean;
+  isArchived?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -351,6 +353,7 @@ export type Refill = {
   requiresFlavor: boolean;
   allowedFlavorIds?: string[];
   isActive: boolean;
+  isArchived?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };

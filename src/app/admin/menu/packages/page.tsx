@@ -11,7 +11,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, Box, Trash2, ArrowLeft } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, Box, Trash2, ArrowLeft, Archive, ArchiveRestore } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PackageEditDialog } from "@/components/admin/menu/package-edit-dialog";
@@ -130,6 +130,18 @@ export default function PackagesManagementPage() {
     }
   };
 
+  const handleRestore = async (item: Package) => {
+    if (!appUser) return;
+    try {
+        await updateDoc(doc(db, "packages", item.id), { isArchived: false, updatedAt: serverTimestamp() });
+        toast({ title: "Package Restored", description: `${item.name} restored. Activate it manually when ready.` });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Restore Failed", description: error.message });
+    }
+  };
+
+  const archivedPackages = packages.filter(p => p.isArchived === true);
+
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Packages" description="Manage global product packages and bundles.">
@@ -146,6 +158,7 @@ export default function PackagesManagementPage() {
         <CardHeader><CardTitle>All Packages</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? <Loader className="animate-spin" /> : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -156,7 +169,7 @@ export default function PackagesManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {packages.filter(p => !(p as any).isArchived).map((item) => (
+                {packages.filter(p => p.isArchived !== true).map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{(item.allowedRefillIds?.length || 0)}</TableCell>
@@ -179,6 +192,40 @@ export default function PackagesManagementPage() {
                 ))}
               </TableBody>
             </Table>
+            {archivedPackages.length > 0 && (
+              <div className="mt-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <Archive className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold text-muted-foreground">Archived</h3>
+                  <Badge variant="secondary" className="text-xs">{archivedPackages.length}</Badge>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Refills</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {archivedPackages.map((item) => (
+                      <TableRow key={item.id} className="opacity-70">
+                        <TableCell className="font-medium line-through decoration-muted-foreground/60">{item.name}</TableCell>
+                        <TableCell>{(item.allowedRefillIds?.length || 0)}</TableCell>
+                        <TableCell><Badge variant="secondary">Archived</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="default" size="sm" onClick={() => handleRestore(item)}>
+                            <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -12,7 +12,7 @@ import { RoleGuard } from "@/components/guards/RoleGuard";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader, PlusCircle, Power, PowerOff, UtensilsCrossed, Trash2, ArrowLeft } from "lucide-react";
+import { Loader, PlusCircle, Power, PowerOff, UtensilsCrossed, Trash2, ArrowLeft, Archive, ArchiveRestore } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { RefillEditDialog } from "@/components/admin/menu/refill-edit-dialog";
@@ -130,6 +130,19 @@ export default function RefillsManagementPage() {
     }
   };
 
+  const handleRestore = async (item: Refill) => {
+    if (!appUser) return;
+    try {
+        await updateDoc(doc(db, "refills", item.id), { isArchived: false, updatedAt: serverTimestamp() });
+        syncAllStoresRefillCache();
+        toast({ title: "Refill Restored", description: `${item.name} restored. Activate it manually when ready.` });
+    } catch (error: any) {
+        toast({ variant: "destructive", title: "Restore Failed", description: error.message });
+    }
+  };
+
+  const archivedRefills = refills.filter(r => r.isArchived === true);
+
   return (
     <RoleGuard allow={["admin"]}>
       <PageHeader title="Refills" description="Manage global refillable items.">
@@ -146,6 +159,7 @@ export default function RefillsManagementPage() {
         <CardHeader><CardTitle>All Refills</CardTitle></CardHeader>
         <CardContent>
           {isLoading ? <Loader className="animate-spin" /> : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -156,7 +170,7 @@ export default function RefillsManagementPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {refills.filter(r => !(r as any).isArchived).map((item) => (
+                {refills.filter(r => r.isArchived !== true).map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.requiresFlavor ? "Yes" : "No"}</TableCell>
@@ -179,6 +193,40 @@ export default function RefillsManagementPage() {
                 ))}
               </TableBody>
             </Table>
+            {archivedRefills.length > 0 && (
+              <div className="mt-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <Archive className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold text-muted-foreground">Archived</h3>
+                  <Badge variant="secondary" className="text-xs">{archivedRefills.length}</Badge>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Requires Flavor</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {archivedRefills.map((item) => (
+                      <TableRow key={item.id} className="opacity-70">
+                        <TableCell className="font-medium line-through decoration-muted-foreground/60">{item.name}</TableCell>
+                        <TableCell>{item.requiresFlavor ? "Yes" : "No"}</TableCell>
+                        <TableCell><Badge variant="secondary">Archived</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="default" size="sm" onClick={() => handleRestore(item)}>
+                            <ArchiveRestore className="mr-2 h-4 w-4" /> Restore
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            </>
           )}
         </CardContent>
       </Card>

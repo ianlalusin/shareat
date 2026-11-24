@@ -20,7 +20,7 @@ const db = initializeFirestore(app, {
 
 const storage = getStorage(app);
 
-export async function uploadProductImage(productId: string, file: File): Promise<string> {
+export async function uploadProductImageFile(productId: string, file: File): Promise<string> {
     if (!productId) {
         throw new Error("Product ID is required to upload an image.");
     }
@@ -28,8 +28,12 @@ export async function uploadProductImage(productId: string, file: File): Promise
     const storageRef = ref(storage, `Items/${productId}.webp`);
     
     await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
+    return getDownloadURL(storageRef);
+}
 
+/** Upload and update an existing product image, preserving the update path. */
+export async function uploadProductImage(productId: string, file: File): Promise<string> {
+    const downloadURL = await uploadProductImageFile(productId, file);
     const productDocRef = doc(db, "products", productId);
     await updateDoc(productDocRef, {
         imageUrl: downloadURL,
