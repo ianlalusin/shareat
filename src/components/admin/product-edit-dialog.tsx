@@ -155,7 +155,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [addonCategories, setAddonCategories] = useState<AddonCategory[]>([]);
   const [subCategoryInput, setSubCategoryInput] = useState("");
   const { toast } = useToast();
-  const { confirm } = useConfirmDialog();
+  const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -276,6 +276,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         optionGroupIds: (variant as any).optionGroupIds || [],
     });
     setShowVariantForm(true);
+    // The form renders below a long variant list; bring it into view.
+    setTimeout(() => document.getElementById('variant-form-anchor')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
   }
 
   const handleSaveVariant = async (data: VariantFormValues) => {
@@ -328,6 +330,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
   return (
     <>
+      {ConfirmDialog}
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh] overflow-hidden">
           <DialogHeader className="p-6 pb-0">
@@ -398,6 +401,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                             )}
                             {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
                           </div>
+                          <div id="variant-form-anchor" />
                           {showVariantForm ? (
                               <VariantForm
                                   form={variantForm}
