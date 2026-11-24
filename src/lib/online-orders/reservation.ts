@@ -78,8 +78,16 @@ export function receiptMop(
   completionLabel: string,
 ): Record<string, number> {
   const mop: Record<string, number> = {};
-  for (const p of order.payments || []) mop[p.methodLabel] = round2((mop[p.methodLabel] || 0) + p.amount);
-  const rest = balanceOf(order.grandTotal, order.payments || []);
+  // validatePayment prevents this in normal writes. Cap defensively so corrupt
+  // or legacy overpayment rows cannot make receipt MOP exceed the order total.
+  let remaining = Math.max(0, round2(order.grandTotal));
+  for (const p of order.payments || []) {
+    const amount = Math.min(remaining, Math.max(0, round2(Number(p.amount) || 0)));
+    if (amount <= 0) continue;
+    mop[p.methodLabel] = round2((mop[p.methodLabel] || 0) + amount);
+    remaining = round2(remaining - amount);
+  }
+  const rest = remaining;
   if (rest > 0) mop[completionLabel] = round2((mop[completionLabel] || 0) + rest);
   return mop;
 }
@@ -110,8 +118,8 @@ export function reservationBadge(
   const payments = order.payments || [];
   const paid = paidAmount(payments);
   if (paid > 0 && balanceOf(order.grandTotal, payments) === 0) return { label: "Paid", tone: "green" };
-  // A pending order past its release time is silently not cooked, so it is red whatever was paid.
-  const due = order.status === "pending" && typeof order.releaseAtMs === "number" && order.releaseAtMs < nowMs;
+  // A pending order at/past its release time is silently not cooked, so it is red whatever was paid.
+  const due = order.status === "pending" && typeof order.releaseAtMs === "number" && order.releaseAtMs <= nowMs;
   if (paid === 0) return due ? { label: "Unpaid, due", tone: "red" } : { label: "Unpaid", tone: "gray" };
   if (!meetsDeposit(order.grandTotal, payments)) {
     return due ? { label: "Deposit below 50%, due", tone: "red" } : { label: "Deposit below 50%", tone: "amber" };

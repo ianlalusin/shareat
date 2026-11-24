@@ -89,12 +89,18 @@ describe("receiptMop", () => {
   it("fully paid has no completion row", () => {
     expect(receiptMop({ grandTotal: 1000, payments: [pay(1000)] }, "Cash")).toEqual({ GCash: 1000 });
   });
+  it("caps corrupt overpayments at the order total", () => {
+    expect(receiptMop({ grandTotal: 1000, payments: [pay(1200), pay(100, "Maya")] }, "Cash")).toEqual({ GCash: 1000 });
+  });
 });
 
 describe("reservationBadge", () => {
   const order = (over: any) => ({ kind: "set_reservation", status: "pending", grandTotal: 3333, payments: [], releaseAtMs: 10_000, ...over });
   it("pending, unpaid, past release time is red", () => {
     expect(reservationBadge(order({}), 20_000)).toEqual({ label: "Unpaid, due", tone: "red" });
+  });
+  it("treats the exact release instant as due, matching isReleaseDue", () => {
+    expect(reservationBadge(order({}), 10_000)).toEqual({ label: "Unpaid, due", tone: "red" });
   });
   it("pending, unpaid, before release time is gray", () => {
     expect(reservationBadge(order({}), 5_000)).toEqual({ label: "Unpaid", tone: "gray" });
@@ -108,6 +114,9 @@ describe("reservationBadge", () => {
   });
   it("fully paid is green", () => {
     expect(reservationBadge(order({ status: "accepted", payments: [pay(3333)] }), 5_000)).toEqual({ label: "Paid", tone: "green" });
+  });
+  it("keeps the payment badge factual on cancelled orders; status has its own badge", () => {
+    expect(reservationBadge(order({ status: "cancelled", payments: [pay(3333)] }), 5_000)).toEqual({ label: "Paid", tone: "green" });
   });
 });
 

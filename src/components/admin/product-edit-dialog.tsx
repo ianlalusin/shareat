@@ -155,7 +155,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   const [addonCategories, setAddonCategories] = useState<AddonCategory[]>([]);
   const [subCategoryInput, setSubCategoryInput] = useState("");
   const { toast } = useToast();
-  const { confirm } = useConfirmDialog();
+  const { confirm, Dialog: ConfirmDialog } = useConfirmDialog();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +175,9 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
     defaultValues: { name: "", hasVariants: false, variant: "", description: "", subCategory: "", uom: "pcs", barcode: "", isActive: true, optionGroupIds: [], },
   });
   const hasVariants = useWatch({ control: form.control, name: 'hasVariants'});
+  // A family CHILD (kind === 'variant') is edited in the same dialog as singles,
+  // but it must stay a variant on save — never become a single or a group.
+  const isEditingVariant = product?.kind === 'variant';
   
   const variantForm = useForm<VariantFormValues>({
     resolver: zodResolver(variantSchema),
@@ -184,10 +187,11 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
   useEffect(() => {
     if (isOpen) {
       const isGroup = product?.kind === 'group';
+      const isVariant = product?.kind === 'variant';
       form.reset({
         name: product?.name || "",
         hasVariants: isGroup,
-        variant: product?.variant || "",
+        variant: isVariant ? (product?.variantLabel || product?.variant || "") : (product?.variant || ""),
         description: (product as any)?.description || "",
         subCategory: product?.subCategory || "",
         uom: product ? normalizeUom(product.uom) : 'pcs',
@@ -272,6 +276,8 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
         optionGroupIds: (variant as any).optionGroupIds || [],
     });
     setShowVariantForm(true);
+    // The form renders below a long variant list; bring it into view.
+    setTimeout(() => document.getElementById('variant-form-anchor')?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
   }
 
   const handleSaveVariant = async (data: VariantFormValues) => {
@@ -324,6 +330,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
   return (
     <>
+      {ConfirmDialog}
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] p-0 max-h-[90dvh] overflow-hidden">
           <DialogHeader className="p-6 pb-0">
@@ -376,7 +383,9 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
 
                   <Separator />
 
-                  <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types). Each variant is its own SKU with its own barcode and inventory.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+                  {!isEditingVariant && (
+                    <FormField control={form.control} name="hasVariants" render={({ field }) => ( <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"><div className="space-y-0.5"><FormLabel>This product has variants</FormLabel><FormDescription className="text-xs">Manage multiple versions of this product (e.g., sizes, types). Each variant is its own SKU with its own barcode and inventory.</FormDescription></div><FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl></FormItem> )}/>
+                  )}
 
                   {hasVariants ? (
                       // Family / group mode. The umbrella doesn't have its own variant
@@ -392,6 +401,7 @@ export function ProductEditDialog({ isOpen, onClose, onSave, product, isSubmitti
                             )}
                             {variants.map(v => <VariantRow key={v.id} variant={v} onEdit={handleEditVariant} onDelete={handleDeleteVariant}/>)}
                           </div>
+                          <div id="variant-form-anchor" />
                           {showVariantForm ? (
                               <VariantForm
                                   form={variantForm}
