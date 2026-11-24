@@ -142,3 +142,26 @@ describe("completed reservations read as paid in full", () => {
     expect(reservationBadge({ status: "cancelled", grandTotal: 3333, payments: [pay(1700)], releaseAtMs: 10_000 }, 5_000).label).toBe("Partial ₱1,700.00 of ₱3,333.00");
   });
 });
+
+import { isProofUrlForOrder } from "./reservation";
+
+describe("isProofUrlForOrder (audit POS-03)", () => {
+  const S = "s1";
+  const O = "o1";
+  const url = (path: string, host = "firebasestorage.googleapis.com") =>
+    `https://${host}/v0/b/bucket/o/${encodeURIComponent(path)}?alt=media&token=t`;
+
+  it("accepts a download link for a file in this order's folder", () => {
+    expect(isProofUrlForOrder(url(`reservationProofs/${S}/${O}/a.jpg`), S, O)).toBe(true);
+  });
+
+  it("rejects other orders, other folders, other hosts and query-string smuggling", () => {
+    expect(isProofUrlForOrder(url(`reservationProofs/${S}/other/a.jpg`), S, O)).toBe(false);
+    expect(isProofUrlForOrder(url(`paymentProofs/${S}/${O}/a.jpg`), S, O)).toBe(false);
+    expect(isProofUrlForOrder(url(`reservationProofs/${S}/${O}/a.jpg`, "evil.example"), S, O)).toBe(false);
+    expect(isProofUrlForOrder(`https://evil.example/x.jpg?p=${encodeURIComponent(`reservationProofs/${S}/${O}/`)}`, S, O)).toBe(false);
+    expect(isProofUrlForOrder(url(`reservationProofs/${S}/${O}/../x/a.jpg`), S, O)).toBe(false);
+    expect(isProofUrlForOrder(url(`reservationProofs/${S}/${O}/`), S, O)).toBe(false);
+    expect(isProofUrlForOrder("not a url", S, O)).toBe(false);
+  });
+});

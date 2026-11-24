@@ -911,6 +911,14 @@ describe("op: record-payment", () => {
     expect(ok.status).toBe(200);
   });
 
+  it("refuses a link that only hides this order's folder in its query string (audit POS-03)", async () => {
+    seed(reservation());
+    const smuggled = `https://evil.example/x.jpg?p=${encodeURIComponent(`reservationProofs/${STORE}/${ORDER}/`)}`;
+    const res = await post(payBody({ reference: "", proofUrl: smuggled }));
+    expect(res.status).toBe(400);
+    expect(orderUpdate()).toBeNull();
+  });
+
   it("refuses while the delivery fee is still to be set", async () => {
     seed(reservation({ fulfillment: { type: "delivery" }, deliveryFeeTbd: true }));
     const res = await post(payBody());
@@ -969,6 +977,15 @@ describe("op: remove-last-payment", () => {
     expect(u["payment.paidAmount"]).toBe(1000);
     expect(u["payment.paid"]).toBe(false);
     expect(historyEntries(u)[0]).toMatchObject({ type: "payment_removed", reason: "typo" });
+  });
+
+  it("clears settledAtMs when removing a payment from a fully paid reservation (audit POS-02)", async () => {
+    seed(reservation({ status: "ready", payments: [{ ...P1, amount: 3333 }], payment: { method: "manual", paid: true, paidAmount: 3333, settledAtMs: 111 } }));
+    const res = await post(rm("wrong amount"));
+    expect(res.status).toBe(200);
+    const u = orderUpdate();
+    expect(u["payment.paid"]).toBe(false);
+    expect(u["payment.settledAtMs"]).toEqual({ __sentinel: "delete" });
   });
 
   it("refuses after the receipt exists and when there is nothing to remove", async () => {

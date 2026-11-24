@@ -19,6 +19,7 @@ import {
   receiptMop,
   validatePayment,
   type ReservationPayment,
+  isProofUrlForOrder,
 } from "@/lib/online-orders/reservation";
 
 export const runtime = "nodejs";
@@ -288,6 +289,8 @@ export async function POST(req: Request) {
             payments: next,
             "payment.paidAmount": paidAmount(next),
             "payment.paid": false,
+            // Audit POS-02: no longer fully paid, so it is no longer settled either.
+            "payment.settledAtMs": FieldValue.delete(),
             statusHistory: FieldValue.arrayUnion(...entries),
           };
           if (dropsBack) update.status = "pending";
@@ -304,8 +307,9 @@ export async function POST(req: Request) {
           payments,
         );
         if (!v.ok) throw new OpError(v.error);
-        // A screenshot must be one uploaded for THIS order (download URLs encode "/" as %2F).
-        if (v.value.proofUrl && !v.value.proofUrl.includes(encodeURIComponent(`reservationProofs/${storeId}/${orderId}/`))) {
+        // A screenshot must be one uploaded for THIS order: a Firebase Storage download link
+        // whose object sits in this order's folder (audit POS-03: was a substring check).
+        if (v.value.proofUrl && !isProofUrlForOrder(v.value.proofUrl, storeId, orderId)) {
           throw new OpError("Upload the screenshot with the Record payment form.");
         }
         const next = [...payments, { ...v.value, atMs: nowMs, byUid: actorUid, byName: actorName }];

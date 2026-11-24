@@ -219,6 +219,7 @@ export async function printPhotoViaNativeBluetooth(
   pngBase64: string,
   widthMm: 58 | 80,
   footer: string,
+  bandRows = 120,
   address: string | null = getLastPrinterAddress(),
 ) {
   if (!Capacitor.isNativePlatform()) {
@@ -228,7 +229,7 @@ export async function printPhotoViaNativeBluetooth(
 
   await ThermalPrinter.connectBluetoothPrinter({ address });
   try {
-    await ThermalPrinter.printImage({ base64: pngBase64, widthMm, align: 'center', widthPct: 100 });
+    await ThermalPrinter.printImage({ base64: pngBase64, widthMm, align: 'center', widthPct: 100, bandRows });
     await ThermalPrinter.printReceipt({ text: footer, widthMm, cut: true, beep: false, encoding: 'CP437', skipInit: true, font: 'small' });
   } finally {
     // Release the socket, as every other print does, so other apps can print.

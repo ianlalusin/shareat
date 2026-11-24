@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { fetchImageAsBase64, printPhotoViaNativeBluetooth } from '@/lib/printing/printHub';
 import { ditherForThermal, printerDots } from '@/lib/printing/photoDither';
 import { summarizePrints, type PhotoPrintRow } from '@/lib/photo-prints';
+import { useConfirmDialog } from '@/components/global/confirm-dialog';
 
 /**
  * Capture & Share photos guests sent to print (PIN page, "Photo prints" tab).
@@ -60,21 +61,39 @@ export function PhotoPrints({ storeId, rows }: { storeId: string; rows: PhotoPri
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [paper, setPaper] = useState<58 | 80>(80);
+  // Rows per printer band for photos; tunable per branch (receiptSettings/main.photoBandRows) without an APK.
+  const [bandRows, setBandRows] = useState(120);
+  const { confirm, Dialog } = useConfirmDialog();
   const summary = useMemo(() => summarizePrints(rows ?? []), [rows]);
 
   useEffect(() => {
     getDoc(doc(db, `stores/${storeId}/receiptSettings`, 'main'))
-      .then((s) => setPaper(s.data()?.paperWidth === '58mm' ? 58 : 80))
+      .then((s) => {
+        setPaper(s.data()?.paperWidth === '58mm' ? 58 : 80);
+        const rows = Number(s.data()?.photoBandRows);
+        if (Number.isFinite(rows) && rows >= 8) setBandRows(Math.min(255, Math.round(rows)));
+      })
       .catch(() => {});
   }, [storeId]);
 
   const print = async (row: PhotoPrintRow, reprint: boolean) => {
+    // An extra copy is ₱20, collected by hand (never added to the bill): make the cashier stop and collect first.
+    if (!reprint && summary.kindById[row.id] === 'extra') {
+      const ok = await confirm({
+        title: `Collect ₱20 from ${row.tableDisplayName || 'the table'}`,
+        description: "This table already used its free print. Collect ₱20 for this extra print, then print it. It is not added to the bill.",
+        confirmText: 'Collected, print',
+        cancelText: 'Not yet',
+        destructive: false,
+      });
+      if (!ok) return;
+    }
     setBusy(row.id);
     try {
       const jpeg = await fetchImageAsBase64(row.imageUrl);
       if (!jpeg) throw new Error('Could not download the photo. Check the internet connection.');
       const png = await ditherForThermal(jpeg, printerDots(paper));
-      await printPhotoViaNativeBluetooth(png, paper, `${row.tableDisplayName || ''}\n${FOOTER}`);
+      await printPhotoViaNativeBluetooth(png, paper, `${row.tableDisplayName || ''}\n${FOOTER}`, bandRows);
       await updateDoc(doc(db, `stores/${storeId}/photoPrintRequests`, row.id), {
         status: 'printed',
         ...(reprint ? { reprintCount: increment(1) } : { printCount: increment(1) }),
@@ -108,6 +127,7 @@ export function PhotoPrints({ storeId, rows }: { storeId: string; rows: PhotoPri
 
   return (
     <div className="space-y-3">
+      {Dialog}
       <p className="text-sm text-muted-foreground" aria-live="polite">
         Today: <b>{summary.copies}</b> printed · <b>{summary.free}</b> free · <b>{summary.extra}</b> extra
         {summary.extra ? ` (₱${summary.extra * 20} to collect)` : ''} · <b>{summary.reprints}</b> reprints · <b>{summary.waiting}</b> waiting
@@ -139,7 +159,7 @@ export function PhotoPrints({ storeId, rows }: { storeId: string; rows: PhotoPri
                   ) : kind === 'free' ? (
                     <Badge variant="secondary">Free</Badge>
                   ) : (
-                    <Badge>Extra · ₱20</Badge>
+                    <Badge className="bg-amber-500 text-white hover:bg-amber-500">Collect ₱20</Badge>
                   )}
                 </div>
                 <div className="mt-2 flex gap-2">
