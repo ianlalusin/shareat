@@ -5,6 +5,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { applyRefillTap } from "@/lib/refill-selection";
 import { globalInactiveIds } from "@/lib/refill-visibility";
+import { globallyInactiveFlavorIds } from "@/lib/flavor-visibility";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,7 @@ function POSContent({
   const [storeRefills, setStoreRefills] = useState<StoreRefill[]>([]);
   const [allGlobalRefills, setAllGlobalRefills] = useState<Refill[]>([]);
   const [storeFlavors, setStoreFlavors] = useState<StoreFlavor[]>([]);
+  const [allGlobalFlavors, setAllGlobalFlavors] = useState<Array<{ id: string; isActive?: boolean }>>([]);
   const [currentPackage, setCurrentPackage] = useState<StorePackage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -114,6 +116,12 @@ function POSContent({
         );
     }));
 
+    // Keep the chain-wide flavor kill-switch live in the refill picker too;
+    // storeFlavors documents remain intact for later reactivation.
+    unsubs.push(onSnapshot(collection(db, "flavors"), (snapshot) => {
+      setAllGlobalFlavors(snapshot.docs.map((d) => ({ id: d.id, isActive: d.data().isActive })));
+    }));
+
     if (session.packageOfferingId) {
         const packageRef = doc(db, "stores", storeId, "storePackages", session.packageOfferingId);
         unsubs.push(onSnapshot(packageRef, (docSnap) => {
@@ -134,6 +142,10 @@ function POSContent({
     [allGlobalRefills]
   );
   const globalInactive = useMemo(() => globalInactiveIds(allGlobalRefills), [allGlobalRefills]);
+  const globalInactiveFlavorSet = useMemo(
+    () => globallyInactiveFlavorIds(allGlobalFlavors),
+    [allGlobalFlavors]
+  );
 
   const filteredRefills = useMemo(() => {
     let availableRefills = storeRefills.filter(r => !globalInactive.has(r.refillId));
@@ -173,7 +185,9 @@ function POSContent({
       ? storeEnabledFlavorIds
       : new Set([...globallyAllowedFlavorIds].filter(id => storeEnabledFlavorIds.has(id)));
 
-    const allowedStoreFlavors = storeFlavors.filter(f => finalAllowedIds.has(f.flavorId));
+    const allowedStoreFlavors = storeFlavors.filter(
+      f => finalAllowedIds.has(f.flavorId) && !globalInactiveFlavorSet.has(f.flavorId)
+    );
 
     const initialFlavorIds = new Set(session.initialFlavorIds || []);
     return [...allowedStoreFlavors].sort((a, b) => {
@@ -183,7 +197,7 @@ function POSContent({
         if (!aIsInitial && bIsInitial) return 1;
         return ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.flavorName.localeCompare(b.flavorName);
     });
-  }, [globalRefills, storeFlavors, session.initialFlavorIds]);
+  }, [globalRefills, storeFlavors, session.initialFlavorIds, globalInactiveFlavorSet]);
 
   const needsFlavorFor = useCallback(
     (refillId: string) => allowedFlavorsFor(refillId).length > 0,

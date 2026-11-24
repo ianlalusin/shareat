@@ -24,7 +24,7 @@ import { ProductDetailsModal } from "@/components/admin/product-details-modal";
 import { ProductMergeDialog } from "@/components/admin/product-merge-dialog";
 import { slugify } from "@/lib/utils/slugify";
 import type { Product, ProductPhotoRequest } from "@/lib/types";
-import { uploadProductImage } from "@/lib/firebase/client";
+import { uploadProductImage, uploadProductImageFile } from "@/lib/firebase/client";
 import { getKind, getDisplayName } from "@/lib/products/variants";
 import { scheduleStorefrontAutoPublish, publishStorefrontNow, getStorefrontStoreId, type StorefrontPublishResult } from "@/lib/storefront/auto-publish";
 import { exportToXlsx } from "@/lib/export/export-xlsx-client";
@@ -282,23 +282,32 @@ export default function ProductManagementPage() {
     // Family/group products don't carry their own variant label, UOM, or barcode —
     // those live on each child variant SKU. We force them blank to avoid stale
     // data lingering on a product that was just toggled into group mode.
-    const isGroup = productData.hasVariants;
+    // Editing a family CHILD (kind === 'variant') must stay a variant: it keeps
+    // its groupId/groupName and writes the label into variantLabel, not variant.
+    const editingIsVariant = editingProduct?.kind === 'variant';
+    const isGroup = productData.hasVariants && !editingIsVariant;
     const optionGroupIds = Array.isArray((productData as any).optionGroupIds)
       ? ((productData as any).optionGroupIds as string[]).filter((v) => typeof v === "string" && v.length > 0)
       : [];
     const dataToSave: Partial<Product> = {
         name: productData.name,
         isActive: productData.isActive,
-        variant: isGroup ? "" : (productData.variant || ""),
         description: (productData as any).description || "",
         uom: isGroup ? "pcs" : (productData.uom || "pcs"),
         barcode: isGroup ? "" : (productData.barcode || ""),
         category: "Add-on", // Default category
         subCategory: productData.subCategory || "Uncategorized",
-        kind: isGroup ? "group" : "single",
+        kind: isGroup ? "group" : (editingIsVariant ? "variant" : "single"),
         isSku: !isGroup,
         optionGroupIds,
     };
+    if (isGroup) {
+        dataToSave.variant = "";
+    } else if (editingIsVariant) {
+        dataToSave.variantLabel = productData.variant || "";
+    } else {
+        dataToSave.variant = productData.variant || "";
+    }
 
     try {
         if (editingProduct) { // --- UPDATE EXISTING PRODUCT ---
@@ -327,12 +336,16 @@ export default function ProductManagementPage() {
         } else { // --- CREATE NEW PRODUCT ---
             const batch = writeBatch(db);
             const productDocRef = doc(collection(db, "products"));
+            // Upload first, then publish the URL atomically with the product.
+            const createdImageUrl = imageFile
+              ? await uploadProductImageFile(productDocRef.id, imageFile)
+              : null;
             
             // Create the product first without the image URL
             const initialPayload = {
                 ...dataToSave,
                 id: productDocRef.id,
-                imageUrl: null, // Set to null initially
+                imageUrl: createdImageUrl,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             };
@@ -348,12 +361,7 @@ export default function ProductManagementPage() {
                 }, { merge: true });
             }
             
-            await batch.commit(); // Commit the initial product creation
-
-            // If there's an image, upload it now and update the document
-            if (imageFile) {
-                await uploadProductImage(productDocRef.id, imageFile);
-            }
+            await batch.commit(); // Product and image URL become visible together
             
             toast({ title: "Product Created" });
         }
@@ -419,6 +427,8 @@ export default function ProductManagementPage() {
   const handleDeleteProduct = async (product: Product) => {
     setSelectedProduct(null);
 
+    // Auth context sets isPlatformAdmin for role === "admin", matching
+    // firestore.rules isAdmin(); keep this explicit UI gate for clarity.
     if (!appUser?.isPlatformAdmin) {
       toast({ variant: "destructive", title: "Permission Denied" });
       return;

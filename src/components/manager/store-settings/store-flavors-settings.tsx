@@ -6,8 +6,6 @@ import { db } from "@/lib/firebase/client";
 import {
   collection,
   onSnapshot,
-  query,
-  where,
   doc,
   setDoc,
   updateDoc,
@@ -42,6 +40,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
     const { toast } = useToast();
 
     const [globalFlavors, setGlobalFlavors] = useState<Flavor[]>([]);
+    const [globalInactiveFlavorIds, setGlobalInactiveFlavorIds] = useState<Set<string>>(new Set());
     const [storeFlavors, setStoreFlavors] = useState<Map<string, StoreFlavor>>(new Map());
     const [isLoading, setIsLoading] = useState(true);
     
@@ -55,12 +54,13 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
         }
 
         const unsubGlobal = onSnapshot(
-            query(collection(db, "flavors"), where("isActive", "==", true)), 
+            collection(db, "flavors"),
             (snap) => {
                 const list = snap.docs
                     .map(d => ({ id: d.id, ...d.data() } as Flavor))
-                    .filter(f => (f as any).isArchived !== true);
-                setGlobalFlavors(list);
+                    .filter(f => f.isArchived !== true);
+                setGlobalFlavors(list.filter(f => f.isActive !== false));
+                setGlobalInactiveFlavorIds(new Set(list.filter(f => f.isActive === false).map(f => f.id)));
             },
             (err) => {
                 console.error("flavors query failed", err);
@@ -177,7 +177,7 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
                         </TableHeader>
                         <TableBody>
                             {combinedFlavors.map(flavor => (
-                                <TableRow key={flavor.flavorId} className={!flavor.isEnabled ? "text-muted-foreground" : ""}>
+                                <TableRow key={flavor.flavorId} className={!flavor.isEnabled || globalInactiveFlavorIds.has(flavor.flavorId) ? "text-muted-foreground" : ""}>
                                     <TableCell className="font-medium">{flavor.flavorName}</TableCell>
                                     <TableCell>
                                         {editingId === flavor.flavorId ? (
@@ -193,7 +193,8 @@ export function StoreFlavorsSettings({ store }: { store: Store }) {
                                     </TableCell>
                                     <TableCell>
                                         <Switch 
-                                            checked={flavor.isEnabled}
+                                            checked={flavor.isEnabled && !globalInactiveFlavorIds.has(flavor.flavorId)}
+                                            disabled={globalInactiveFlavorIds.has(flavor.flavorId)}
                                             onCheckedChange={() => handleToggleEnabled(flavor)}
                                         />
                                     </TableCell>
