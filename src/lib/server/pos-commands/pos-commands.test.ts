@@ -510,6 +510,15 @@ describe("review fixes (audit P1 review 2026-11-03)", () => {
     expect(db.data(`stores/${S}/receipts/s1`).analytics.salesByItem["Premium Wagyu"]).toBeUndefined();
   });
 
+  it("#4b a variant keeps its variant label on the receipt (inventory stores name + variantLabel, no displayName)", async () => {
+    db.seed(`stores/${S}/inventory/coke`, { name: "Coke", variantLabel: "500ml", kind: "variant", sellingPrice: 60.5 });
+    db.seed(LINE, { ...db.data(LINE), itemName: "Coke (500ml)" });
+    await runCheckout(D(), input(), CASHIER, NOW);
+    const line = db.data(`stores/${S}/receipts/s1`).lines.find((l: any) => l.id === "addon_coke_60.5");
+    expect(line.itemName).toBe("Coke (500ml)");
+    expect(line.orderedItemName).toBeUndefined();
+  });
+
   it("#5 void reverses only redemptions the server applied to THIS bill", async () => {
     db.seed(`loyaltyRedemptions/mine`, { status: "applied", appliedStoreId: S, appliedSessionId: "s1", type: "fixed", value: 10 });
     db.seed(`loyaltyRedemptions/theirs`, { status: "applied", appliedStoreId: S, appliedSessionId: "s9", type: "fixed", value: 10 });

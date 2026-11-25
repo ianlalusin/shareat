@@ -26,6 +26,7 @@ import {
   overrideUids,
   validateLinePrices,
 } from "@/lib/checkout/line-pricing";
+import { getDisplayName } from "@/lib/products/variants";
 import { OFFLINE_CLOCK_SKEW_MS, sessionCreatedMs } from "@/lib/server/pos-commands/operator";
 import type { Operator } from "@/lib/server/pos-commands/operator";
 import type { ModeOfPayment, SessionBillLine, Store } from "@/lib/types";
@@ -247,7 +248,10 @@ export async function checkoutInTx(
   const inventory = new Map<string, { price: number | null; name: string | null }>();
   const entryOf = (d: any) => {
     const v = Number(d?.sellingPrice);
-    const name = String(d?.displayName ?? d?.name ?? d?.productName ?? "").trim();
+    // Inventory docs store the family `name` and `variantLabel` separately and
+    // never a `displayName`, so build it the way the picker does or a variant
+    // prints as just its family name on the receipt.
+    const name = String((d ? getDisplayName(d) : "") || d?.displayName || d?.productName || "").trim();
     return { price: d && d.sellingPrice != null && Number.isFinite(v) ? v : null, name: name || null };
   };
   if (inventoryIds.length) {
